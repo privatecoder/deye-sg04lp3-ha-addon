@@ -1,0 +1,115 @@
+{
+ "replay_step_2": {
+  "availability": [
+   {
+    "topic": "deye/ab12cd34/status"
+   },
+   {
+    "topic": "deye/ab12cd34/deye1/availability"
+   },
+   {
+    "topic": "deye/ab12cd34/cleanup"
+   }
+  ],
+  "availability_mode": "all",
+  "components": {
+   "battery_voltage": {
+    "default_entity_id": "sensor.deye_ab12cd34_deye1_battery_voltage",
+    "device_class": "voltage",
+    "expire_after": 30,
+    "name": "Battery voltage",
+    "platform": "sensor",
+    "state_class": "measurement",
+    "state_topic": "deye/ab12cd34/deye1/battery",
+    "suggested_display_precision": 2,
+    "unique_id": "deye_ab12cd34_deye1_battery_voltage",
+    "unit_of_measurement": "V",
+    "value_template": "{{ none }}"
+   }
+  },
+  "device": {
+   "identifiers": [
+    "deye_ab12cd34_deye1"
+   ],
+   "manufacturer": "Deye",
+   "model": "SG04LP3 three-phase low-voltage hybrid inverter",
+   "name": "Deye 1",
+   "via_device": "deye_ab12cd34_app"
+  },
+  "origin": {
+   "name": "Deye SG04LP3 Monitor",
+   "sw_version": "0.1.0"
+  }
+ },
+ "retained_with_tombstone": {
+  "availability": [
+   {
+    "topic": "deye/ab12cd34/status"
+   },
+   {
+    "topic": "deye/ab12cd34/deye1/availability"
+   }
+  ],
+  "availability_mode": "all",
+  "components": {
+   "battery_soc": {
+    "default_entity_id": "sensor.deye_ab12cd34_deye1_battery_soc",
+    "device_class": "battery",
+    "expire_after": 30,
+    "name": "Battery state of charge",
+    "platform": "sensor",
+    "state_class": "measurement",
+    "state_topic": "deye/ab12cd34/deye1/battery",
+    "suggested_display_precision": 0,
+    "unique_id": "deye_ab12cd34_deye1_battery_soc",
+    "unit_of_measurement": "%",
+    "value_template": "{{ value_json.get('battery_soc') if value_json is mapping else none }}"
+   },
+   "battery_voltage": {
+    "platform": "sensor"
+   }
+  },
+  "device": {
+   "identifiers": [
+    "deye_ab12cd34_deye1"
+   ],
+   "manufacturer": "Deye",
+   "model": "SG04LP3 three-phase low-voltage hybrid inverter",
+   "name": "Deye 1",
+   "via_device": "deye_ab12cd34_app"
+  },
+  "origin": {
+   "name": "Deye SG04LP3 Monitor",
+   "sw_version": "0.1.0"
+  }
+ },
+ "tombstone_step_3": {
+  "availability": [
+   {
+    "topic": "deye/ab12cd34/status"
+   },
+   {
+    "topic": "deye/ab12cd34/deye1/availability"
+   }
+  ],
+  "availability_mode": "all",
+  "components": {
+   "battery_voltage": {
+    "platform": "sensor"
+   }
+  },
+  "device": {
+   "identifiers": [
+    "deye_ab12cd34_deye1"
+   ],
+   "manufacturer": "Deye",
+   "model": "SG04LP3 three-phase low-voltage hybrid inverter",
+   "name": "Deye 1",
+   "via_device": "deye_ab12cd34_app"
+  },
+  "origin": {
+   "name": "Deye SG04LP3 Monitor",
+   "sw_version": "0.1.0"
+  }
+ }
+}

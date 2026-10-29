@@ -1,0 +1,18 @@
+[project]
+name = "deye-ha-schema-tests"
+version = "0.0.0"
+description = "Checks the app's MQTT discovery goldens against the real Home Assistant schemas (separate environment, never part of the app image)"
+requires-python = ">=3.14.2,<3.15"
+dependencies = [
+    "homeassistant==2026.10.4",
+    "paho-mqtt==2.1.0",
+]
+
+[dependency-groups]
+dev = ["pytest==9.2.0"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

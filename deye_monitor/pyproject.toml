@@ -1,0 +1,71 @@
+[project]
+name = "deye-monitor"
+version = "0.1.0"
+description = "Read-only Home Assistant app for Deye SUN-xK-SG04LP3 inverters"
+requires-python = ">=3.14,<3.15"
+license = { text = "MIT" }
+dependencies = [
+    "aiohttp==3.14.5",
+    "aiomqtt==2.5.1",
+    "paho-mqtt==2.1.0",
+    "pydantic==2.14.1",
+    "pyserial==3.5",
+    "pyserial-asyncio-fast==0.16",
+    "pyyaml==6.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis==6.170.13",
+    "mypy==2.4.1",
+    "playwright==1.58.0",
+    "pytest==9.2.0",
+    "pytest-asyncio==1.4.1",
+    "ruff==0.17.3",
+    "types-pyyaml==6.0.12.20260906",
+    "voluptuous==0.16.0",
+]
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deye_monitor"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# test helpers poll real time with a hard timeout on purpose
+"tests/fakes/mqtt.py" = ["ASYNC109", "ASYNC110"]
+"tests/broker_*.py" = ["ASYNC109", "ASYNC110"]
+"tests/test_mqtt_broker.py" = ["ASYNC110"]
+"tests/test_device_fix2.py" = ["ASYNC110"]
+# small local files in tmp_path are inspected inside async tests
+"tests/test_selection.py" = ["ASYNC240"]
+"tests/test_webapi.py" = ["ASYNC240", "ASYNC110"]
+# the UI texts contain typographic dashes and quotes on purpose
+"tests/test_ui.py" = ["ASYNC240", "ASYNC110", "RUF001"]
+"tests/test_ui_t11_fix.py" = ["ASYNC240", "ASYNC110", "RUF001", "F811"]
+"tests/test_ui_awaiting.py" = ["ASYNC240", "RUF001", "F811"]
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-m 'not broker and not ui'"
+markers = [
+    "broker: needs a local Mosquitto container (Docker); run with -m broker",
+    "ui: browser end-to-end tests (Playwright, local Chrome or Chromium); run with -m ui",
+]

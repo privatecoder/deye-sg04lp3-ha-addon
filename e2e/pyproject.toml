@@ -1,0 +1,33 @@
+[project]
+name = "deye-e2e"
+version = "0.0.0"
+description = "End-to-end acceptance with a real Home Assistant Core, a local broker and fake inverters (separate environment, never part of the app image)"
+requires-python = ">=3.14.2,<3.15"
+dependencies = [
+    "deye-monitor",
+    "aiohttp==3.14.5",
+    "aiomqtt==2.5.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.4.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+deye-monitor = { path = "../deye_monitor", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "image: runs the app as its Docker image instead of a process",
+    "slow: waits for a Home Assistant statistics boundary (minutes)",
+]
+addopts = "-ra"

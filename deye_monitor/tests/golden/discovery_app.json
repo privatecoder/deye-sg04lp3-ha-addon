@@ -1,0 +1,273 @@
+{
+ "availability": [
+  {
+   "topic": "deye/ab12cd34/status"
+  }
+ ],
+ "availability_mode": "all",
+ "components": {
+  "app_version": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_app_version",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "App version",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_app_version",
+   "value_template": "{{ value_json.get('app_version') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_bus_utilisation": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_bus_utilisation",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 bus utilisation",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "suggested_display_precision": 3,
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_bus_utilisation",
+   "value_template": "{{ value_json.get('inverter_deye1_bus_utilisation') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_capability_conflicts": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_capability_conflicts",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "json_attributes_template": "{{ {'conflicts': value_json.get('inverter_deye1_capability_conflict_list')} | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/app/diagnostics",
+   "name": "Deye 1 capability conflicts",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_capability_conflicts",
+   "value_template": "{{ value_json.get('inverter_deye1_capability_conflicts') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_energy_resolution": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_energy_resolution",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 energy resolution",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_energy_resolution",
+   "value_template": "{{ value_json.get('inverter_deye1_energy_resolution') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_energy_series": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_energy_series",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 energy series",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_energy_series",
+   "value_template": "{{ value_json.get('inverter_deye1_energy_series') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_energy_source": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_energy_source",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 energy resolution source",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_energy_source",
+   "value_template": "{{ value_json.get('inverter_deye1_energy_source') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_energy_status": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_energy_status",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 energy confirmation",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_energy_status",
+   "value_template": "{{ value_json.get('inverter_deye1_energy_status') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_firmware": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_firmware",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 firmware words",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_firmware",
+   "value_template": "{{ value_json.get('inverter_deye1_firmware') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_last_success": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_last_success",
+   "device_class": "timestamp",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 last successful read",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_last_success",
+   "value_template": "{{ value_json.get('inverter_deye1_last_success') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_path": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_path",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 connection path",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_path",
+   "value_template": "{{ value_json.get('inverter_deye1_path') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_r65_raw": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_r65_raw",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 R65 raw value",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_r65_raw",
+   "value_template": "{{ value_json.get('inverter_deye1_r65_raw') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_r65_status": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_r65_status",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 R65 last reading",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_r65_status",
+   "value_template": "{{ value_json.get('inverter_deye1_r65_status') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_reason": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_reason",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 state reason",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_reason",
+   "value_template": "{{ value_json.get('inverter_deye1_reason') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_role": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_role",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 parallel role (R336)",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_role",
+   "value_template": "{{ value_json.get('inverter_deye1_role') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_serial": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_serial",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 bound serial number",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_serial",
+   "value_template": "{{ value_json.get('inverter_deye1_serial') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_state": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_state",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 state",
+   "options": [
+    "starting",
+    "identifying",
+    "running",
+    "quarantined",
+    "offline",
+    "blocked"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_state",
+   "value_template": "{{ value_json.get('inverter_deye1_state') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_transport_cooldown": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_transport_cooldown",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 transport cooldown",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_transport_cooldown",
+   "value_template": "{{ value_json.get('inverter_deye1_transport_cooldown') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_transport_frame_errors": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_transport_frame_errors",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 transport frame errors",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_transport_frame_errors",
+   "value_template": "{{ value_json.get('inverter_deye1_transport_frame_errors') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_transport_resyncs": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_transport_resyncs",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 transport resyncs",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_transport_resyncs",
+   "value_template": "{{ value_json.get('inverter_deye1_transport_resyncs') if value_json is mapping else none }}"
+  },
+  "inverter_deye1_transport_timeouts": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverter_deye1_transport_timeouts",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Deye 1 transport timeouts",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverter_deye1_transport_timeouts",
+   "value_template": "{{ value_json.get('inverter_deye1_transport_timeouts') if value_json is mapping else none }}"
+  },
+  "inverters_configured": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverters_configured",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Inverters configured",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverters_configured",
+   "value_template": "{{ value_json.get('inverters_configured') if value_json is mapping else none }}"
+  },
+  "inverters_online": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverters_online",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Inverters online",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverters_online",
+   "value_template": "{{ value_json.get('inverters_online') if value_json is mapping else none }}"
+  },
+  "mqtt_reconnects": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_mqtt_reconnects",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "MQTT reconnects",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_mqtt_reconnects",
+   "value_template": "{{ value_json.get('mqtt_reconnects') if value_json is mapping else none }}"
+  }
+ },
+ "device": {
+  "identifiers": [
+   "deye_ab12cd34_app"
+  ],
+  "manufacturer": "Deye",
+  "name": "Deye Monitor"
+ },
+ "origin": {
+  "name": "Deye SG04LP3 Monitor",
+  "sw_version": "0.1.0"
+ }
+}

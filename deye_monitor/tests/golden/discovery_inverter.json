@@ -1,0 +1,144 @@
+{
+ "availability": [
+  {
+   "topic": "deye/ab12cd34/status"
+  },
+  {
+   "topic": "deye/ab12cd34/deye1/availability"
+  }
+ ],
+ "availability_mode": "all",
+ "components": {
+  "alarm_fan": {
+   "default_entity_id": "binary_sensor.deye_ab12cd34_deye1_alarm_fan",
+   "entity_category": "diagnostic",
+   "expire_after": 30,
+   "name": "Fan warning",
+   "payload_off": "OFF",
+   "payload_on": "ON",
+   "platform": "binary_sensor",
+   "state_topic": "deye/ab12cd34/deye1/status",
+   "unique_id": "deye_ab12cd34_deye1_alarm_fan",
+   "value_template": "{% set v = value_json.get('alarm_fan') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "battery_energy_charge_total_g0": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_battery_energy_charge_total_g0",
+   "device_class": "energy",
+   "expire_after": 180,
+   "name": "Battery charge total (g0)",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/deye1/energy",
+   "unique_id": "deye_ab12cd34_deye1_battery_energy_charge_total_g0",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('battery_energy_charge_total') if value_json is mapping and value_json.get('energy_series') == 'g0' else none }}"
+  },
+  "battery_soc": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_battery_soc",
+   "device_class": "battery",
+   "expire_after": 30,
+   "name": "Battery state of charge",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/battery",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_deye1_battery_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('battery_soc') if value_json is mapping else none }}"
+  },
+  "battery_voltage": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_battery_voltage",
+   "device_class": "voltage",
+   "expire_after": 30,
+   "name": "Battery voltage",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/battery",
+   "suggested_display_precision": 2,
+   "unique_id": "deye_ab12cd34_deye1_battery_voltage",
+   "unit_of_measurement": "V",
+   "value_template": "{{ value_json.get('battery_voltage') if value_json is mapping else none }}"
+  },
+  "grid_selected_power_total": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_grid_selected_power_total",
+   "device_class": "power",
+   "expire_after": 30,
+   "name": "Grid power (selected) total",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/ac",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_deye1_grid_selected_power_total",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('grid_selected_power_total') if value_json is mapping else none }}"
+  },
+  "operating_state": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_operating_state",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 30,
+   "name": "Operating state",
+   "options": [
+    "standby",
+    "self_check",
+    "normal",
+    "alarm",
+    "fault",
+    "activating"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/status",
+   "unique_id": "deye_ab12cd34_deye1_operating_state",
+   "value_template": "{{ value_json.get('operating_state') if value_json is mapping else none }}"
+  },
+  "pv_energy_today_g0": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_pv_energy_today_g0",
+   "device_class": "energy",
+   "expire_after": 180,
+   "name": "PV energy today (g0)",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/deye1/energy",
+   "unique_id": "deye_ab12cd34_deye1_pv_energy_today_g0",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('pv_energy_today') if value_json is mapping and value_json.get('energy_series') == 'g0' else none }}"
+  },
+  "rated_power": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_rated_power",
+   "device_class": "power",
+   "entity_category": "diagnostic",
+   "expire_after": 10800,
+   "name": "Rated power",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/identity",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_deye1_rated_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('rated_power') if value_json is mapping else none }}"
+  },
+  "serial_number": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_serial_number",
+   "entity_category": "diagnostic",
+   "expire_after": 10800,
+   "name": "Serial number",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/identity",
+   "unique_id": "deye_ab12cd34_deye1_serial_number",
+   "value_template": "{{ value_json.get('serial_number') if value_json is mapping else none }}"
+  }
+ },
+ "device": {
+  "identifiers": [
+   "deye_ab12cd34_deye1"
+  ],
+  "manufacturer": "Deye",
+  "model": "SG04LP3 three-phase low-voltage hybrid inverter",
+  "name": "Deye 1",
+  "serial_number": "2401234567",
+  "via_device": "deye_ab12cd34_app"
+ },
+ "origin": {
+  "name": "Deye SG04LP3 Monitor",
+  "sw_version": "0.1.0"
+ }
+}

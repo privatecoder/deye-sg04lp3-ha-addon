@@ -1,0 +1,39 @@
+name: E2E
+
+# End-to-end acceptance with a real Home Assistant Core, a local broker and fake inverters.
+# Never part of the standard run: started by hand or nightly. A missing prerequisite (Docker,
+# image, PTY, pull) fails the job; nothing is skipped silently.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.13.6"
+      - run: uv sync --frozen
+      - run: uv run pytest -p no:cacheprovider -W error::pytest.PytestUnraisableExceptionWarning
+        env:
+          E2E_IMAGE_PLATFORM: linux/amd64
+      - name: No resource of this run may be left (containers and networks)
+        if: always()
+        run: |
+          left="$(docker ps -aq --filter label=deye-e2e.run; docker network ls -q --filter label=deye-e2e.run)"
+          test -z "$left" || { echo "left over: $left"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-artifacts
+          path: e2e/artifacts

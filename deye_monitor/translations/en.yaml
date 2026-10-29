@@ -1,0 +1,140 @@
+configuration:
+  endpoints:
+    name: Endpoints
+    description: Connections to gateways, loggers or serial adapters. Only configured targets are ever
+      contacted; nothing is scanned.
+    fields:
+      id:
+        name: ID
+        description: Unique name of this connection (a-z, 0-9, _), referenced by the inverters.
+      transport:
+        name: Transport
+        description: 'Protocol: Modbus TCP, RTU over TCP, serial RTU or Solarman V5 (logger, usually port
+          8899).'
+      host:
+        name: Host
+        description: IP address or host name (all transports except serial_rtu).
+      port:
+        name: Port
+        description: TCP port. Default 502 (Modbus), 8899 (Solarman V5).
+      logger_serial:
+        name: Logger serial
+        description: Serial number of the Solarman logger (required for solarman_v5_tcp).
+      serial_device:
+        name: Serial device
+        description: Absolute path, preferably /dev/serial/by-id/... (serial_rtu only).
+      baudrate:
+        name: Baud rate
+        description: Serial baud rate, 8N1 (serial_rtu only). Default 9600.
+      bus_id:
+        name: Bus ID
+        description: Optional. Endpoints with the same bus ID share one request queue (use when they reach
+          the same RS485 bus).
+      timeout_s:
+        name: Timeout (s)
+        description: Total deadline per request. Default 5.
+      rtu_late_window_s:
+        name: RTU late-answer window (s)
+        description: Assumed latest time an RTU answer can arrive after its request (serial_rtu, rtu_over_tcp).
+          After a failure the line is held back for this long before it is trusted again. Default max(1,
+          2 x timeout).
+      max_read_registers:
+        name: Max registers per read
+        description: Upper limit per read request, 6-100. Default 60.
+      request_gap_ms:
+        name: Request gap (ms)
+        description: Pause between requests on this bus. Default 50.
+      queue_size:
+        name: Queue size
+        description: Maximum number of running plus waiting requests per bus. Default 32.
+  inverters:
+    name: Inverters
+    description: The inverters to read (at least one).
+    fields:
+      id:
+        name: ID
+        description: Stable identifier (a-z, 0-9, _); part of all entity IDs. Do not change later.
+      name:
+        name: Name
+        description: Display name in Home Assistant.
+      endpoint:
+        name: Endpoint
+        description: ID of the primary connection.
+      unit_id:
+        name: Unit ID
+        description: Modbus unit/slave address of the inverter (1-247).
+      fallback_endpoint:
+        name: Fallback endpoint
+        description: Optional second path to the same inverter; used only after repeated failures and
+          only if the same serial number answers.
+      fallback_unit_id:
+        name: Fallback unit ID
+        description: Unit ID on the fallback path. Defaults to the unit ID.
+      expected_serial:
+        name: Expected serial
+        description: Optional 10-character inverter serial number; mismatching devices are quarantined.
+      profile:
+        name: Register profile
+        description: Register profile name. Default sg04lp3_lv_v105_8.
+      energy_resolution:
+        name: Energy resolution
+        description: 'kWh resolution of the energy counters: auto (from register 65), 0.1 or 1.'
+      poll_fast_s:
+        name: Poll fast (s)
+        description: Interval for power, battery and status values. Default 10, minimum 1.
+      poll_energy_s:
+        name: Poll energy (s)
+        description: Interval for energy counters. Default 60, minimum 1.
+      poll_settings_s:
+        name: Poll settings (s)
+        description: Interval for settings (diagnostic only). Default 300, minimum 1.
+      poll_identity_s:
+        name: Poll identity (s)
+        description: Interval for identity registers. Default 3600, minimum 1.
+      allow_writes:
+        name: Allow writes
+        description: Reserved for a later version. Has no effect; this version only reads.
+  mqtt:
+    name: MQTT
+    description: Leave the host empty to use the Home Assistant MQTT service.
+    fields:
+      host:
+        name: Host
+        description: Broker host. Empty = Home Assistant MQTT service.
+      port:
+        name: Port
+        description: Broker port. Default 1883.
+      username:
+        name: Username
+        description: Broker user name.
+      password:
+        name: Password
+        description: Broker password.
+      tls:
+        name: TLS
+        description: Use TLS for the broker connection.
+      tls_ca_file:
+        name: "TLS CA file"
+        description: "Path of the CA certificate (PEM) that signed the broker certificate, below /ssl (for example /ssl/mqtt-ca.pem). Empty = system trust store. The server certificate and host name are always verified."
+      tls_certfile:
+        name: "TLS client certificate"
+        description: "Optional client certificate (PEM) below /ssl for brokers that require one. Needs the key file as well."
+      tls_keyfile:
+        name: "TLS client key"
+        description: "Optional private key (PEM) of the client certificate, below /ssl."
+      discovery_prefix:
+        name: Discovery prefix
+        description: MQTT discovery prefix of Home Assistant. Default homeassistant.
+      topic_prefix:
+        name: Topic prefix
+        description: Prefix for state and availability topics. Default deye_monitor.
+      birth_topic:
+        name: "Birth topic"
+        description: "Topic of the Home Assistant birth message (\"online\"). When it arrives the app offers its discovery data again. Default homeassistant/status."
+  log_level:
+    name: Log level
+    description: Verbosity of the app log.
+  instance_id:
+    name: Instance ID
+    description: Optional. Unique per installation (4-16 of a-z, 0-9); generated and stored automatically
+      if empty.

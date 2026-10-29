@@ -1,0 +1,22 @@
+# Hardware profile for Deye SUN-5/6/8/10/12K-SG04LP3-EU (SPEC section 9.1).
+# Source: Deye handbook 20240813 (section 3.6.1: two MPP trackers; strings per tracker 1+1 for
+# 5/6/8 kW, 2+1 for 10/12 kW; datasheet: one battery input), REVIEW2 section 5.1/5.5.
+# R0/R22/R24 are expectations for plausibility checks only; a mismatch is a capability_conflict.
+name: sg04lp3_eu
+mppt_channels: 2
+strings_by_rated_kw:
+  5: {mppt1: 1, mppt2: 1}
+  6: {mppt1: 1, mppt2: 1}
+  8: {mppt1: 1, mppt2: 1}
+  10: {mppt1: 2, mppt2: 1}
+  12: {mppt1: 2, mppt2: 1}
+battery_inputs: 1
+gen_port: true
+expected_device_type: 0x0500   # R0: three-phase LV hybrid family (does not identify SG04 alone)
+expected_mppt_count: 2         # R22 high byte
+expected_phase_count: 3        # R22 low byte
+battery_input_codes:           # R24: code for the number of battery inputs
+  0: 1                         # default value, also one input
+  1: 1
+  2: 2
+notes: "R28 is not interpreted ('4 = SG04' is not documented). Strings sharing an MPPT remain one measurement channel."

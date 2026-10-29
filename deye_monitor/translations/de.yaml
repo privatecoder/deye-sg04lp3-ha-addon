@@ -1,0 +1,141 @@
+configuration:
+  endpoints:
+    name: Verbindungen
+    description: Verbindungen zu Gateways, Loggern oder seriellen Adaptern. Es werden nur konfigurierte
+      Ziele kontaktiert, es wird nichts gescannt.
+    fields:
+      id:
+        name: ID
+        description: Eindeutiger Name der Verbindung (a-z, 0-9, _), wird von den Wechselrichtern referenziert.
+      transport:
+        name: Transport
+        description: 'Protokoll: Modbus TCP, RTU über TCP, serielles RTU oder Solarman V5 (Logger, meist
+          Port 8899).'
+      host:
+        name: Host
+        description: IP-Adresse oder Hostname (alle Transporte außer serial_rtu).
+      port:
+        name: Port
+        description: TCP-Port. Standard 502 (Modbus), 8899 (Solarman V5).
+      logger_serial:
+        name: Logger-Seriennummer
+        description: Seriennummer des Solarman-Loggers (Pflicht für solarman_v5_tcp).
+      serial_device:
+        name: Serielles Gerät
+        description: Absoluter Pfad, am besten /dev/serial/by-id/... (nur serial_rtu).
+      baudrate:
+        name: Baudrate
+        description: Serielle Baudrate, 8N1 (nur serial_rtu). Standard 9600.
+      bus_id:
+        name: Bus-ID
+        description: Optional. Verbindungen mit gleicher Bus-ID teilen sich eine Anfrage-Warteschlange
+          (wenn sie denselben RS485-Bus erreichen).
+      timeout_s:
+        name: Timeout (s)
+        description: Gesamtfrist je Anfrage. Standard 5.
+      rtu_late_window_s:
+        name: RTU-Nachlauffenster (s)
+        description: Angenommene späteste Ankunftszeit einer RTU-Antwort nach ihrer Anfrage (serial_rtu,
+          rtu_over_tcp). Nach einem Fehler wird die Leitung so lange nicht als vertrauenswürdig behandelt.
+          Standard max(1, 2 x Timeout).
+      max_read_registers:
+        name: Max. Register pro Lesung
+        description: Obergrenze je Leseanfrage, 6-100. Standard 60.
+      request_gap_ms:
+        name: Pause zwischen Anfragen (ms)
+        description: Pause zwischen Anfragen auf diesem Bus. Standard 50.
+      queue_size:
+        name: Warteschlangengröße
+        description: Maximale Zahl laufender plus wartender Anfragen je Bus. Standard 32.
+  inverters:
+    name: Wechselrichter
+    description: Die auszulesenden Wechselrichter (mindestens einer).
+    fields:
+      id:
+        name: ID
+        description: Stabile Kennung (a-z, 0-9, _); Teil aller Entitäts-IDs. Später nicht ändern.
+      name:
+        name: Name
+        description: Anzeigename in Home Assistant.
+      endpoint:
+        name: Verbindung
+        description: ID der primären Verbindung.
+      unit_id:
+        name: Unit-ID
+        description: Modbus-Unit-/Slave-Adresse des Wechselrichters (1-247).
+      fallback_endpoint:
+        name: Ersatzverbindung
+        description: Optional zweiter Weg zum selben Wechselrichter; wird nur nach wiederholten Fehlern
+          genutzt und nur, wenn dieselbe Seriennummer antwortet.
+      fallback_unit_id:
+        name: Unit-ID Ersatzverbindung
+        description: 'Unit-ID auf dem Ersatzweg. Standard: die Unit-ID.'
+      expected_serial:
+        name: Erwartete Seriennummer
+        description: Optional 10-stellige Seriennummer des Wechselrichters; abweichende Geräte werden
+          gesperrt.
+      profile:
+        name: Registerprofil
+        description: Name des Registerprofils. Standard sg04lp3_lv_v105_8.
+      energy_resolution:
+        name: Energieauflösung
+        description: 'kWh-Auflösung der Energiezähler: auto (aus Register 65), 0.1 oder 1.'
+      poll_fast_s:
+        name: Abfrage schnell (s)
+        description: Intervall für Leistung, Batterie und Status. Standard 10, mindestens 1.
+      poll_energy_s:
+        name: Abfrage Energie (s)
+        description: Intervall für Energiezähler. Standard 60, mindestens 1.
+      poll_settings_s:
+        name: Abfrage Einstellungen (s)
+        description: Intervall für Einstellungen (nur Diagnose). Standard 300, mindestens 1.
+      poll_identity_s:
+        name: Abfrage Identität (s)
+        description: Intervall für Identitätsregister. Standard 3600, mindestens 1.
+      allow_writes:
+        name: Schreiben erlauben
+        description: Für eine spätere Version reserviert. Ohne Wirkung; diese Version liest nur.
+  mqtt:
+    name: MQTT
+    description: Host leer lassen, um den MQTT-Dienst von Home Assistant zu nutzen.
+    fields:
+      host:
+        name: Host
+        description: Broker-Host. Leer = MQTT-Dienst von Home Assistant.
+      port:
+        name: Port
+        description: Broker-Port. Standard 1883.
+      username:
+        name: Benutzername
+        description: Benutzername am Broker.
+      password:
+        name: Passwort
+        description: Passwort am Broker.
+      tls:
+        name: TLS
+        description: TLS für die Broker-Verbindung verwenden.
+      tls_ca_file:
+        name: "TLS-CA-Datei"
+        description: "Pfad der CA-Zertifikatsdatei (PEM), die das Broker-Zertifikat signiert hat, unterhalb von /ssl (z. B. /ssl/mqtt-ca.pem). Leer = System-Vertrauensspeicher. Serverzertifikat und Hostname werden immer geprüft."
+      tls_certfile:
+        name: "TLS-Clientzertifikat"
+        description: "Optionales Clientzertifikat (PEM) unterhalb von /ssl für Broker, die eines verlangen. Benötigt zusätzlich die Schlüsseldatei."
+      tls_keyfile:
+        name: "TLS-Client-Schlüssel"
+        description: "Optionaler privater Schlüssel (PEM) des Clientzertifikats, unterhalb von /ssl."
+      discovery_prefix:
+        name: Discovery-Präfix
+        description: MQTT-Discovery-Präfix von Home Assistant. Standard homeassistant.
+      topic_prefix:
+        name: Topic-Präfix
+        description: Präfix für State- und Availability-Topics. Standard deye_monitor.
+      birth_topic:
+        name: "Birth-Topic"
+        description: "Topic der Home-Assistant-Birth-Nachricht (\"online\"). Bei Eingang stellt die App ihre Discovery-Daten erneut bereit. Standard homeassistant/status."
+  log_level:
+    name: Log-Level
+    description: Ausführlichkeit des App-Logs.
+  instance_id:
+    name: Instanz-ID
+    description: Optional. Pro Installation eindeutig (4-16 Zeichen a-z, 0-9); wird bei leerem Wert automatisch
+      erzeugt und gespeichert.

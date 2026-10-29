@@ -1,0 +1,11 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# Stop the whole container when the monitor crashes (Supervisor watchdog restarts the app).
+
+readonly results="/run/s6-linux-init-container-results/exitcode"
+
+if [[ "${1}" -ne 0 ]] && [[ "${1}" -ne 256 ]]; then
+    bashio::log.warning "Halt app with exit code ${1}"
+    echo "${1}" > "${results}"
+    exec /run/s6/basedir/bin/halt
+fi

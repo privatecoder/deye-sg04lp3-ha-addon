@@ -1,0 +1,20 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# Start the monitor. With an empty or missing mqtt.host the Supervisor MQTT service is used.
+
+# shellcheck source=/dev/null
+source /usr/local/lib/deye-monitor/mqtt-env.sh
+
+# options.json is read directly (bashio::config would need the Supervisor API).
+if [[ -z "$(deye_mqtt_option_host /data/options.json)" ]]; then
+    if bashio::services.available 'mqtt'; then
+        # read the service object once; absent fields must stay absent (bashio prints "null")
+        deye_export_supervisor_mqtt "$(bashio::services 'mqtt')"
+        bashio::log.info "Using the Home Assistant MQTT service."
+    else
+        bashio::log.warning "No MQTT broker configured and no MQTT service available."
+    fi
+fi
+
+bashio::log.info "Starting Deye SG04LP3 Monitor..."
+exec python -m deye_monitor
