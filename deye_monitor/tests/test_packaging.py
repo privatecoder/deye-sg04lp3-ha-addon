@@ -56,13 +56,13 @@ def test_manifest_basics() -> None:
     assert MANIFEST["arch"] == ["aarch64", "amd64"]
     assert MANIFEST["init"] is False
     assert MANIFEST["stage"] == "experimental"
-    assert MANIFEST["startup"] == "application"
+    assert "startup" not in MANIFEST  # default "application" (linter: no default keys)
     assert MANIFEST["boot"] == "auto"
     assert MANIFEST["services"] == ["mqtt:want"]
     assert MANIFEST["uart"] is True
     assert MANIFEST["ingress"] is True
     assert MANIFEST["ingress_port"] == 8099
-    assert MANIFEST["panel_admin"] is True
+    assert MANIFEST.get("panel_admin", True) is True  # default true, admin-only panel
     assert not [k for k in _FORBIDDEN if k in MANIFEST]
     # /ssl read-only is the only mapped directory: it is needed for the optional TLS files of an
     # external broker (mqtt.tls_ca_file / tls_certfile / tls_keyfile). No config, share or data map.

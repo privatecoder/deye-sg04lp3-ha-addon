@@ -317,7 +317,7 @@ rename, directory fsync); no protection against power loss is claimed.
 
 ## Web interface
 
-The app has an Ingress panel (sidebar entry **Deye Monitor**, `panel_admin: true`, internal port
+The app has an Ingress panel (sidebar entry **Deye Monitor**, admin-only panel (Supervisor default), internal port
 8099, no host port). It needs no internet access: all scripts, styles and texts are part of the app.
 Language follows the browser (switch with **DE / EN**), appearance follows the system (button
 “Theme” switches automatic / light / dark).
