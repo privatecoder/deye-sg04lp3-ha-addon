@@ -26,6 +26,8 @@
   - After a failed recovery every changing call (selection, transfer, rebind, resets, cleanup,
     plant, checks) is refused with `plant_recovery_failed` before any side effect and the
     interface is locked; reading keeps working and shows the inverters as stopped, restart needed.
+  - The recovery lock is atomic for requests already in flight: selection edits that wait for the
+    lock and bodies that are still being read are refused with `plant_recovery_failed` too.
   - A connection check resolves its saved connection inside the generation it runs in (a deleted
     one is `unknown_endpoint`, never a silent test of the old address).
   - A deletion whose selection cleanup could not be written shows a visible "cleanup pending" hint.

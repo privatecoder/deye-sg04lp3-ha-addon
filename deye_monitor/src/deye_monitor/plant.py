@@ -277,6 +277,7 @@ class PlantService:
         """The accepted plant could not be started again: nothing runs and nothing may change until
         the app is restarted (it starts from the accepted plant)."""
         self.recovery_failed = True
+        self.manager.freeze()  # also for selection edits that already wait for the lock
         if not any(n.get("code") == "plant_recovery_failed" for n in self.notices):
             self.notices.append({"code": "plant_recovery_failed", "differs": False})
 

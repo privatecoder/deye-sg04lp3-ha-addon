@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -22,7 +22,7 @@ from harness.fakes import FakeInverter
 from harness.ha import HomeAssistant
 from harness.stack import Broker, MessageLog, ProcessApp, options
 from tests.helpers import entity_id, inverter_states, ours, quiesce_and_check, until
-from tests.test_02_availability import history
+from tests.test_02_availability import history, history_rows
 
 pytestmark = pytest.mark.usefixtures("running")
 
@@ -263,30 +263,57 @@ async def test_broker_with_persistence_and_home_assistant_restart_together(persi
     await ha.cold_start()
     assert sorted(await ours(ha, inst)) == registry_before  # the registry survived
 
-    async def restored_unavailable():
-        got = inverter_states(await ha.states(), inst, "p_inv")
-        return got if got and all(v == "unavailable" for v in got.values()) else None
+    soc = entity_id(inst, "p_inv", "battery_soc")
 
-    await until(
+    async def restored_unavailable():
+        states = await ha.states()
+        got = inverter_states(states, inst, "p_inv")
+        return states if got and all(v == "unavailable" for v in got.values()) else None
+
+    unavailable = await until(
         restored_unavailable,
         "the entities are back from the persisted discovery, unavailable",
         90,
         1,
     )
+    # Home Assistant's own timestamp of that state is the start of the interval to check
+    start = datetime.fromisoformat(unavailable[soc]["last_updated"])
     for _ in range(8):  # and they stay that way: never the old 66
         got = inverter_states(await ha.states(), inst, "p_inv")
         assert all(v == "unavailable" for v in got.values()), got
         await asyncio.sleep(1)
-    app.start()
-    await app.wait_api(60)
-    await until(
-        lambda: valid(ha, inst, "p_inv", "battery_soc", "67"),
-        "fresh values after the app is back",
-        90,
-        1,
-    )
-    seen = await history(ha, entity_id(inst, "p_inv", "battery_soc"), t_restart, datetime.now(UTC))
-    assert "66" not in seen, seen  # no old measurement was ever shown as fresh
+    # everything the app publishes from here on is recorded before it starts (not a polled sample)
+    log = await MessageLog(broker, f"deye_monitor/{inst}/#").start()
+    try:
+        app.start()
+        await app.wait_api(60)
+        await until(
+            lambda: valid(ha, inst, "p_inv", "battery_soc", "67"),
+            "fresh values after the app is back",
+            90,
+            1,
+        )
+    finally:
+        await log.stop()
+    fresh = (await ha.states())[soc]
+    end = datetime.fromisoformat(fresh["last_updated"]) + timedelta(microseconds=1)
+
+    async def recorded_fresh():
+        rows = await history_rows(ha, soc, start, end, skip_initial_state=True)
+        return rows if "67" in [r["state"] for r in rows] else None
+
+    rows = await until(recorded_fresh, "the recorder contains the fresh 67", 30, 0.5)
+    values = [r["state"] for r in rows]
+    diagnostics = {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "rows": rows,
+        "unavailable_state": unavailable[soc],
+        "fresh_state": fresh,
+        "mqtt": [(t, p.decode(errors="replace")[:200], r) for _, t, p, r in log.messages[:200]],
+    }
+    # the last recorded value is the fresh one and the old 66 never appears inside the interval
+    assert values[-1] == "67" and "66" not in values, diagnostics
 
 
 # -- 4. an old in-flight read released late -------------------------------------------------------

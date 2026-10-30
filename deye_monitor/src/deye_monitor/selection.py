@@ -643,6 +643,12 @@ class SelectionManager:
         return self.store.specs
 
     recovery_required: frozenset[str] = frozenset()
+    frozen = False  # the plant could not be restored: nothing may change until the restart
+
+    def freeze(self) -> None:
+        """Write barrier of a failed plant recovery. Set by the plant service while it holds the
+        lock; every change that was already waiting for the lock sees it after acquiring it."""
+        self.frozen = True
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -704,6 +710,8 @@ class SelectionManager:
 
     async def change(self, expected_revision: int, edits: Mapping[str, Edit]) -> ChangeResult:
         async with self._lock:
+            if self.frozen:
+                raise ChangeError("plant_recovery_failed", 409)
             if self.recovery_required:
                 # an unfinished, not fully revocable swap: only a restart (which evaluates the
                 # recovery marker) may continue

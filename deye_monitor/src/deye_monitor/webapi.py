@@ -482,6 +482,10 @@ class WebApi:
             if match is None:
                 raise ChangeError("invalid_request", field="If-Match")
             expected = int(match.group(1))
+        if self._in_recovery():
+            # the body was read while a plant change failed: check again, the actions that follow
+            # run without another await
+            raise ChangeError("plant_recovery_failed", 409)
         return user, body, expected
 
     def _in_recovery(self) -> bool:

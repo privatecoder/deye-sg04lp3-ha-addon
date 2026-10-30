@@ -24,16 +24,29 @@ async def all_have_data(ha) -> bool:
     return all(inverter_states(states, INSTANCE, i).get("battery_soc") == "55" for i in INV)
 
 
-async def history(ha, eid: str, start: datetime, end: datetime) -> list[str]:
-    """The states Home Assistant recorded for ``eid`` in [start, end]."""
+async def history_rows(
+    ha, eid: str, start: datetime, end: datetime, *, skip_initial_state: bool = False
+) -> list[dict]:
+    """The raw rows Home Assistant recorded for ``eid`` in [start, end]. By default HA adds the state
+    from before ``start`` as the first row (stamped with ``start``); ``skip_initial_state`` leaves it
+    out, so that only real changes inside the interval remain."""
     from urllib.parse import quote
 
     path = (
         f"/api/history/period/{quote(start.isoformat())}?end_time={quote(end.isoformat())}"
         f"&filter_entity_id={eid}&minimal_response&no_attributes"
+        + ("&skip_initial_state" if skip_initial_state else "")
     )
     data = await ha.get(path)
-    return [s["state"] for s in (data[0] if data else [])]
+    return list(data[0]) if data else []
+
+
+async def history(
+    ha, eid: str, start: datetime, end: datetime, *, skip_initial_state: bool = False
+) -> list[str]:
+    """The states Home Assistant recorded for ``eid`` in [start, end]."""
+    rows = await history_rows(ha, eid, start, end, skip_initial_state=skip_initial_state)
+    return [s["state"] for s in rows]
 
 
 async def test_a_stopped_inverter_makes_only_its_entities_unavailable(running):
