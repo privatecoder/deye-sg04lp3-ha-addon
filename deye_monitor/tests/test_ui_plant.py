@@ -372,3 +372,34 @@ async def test_without_a_home_assistant_user_the_plant_is_read_only(
         ).to_be_disabled()
         await expect(page.locator(".banner.info")).to_be_visible()
         await s.check()
+
+
+async def test_an_unusable_r65_asks_for_the_energy_resolution_and_the_choice_is_saved(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await rig.add_server("gw1", "modbus_tcp", A, r65=0xFFFF, r0=0xFFFF, r22=0xFFFF, r24=0xFFFF)
+        status, body = await rig.call("POST", "/api/plant/endpoints", rig.endpoint_body("gw1"))
+        assert status == 200, body
+        status, body = await rig.call(
+            "POST",
+            "/api/plant/inverters",
+            {"id": "deye1", "name": "Deye 1", "endpoint": "gw1", "unit_id": 1},
+        )
+        assert status == 200, body
+        status, body = await rig.call(
+            "POST",
+            "/api/inverters/deye1/sensors",
+            {"choose": True},
+            revision=rig.manager.revision,
+        )
+        assert status == 200, body
+        await rig.wait_state("deye1", InverterState.RUNNING)
+        s = await open_page(browser, url)
+        card = s.page.locator("article.inverter").first
+        await expect(card).to_contain_text("keine gültige Energieauflösung")
+        await expect(card).to_contain_text("Hardwareangaben vom Gerät nicht gemeldet")
+        await expect(card.locator(".hint-detail")).to_have_count(0)  # not reported is no conflict
+        await card.get_by_role("button", name="0,1 kWh wählen").click()
+        await expect(s.page.locator(".toast.ok")).to_be_visible()
+        assert rig.service.plant.inverters[0].energy_resolution.value == "0.1"

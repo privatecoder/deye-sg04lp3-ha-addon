@@ -1,5 +1,5 @@
 name: "Deye SG04LP3 Monitor"
-version: "0.2.0"
+version: "0.2.1"
 slug: "deye_monitor"
 description: "Read-only monitoring of Deye SUN-xK-SG04LP3 inverters via MQTT discovery"
 url: "https://github.com/privatecoder/deye-sg04lp3-ha-addon"

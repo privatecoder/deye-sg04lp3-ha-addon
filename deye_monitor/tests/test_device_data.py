@@ -235,3 +235,34 @@ async def test_old_response_after_timeout_never_becomes_a_value_end_to_end(tmp_p
             for addr, word in snap.words.items():
                 assert word == regs.get(addr, value_of(addr)), (snap.group, addr)
         assert any(t.counters.timeouts for t in r.runtime.transports.values())
+
+
+async def test_battery_temperature_follows_the_main_firmware_of_the_identity(
+    tmp_path: Path,
+) -> None:
+    for fw, expected, sub in ((0x1175, 17.6, "a"), (0x1151, 117.6, "b")):
+        regs = device_regs(SN, r586=1176, r15=fw, r111=1)
+        async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path / sub) as r:
+            inv = r.inv("deye1")
+            await inv.step()
+            assert r.sink.values("deye1", "battery_temperature")[-1] == expected
+            applied = inv.diagnostics()["identity"]["firmware_offsets"]["battery_temperature"]
+            assert applied["basis"] == "firmware"
+
+
+async def test_unreported_capability_words_are_no_conflict_and_stay_visible(
+    tmp_path: Path,
+) -> None:
+    regs = device_regs(SN, r0=0xFFFF, r22=0xFFFF, r24=0xFFFF)
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        diag = inv.diagnostics()
+        assert diag["capability_conflicts"] == []
+        assert diag["identity"]["capabilities_unreported"] == [
+            "device_type",
+            "mppt_phases",
+            "battery_input_code",
+        ]
+        words = diag["identity"]["capability_words"]
+        assert (words[0], words[22], words[24]) == (0xFFFF, 0xFFFF, 0xFFFF)  # raw values kept

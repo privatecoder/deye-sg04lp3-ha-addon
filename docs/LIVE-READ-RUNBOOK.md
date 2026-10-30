@@ -6,7 +6,7 @@ Die App ist **rein lesend**: Sie sendet an Inverter ausschließlich FC03-Lesezug
 
 ## 1. Startvoraussetzungen – zuerst abhaken
 
-- [ ] Eine **konkrete Version** (Commit bzw. Image-Digest) ist für den Lesetest freigegeben: FC03-Sendeguard, Transporttests, MQTT-/HA-Veröffentlichung, Fehlerbehandlung und die E2E-Abnahme mit echtem Home Assistant (`e2e/`). Keinen ungeprüften Arbeitsbaum testen. Die Versionsnummer `0.2.0` allein identifiziert keinen Stand: Commit/Digest im Ergebnisblatt (Abschnitt 10) notieren.
+- [ ] Eine **konkrete Version** (Commit bzw. Image-Digest) ist für den Lesetest freigegeben: FC03-Sendeguard, Transporttests, MQTT-/HA-Veröffentlichung, Fehlerbehandlung und die E2E-Abnahme mit echtem Home Assistant (`e2e/`). Keinen ungeprüften Arbeitsbaum testen. Die Versionsnummer `0.2.1` allein identifiziert keinen Stand: Commit/Digest im Ergebnisblatt (Abschnitt 10) notieren.
 - [ ] Die früheren Nachprüfungs-Findings N2-01 bis N2-04 (Energienamensraum, isolierter Identitätsreset, Wiederanlauf nach Blockierung, Reconnect-/Bestätigungszustände) sind in den Fix-Runden T7-Fix 2/3 behoben; dass die freigegebene Version diese Runden enthält, bestätigt die Freigabe aus dem ersten Punkt.
 - [x] **Die App liest vor deiner ersten Auswahl nur Identität und Status.** Ein Inverter ohne gespeicherte Auswahl zeigt „Bitte Sensoren auswählen“ (Abschnitt 3.1); erst nach dem Speichern über die Weboberfläche beginnt das normale Lesen. Es gibt keine Optionen wie `selected_keys` und es werden keine Dateien in `/data` von Hand verändert.
 - [x] Identität, aktive Auswahl/Leseplan und Verbindungsfehler sind einsehbar: Weboberfläche (Übersicht, Abfragelast je Auswahl) und die Diagnose-Entities des App-Geräts (Abschnitt 7).
@@ -150,7 +150,7 @@ In HA: App-Log, die Weboberfläche und unter **Entwicklerwerkzeuge → Zustände
 | --- | --- |
 | Identität | `expected_serial` = gebundene Inverter-SN (`…_serial`). Logger-SN separat. Aktiver Endpoint (`…_path`), letzter erfolgreicher Zyklus (`…_last_success`) und Zustand sichtbar; kein `quarantined`/`blocked`. |
 | R22 / R24 | R22: Highbyte MPPT-Zahl, Lowbyte Phasenzahl; Profil erwartet 2/3, also `0x0203`. Das ist eine Erwartung, kein bereits gemessener Wert deiner Geräte. R24: 0 oder 1 bedeutet laut Dokument einen Batterieeingang, 2 zwei. Kein Pack-/BMS-Zähler. `…_capability_conflicts` dokumentieren und betroffene Messungen nicht freigeben. |
-| R65 / Energie | Wenn Energie ausgewählt ist: Rohwert, effektiven Faktor und Quelle (`auto`/Override) festhalten. `R65 <= 0x0104`: 0,1 kWh/Schritt; sonst 1 kWh/Schritt, nur für die dafür kuratierten Zähler. Fehlend ist nicht 0. Kein Override zum bloßen „Passendmachen“. |
+| R65 / Energie | Wenn Energie ausgewählt ist: Rohwert, effektiven Faktor und Quelle (`auto`/Override) festhalten. `R65 <= 0x0104`: 0,1 kWh/Schritt; sonst 1 kWh/Schritt, nur für die dafür kuratierten Zähler. Fehlend ist nicht 0. R65 = `0xFFFF` oder `0` ist keine Version: die App leitet nichts ab und veröffentlicht keine Energie, bis die Auflösung gewählt ist (siehe „Energieauflösung wählen“ unten). Kein Override zum bloßen „Passendmachen“. |
 | Energieserie | Bei unveränderter SN und Auflösung bleibt `…_energy_series` über Neustart und Transportwechsel stabil. Eine bestätigte Änderung der Auflösung, ein anderes Gerät oder ein bewusst bestätigter Historienverlust beginnt eine neue Serie (alte Entity entfällt, ihre Statistik bleibt in HA, ohne Verbindung zur neuen). Bei Verlust der Energiehistorie wird die Energie gesperrt (`energy_history_missing`/`…_inconsistent`/`energy_store_corrupt`) und beim ausdrücklichen Reset beginnt ein zufälliges 8-Zeichen-Token. Nicht selbst `/data` löschen. |
 | Last / Fehler | Anzahl Lese-Blöcke je Gruppe und Gesamtlast in der Weboberfläche, `…_bus_utilisation`, Timeouts, Reconnects, Cooldown. Planbudget ist eine Schätzung; fremde Poller/Cloud/Cache sind nicht enthalten. „Überlastet“, wachsende Queue oder wiederholte Recovery sind kein Anlass für schnellere Wiederholungen. |
 | Qualität in HA | Ausbleibende/ungültige Daten erscheinen als `unknown` (einzelner Wert) bzw. `unavailable` (Gruppe verstummt nach drei Intervallen oder App/Inverter offline), nie als erfundene Nullwerte. Nach Reconnect keine alten Momentanwerte als frische Messung. `Online` allein beweist nicht die Frische jeder Gruppe. |
@@ -159,6 +159,15 @@ In HA: App-Log, die Weboberfläche und unter **Entwicklerwerkzeuge → Zustände
 | Inverterfrequenz R638 | u16 × 0,01 Hz; im laufenden 50-Hz-Inselnetz ungefähr 50 Hz. 0,50 oder 5000 Hz deutet auf Dekodierung/Zuordnung. Zustand und Messstelle beachten; keine Schutzgrenzen daraus ableiten. (Die ähnliche „Lastfrequenz“ R655 ist nur ein Duplikat derselben Quelle und nicht Teil dieser Auswahl.) |
 | PV1/PV2 R672/R673 | Je u16, 1 W. Tagsüber mit vorhandener Anzeige plausibilisieren; Schatten/Abregelung beachten. Nachts 0 ist erwartbar und kein Nachweis fehlender Unterstützung. Drei Stringanschlüsse bedeuten bei deinem 10-kW-Modell zwei MPPT-Messkanäle (2+1 Strings), nicht PV3. PV3–PV10 bleiben gesperrt. |
 | Mehrwortwerte | Beide Wörter aus demselben Lesezyklus und Weg; 32-Bit-Paarung/Wortreihenfolge laut Profil. Das garantiert keinen exakt gleichzeitigen internen DSP-Snapshot. |
+
+### Energieauflösung wählen
+
+Meldet das Gerät R65 = `0xFFFF` (oder `0`), zeigt die Übersicht und die Sensorseite „Der Wechselrichter meldet keine gültige Energieauflösung (R65)“, die Energiewerte sind `unknown`, die Diagnose zeigt Quelle `unknown` und Status `r65_invalid`.
+
+1. Rohwert und Anzeige festhalten: `…_r65_raw` und die Tagesenergie (PV heute) am Inverter-Display.
+2. Im Hinweis **0,1 kWh wählen** (für SG04LP3 üblich) oder **1 kWh wählen**, oder unter **Anlage einrichten → Wechselrichter → Energie-Auflösung** setzen. Das ist die einzige schreibende Änderung der App-Konfiguration; am Gerät wird nichts geschrieben.
+3. Die Wahl beginnt eine **neue Energieserie** (`…_energy_series` wechselt); die alte Reihe wird nie mit anderem Faktor fortgesetzt.
+4. Prüfen: Tagesenergie in HA gegen das Display (z. B. 7,0 statt 70 kWh). Stimmt es nicht, die andere Auflösung wählen; das beginnt wieder eine neue Serie.
 
 ## 8. Abbruch und Rückkehr zum Ausgangszustand
 
@@ -217,7 +226,7 @@ Grundlagen im Repository: `docs/SPEC.md`, `deye_monitor/DOCS.md` (Optionen, Webo
 
 Ältere Installationen und diese Beispiele tragen Verbindungen und Wechselrichter noch in den **App-Optionen** (Einstellungen → Apps → Deye Monitor → Konfiguration). Beim Start übernimmt die App sie **einmalig** in die Weboberfläche, **nur wenn dort noch keine Anlage gespeichert ist**; die Oberfläche weist darauf hin („Verbindungen und Wechselrichter wurden … übernommen. Bitte entferne sie aus den App-Optionen“). Danach gilt ausschließlich, was in der Weboberfläche steht; abweichende Einträge in den Optionen werden nur gemeldet und nie übernommen. Neue Anlagen richtest du im Assistenten ein.
 
-Die folgenden YAML-Beispiele sind vollständige **Supervisor-Optionen**, keine `config.yaml`-App-Manifeste. Alle IPs aus `192.0.2.0/24`, Seriennummern und Namen sind erfundene Beispiele: durch die oben bestätigten Werte ersetzen. Die Sensorliste steht **nicht** im YAML (das Optionsschema kennt keine); sie liegt in der Weboberfläche. Die Beispiele allein begrenzen also keine Auswahl.
+Die folgenden YAML-Beispiele sind vollständige **Supervisor-Optionen**, keine `config.yaml`-App-Manifeste. Alle IPs aus `192.0.2.1/24`, Seriennummern und Namen sind erfundene Beispiele: durch die oben bestätigten Werte ersetzen. Die Sensorliste steht **nicht** im YAML (das Optionsschema kennt keine); sie liegt in der Weboberfläche. Die Beispiele allein begrenzen also keine Auswahl.
 
 Hinweise zu den Optionen: Das Schema verlangt für `max_read_registers` mindestens 6 (die RTU-Identitätsprobe liest bis zu sechs Register), `mqtt: {}` muss als Block stehen bleiben, die Intervalle sind flache Optionen `poll_*_s` je Inverter. `allow_writes` ist eine Reserve ohne Wirkung (auf `false` lassen; `true` wird nur geloggt, es gibt keine Schreibschicht). TLS-Optionen (`tls`, `tls_ca_file`, …) betreffen nur einen externen Broker und sind für den Supervisor-Dienst `mqtt: {}` nicht nötig.
 

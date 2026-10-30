@@ -67,6 +67,19 @@ def load_hardware(name: str) -> HardwareProfile:
     return profile
 
 
+UNDEFINED_BATTERY_CODE_MAX = 4  # V105.8 R24: range [0,4], only 0/1/2 defined
+NOT_REPORTED = 0xFFFF  # a word the device does not fill in (per field, never a value)
+
+
+def unreported_capabilities(words: Mapping[int, int]) -> list[str]:
+    """R0, R22 and R24 that read exactly 0xFFFF: capability unknown, not a conflict."""
+    return [
+        name
+        for name, addr in (("device_type", 0), ("mppt_phases", 22), ("battery_input_code", 24))
+        if words.get(addr) == NOT_REPORTED
+    ]
+
+
 def capability_conflicts(
     hardware: HardwareProfile,
     words: Mapping[int, int],
@@ -80,14 +93,14 @@ def capability_conflicts(
     """
     out: list[CapabilityConflict] = []
     r0 = words.get(0)
-    if r0 is not None and r0 != hardware.expected_device_type:
+    if r0 is not None and r0 != NOT_REPORTED and r0 != hardware.expected_device_type:
         out.append(
             CapabilityConflict(
                 "device_type", f"R0=0x{r0:04x}, expected 0x{hardware.expected_device_type:04x}"
             )
         )
     r22 = words.get(22)
-    if r22 is not None:
+    if r22 is not None and r22 != NOT_REPORTED:
         mppt, phases = r22 >> 8, r22 & 0xFF
         if mppt != hardware.expected_mppt_count:
             out.append(
@@ -103,9 +116,11 @@ def capability_conflicts(
                 )
             )
     r24 = words.get(24)
-    if r24 is not None:
+    if r24 is not None and r24 != NOT_REPORTED:
         inputs = hardware.battery_input_codes.get(r24)
-        if inputs is None:
+        if inputs is None and r24 <= UNDEFINED_BATTERY_CODE_MAX:
+            pass  # V105.8: 3/4 lie in the declared range [0,4] but are undefined: no statement
+        elif inputs is None:
             out.append(CapabilityConflict("battery_input_code", f"R24={r24} is undefined"))
         elif inputs > hardware.battery_inputs:
             out.append(

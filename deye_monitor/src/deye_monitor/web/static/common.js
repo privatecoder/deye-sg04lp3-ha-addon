@@ -1,8 +1,8 @@
 // Pieces shared by the views: translated texts of states, errors, hints and the load light.
 
 import { t, tOr, localName, localText, errorText } from './i18n.js';
-import { h } from './ui.js';
-import { loadLevel, profileOf, serverNowEstimate } from './state.js';
+import { h, toast } from './ui.js';
+import { loadLevel, profileOf, serverNowEstimate, canEdit } from './state.js';
 
 export { errorText };
 
@@ -101,9 +101,23 @@ export function conflictText(conflict) {
 
 // Text of a hint with its raw-value detail (if any) as a small line beneath.
 export function hintBody(hint) {
-  return hint.detail
-    ? h('span', { class: 'hint-text' }, hint.text, h('small', { class: 'hint-detail' }, hint.detail))
-    : hint.text;
+  const actions = (hint.actions || []).map((a) => h('button', { class: 'btn small', type: 'button', onClick: a.run }, a.label));
+  if (!hint.detail && !actions.length) return hint.text;
+  return h('span', { class: 'hint-text' }, hint.text,
+    hint.detail ? h('small', { class: 'hint-detail' }, hint.detail) : null,
+    actions.length ? h('span', { class: 'hint-actions' }, actions) : null);
+}
+
+// The device reports no usable R65: the user picks the energy resolution (a plant change).
+function energyChoice(inv) {
+  const choose = (value) => async () => {
+    const { chooseEnergyResolution } = await import('./plantforms.js');
+    const error = await chooseEnergyResolution(inv.id, value);
+    toast(error || t('hint.energy.chosen'), error ? 'error' : 'ok');
+  };
+  return canEdit()
+    ? [{ label: t('hint.energy.choose_tenth'), run: choose('0.1') }, { label: t('hint.energy.choose_one'), run: choose('1') }]
+    : [];
 }
 
 // Hints for one inverter: capability conflicts, observations and energy migration.
@@ -112,6 +126,11 @@ export function hintsOf(inv) {
   const out = [];
   for (const conflict of s.capability_conflicts || []) {
     out.push({ kind: 'conflict', text: conflictText(conflict), detail: conflict.detail || '' });
+  }
+  const unreported = (s.identity && s.identity.capabilities_unreported) || [];
+  if (unreported.length) out.push({ kind: 'info', text: t('hint.unreported') });
+  if (s.energy && s.energy.needs_choice) {
+    out.push({ kind: 'energy', text: t('hint.energy.r65_invalid'), actions: energyChoice(inv) });
   }
   for (const hint of s.hints || []) {
     const name = sensorName(inv, hint.key);

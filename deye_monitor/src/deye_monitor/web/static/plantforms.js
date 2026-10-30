@@ -4,7 +4,7 @@
 import { t, tOr, errorText } from './i18n.js';
 import { h, uid, busy } from './ui.js';
 import { ApiError, api } from './api.js';
-import { state, mutate, reloadAfterPlantChange } from './state.js';
+import { state, mutate, reloadAfterPlantChange, loadPlant } from './state.js';
 import { conflictText, hintBody } from './common.js';
 
 export const TRANSPORTS = ['modbus_tcp', 'rtu_over_tcp', 'solarman_v5_tcp', 'serial_rtu'];
@@ -513,6 +513,16 @@ async function save(form, { editing, message, onLoaded }, collection) {
     form, message, id: values.id, onLoaded: onLoaded && (() => onLoaded(values.id)),
   });
   return result ? values.id : null;
+}
+
+// Set the energy resolution of one inverter ('0.1' or '1') from a hint; returns an error text or null.
+export async function chooseEnergyResolution(id, value) {
+  if (!state.plant) await loadPlant();
+  const inverter = state.plant.inverters.find((i) => i.id === id);
+  if (!inverter) return t('form.general');
+  const message = h('div');
+  const result = await plantCall('PUT', `api/plant/inverters/${id}`, { ...inverter, energy_resolution: value }, { message, id });
+  return result ? null : (message.textContent || t('form.general'));
 }
 
 export const saveEndpoint = (form, options) => save(form, options, 'endpoints');

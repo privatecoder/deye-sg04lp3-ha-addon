@@ -36,7 +36,7 @@ from typing import Any
 
 from deye_monitor.config import EnergyResolution
 from deye_monitor.identity import valid_serial
-from deye_monitor.profiles.energy import effective_resolution
+from deye_monitor.profiles.energy import R65_INVALID, effective_resolution
 from deye_monitor.store import JsonStore
 
 CONFIRMATIONS_FOR_CHANGE = 2
@@ -147,6 +147,7 @@ class EnergyTracker:
         self._namespace_source = namespace_source
         self._confirmed: float | None = None
         self._pending: tuple[float, int] | None = None
+        self.r65_invalid = False  # the latest R65 reading is not a usable version (auto mode)
         self.blocked: str | None = self._evaluate()
 
     def _evaluate(self) -> str | None:
@@ -172,6 +173,11 @@ class EnergyTracker:
     def resolution(self) -> float | None:
         """kWh per count once confirmed for the current identified device, else ``None``."""
         return None if self.blocked else self._confirmed
+
+    @property
+    def needs_choice(self) -> bool:
+        """Automatic resolution, but the device reports no usable R65: the user has to choose."""
+        return self._override is EnergyResolution.AUTO and self.r65_invalid
 
     @property
     def pending(self) -> bool:
@@ -206,7 +212,9 @@ class EnergyTracker:
         return {
             "effective_resolution": self.resolution,
             "persisted_resolution": rec.get("effective_resolution"),
-            "source": rec.get("source"),
+            "source": "unknown" if self.needs_choice else rec.get("source"),
+            "unknown_reason": "r65_invalid" if self.needs_choice else None,
+            "needs_choice": self.needs_choice,
             "serial_epoch": rec.get("serial") is not None,
             "generation": self.generation,
             "series": self.series,
@@ -229,6 +237,7 @@ class EnergyTracker:
         """New identity/path/rebind: the factor must be confirmed again for this device."""
         self._confirmed = None
         self._pending = None
+        self.r65_invalid = False
 
     def observe(self, r65: int | None, serial: str | None = None) -> list[EnergyEvent]:
         """Feed the latest R65 reading (``None`` = not read / failed, never treated as 0) for the
@@ -236,8 +245,12 @@ class EnergyTracker:
         if self.blocked:
             return []
         candidate = effective_resolution(self._override, r65)
+        if r65 is not None:
+            self.r65_invalid = r65 in R65_INVALID
         if candidate is None:
             self._pending = None  # a gap breaks the *consecutive* confirmation
+            if self.needs_choice:
+                self._confirmed = None  # an earlier factor derived from R65 no longer stands
             return []
         source = "override" if self._override is not EnergyResolution.AUTO else "r65"
         rec = self._record()

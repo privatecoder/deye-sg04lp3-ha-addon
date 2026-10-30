@@ -48,11 +48,15 @@ from deye_monitor.identity import (
     normalize_serial,
 )
 from deye_monitor.observation import Observation, ObservationState
-from deye_monitor.profiles.decode import Value, decode
+from deye_monitor.profiles.decode import Value, decode, firmware_offset
 from deye_monitor.profiles.features import Features
-from deye_monitor.profiles.hardware import HardwareProfile, capability_conflicts
+from deye_monitor.profiles.hardware import (
+    HardwareProfile,
+    capability_conflicts,
+    unreported_capabilities,
+)
 from deye_monitor.profiles.plan import ReadPlan, build_read_plan
-from deye_monitor.profiles.schema import Profile
+from deye_monitor.profiles.schema import Entry, Profile
 from deye_monitor.protocol.modbus import ModbusError, ModbusExceptionResponse
 from deye_monitor.protocol.solarman_v5 import V5LoggerError
 from deye_monitor.scheduler import BusScheduler, QueueFull
@@ -272,6 +276,7 @@ class InverterRuntime:
         self.internal_errors = 0
         self.last_internal_error: str | None = None
         self._reported_energy_block: str | None = None
+        self._reported_r65_invalid = False
         self._wake = asyncio.Event()
         self.released = asyncio.Event()  # set by a store reset: a waiting supervisor may restart
         self._energy_selected = any(profile.entry(k).scale_source for k in self.selection)
@@ -580,6 +585,8 @@ class InverterRuntime:
     def _check_capabilities(self, words: Mapping[int, int], serial: str) -> None:
         caps = {a: words[a] for a in _CAPABILITY_WORDS if a in words}
         self.identity_info["firmware_words"] = {a: words.get(a) for a in (15, 17, 18)}
+        self.identity_info["capability_words"] = dict(caps)  # raw, for comparing logger and gateway
+        self.identity_info["capabilities_unreported"] = unreported_capabilities(caps)
         conflicts = capability_conflicts(self.hardware, caps)
         self.capability_conflicts = [{"code": c.code, "detail": c.detail} for c in conflicts]
         key = [serial, words.get(15), words.get(17), words.get(18), self.profile.revision]
@@ -621,6 +628,11 @@ class InverterRuntime:
                 generation=event.generation,
                 source=event.source,
             )
+        if self.energy.needs_choice and not self._reported_r65_invalid:
+            self._reported_r65_invalid = True
+            self._diag("energy_resolution_unknown", reason="r65_invalid", r65=r65)
+        elif not self.energy.needs_choice:
+            self._reported_r65_invalid = False
         if self.energy.blocked and self.energy.blocked != self._reported_energy_block:
             self._reported_energy_block = self.energy.blocked
             self._diag(self.energy.blocked)
@@ -776,7 +788,18 @@ class InverterRuntime:
         values: dict[str, Value] = {}
         for key in keys:
             entry = self.profile.entry(key)
-            value = None if failed else decode(entry, snapshot.words, energy_resolution=resolution)
+            value = (
+                None
+                if failed
+                else decode(
+                    entry,
+                    snapshot.words,
+                    energy_resolution=resolution,
+                    main_firmware=self._main_firmware(),
+                )
+            )
+            if entry.fw_offsets is not None and not failed:
+                self._note_firmware_offset(entry, snapshot.words)
             values[key] = value
             obs = self.observations.setdefault(key, Observation())
             obs.record(
@@ -784,6 +807,23 @@ class InverterRuntime:
             )
         if values:  # an empty selection (or a group without selected keys) creates no entities
             self.sink.on_state(self.id, snapshot, values)
+
+    def _main_firmware(self) -> int | None:
+        words = self.identity_info.get("firmware_words")
+        value = words.get(15) if isinstance(words, dict) else None
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    def _note_firmware_offset(self, entry: Entry, words: Mapping[int, int]) -> None:
+        """Diagnostics: which offset of a firmware-dependent entry was applied and why."""
+        raw = words.get(entry.addresses[0])
+        if raw is None:
+            return
+        signed = raw - 0x10000 if raw & 0x8000 else raw
+        offset, basis = firmware_offset(entry, self._main_firmware(), signed)
+        self.identity_info.setdefault("firmware_offsets", {})[entry.key] = {
+            "offset": offset,
+            "basis": basis,
+        }
 
     def _update_suggestions(self, snapshot: Snapshot) -> None:
         """Suggest plant features from the settings that were read (the user confirms, T10)."""

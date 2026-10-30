@@ -60,10 +60,27 @@ def test_temperature_offsets(p: Profile) -> None:
     assert d(p, "bms_temperature", {217: 800}) == -20.0
     assert d(p, "temp_heatsink", {541: 1200}) == 20.0
     assert d(p, "temp_dc_transformer", {540: 1000}) == 0.0
-    # R586 has no -1000 offset: s16/10
-    assert d(p, "battery_temperature", {586: 1200}) == 120.0
-    assert d(p, "battery_temperature", {586: 0xFFF6}) == -1.0
-    assert d(p, "battery_temperature", {586: 250}) == 25.0
+
+
+def fw(p: Profile, raw: int, main_firmware: int | None) -> object:
+    return decode(p.entry("battery_temperature"), {586: raw}, main_firmware=main_firmware)
+
+
+def test_battery_temperature_offset_depends_on_the_main_firmware(p: Profile) -> None:
+    # 1151 (direct MCU2 path): s16/10 without offset
+    assert fw(p, 1200, 0x1151) == 120.0
+    assert fw(p, 0xFFF6, 0x1151) == -1.0
+    assert fw(p, 250, 0x1151) == 25.0
+    # 1175 (live, logger): (raw - 1000) / 10; raw 1176 is the observed 17.6 C
+    assert fw(p, 1176, 0x1175) == 17.6
+    assert fw(p, 1000, 0x1175) == 0.0
+    # unknown firmware: the offset applies only when raw/10 is implausibly hot and the offset
+    # value plausible
+    assert fw(p, 1176, None) == 17.6
+    assert fw(p, 1176, 0x9999) == 17.6
+    assert fw(p, 250, 0x9999) == 25.0
+    assert fw(p, 800, 0x9999) == 80.0  # not above 80 C: no offset
+    assert fw(p, 3000, 0x9999) == 300.0  # also implausible with the offset: left as it is
 
 
 def test_plain_scales(p: Profile) -> None:
@@ -140,7 +157,9 @@ def test_hhmm_enum_raw(p: Profile) -> None:
     assert d(p, "gen_on_grid_input", {189: 0x0301}) is True
     assert d(p, "tou_weekdays", {146: 0b1111_1110}) == 0b1111111
     assert d(p, "tou_slot1_soc_raw", {166: 0x1234}) == 0x1234  # R166-R171: raw only
-    assert d(p, "fw_comm_version", {17: 0x1000, 18: 0x0070}) == 0x10000070
+    assert d(p, "fw_comm_version", {17: 0x1000, 18: 0x0070}) == "0x10000070"  # shown as hex
+    assert d(p, "fw_main_version", {15: 0x1175}) == "0x1175"
+    assert d(p, "id_fw_main_version", {15: 0x1175}) == 0x1175  # the internal key stays numeric
 
 
 def test_energy_requires_known_resolution(p: Profile) -> None:
@@ -208,11 +227,13 @@ def test_every_entry_decodes_to_something_for_zero_words(p: Profile) -> None:
 
 
 def test_r65_resolution_and_overrides() -> None:
-    assert resolution_from_r65(0x0000) == 0.1
+    assert resolution_from_r65(0x0000) is None  # not a protocol version: nothing is derived
     assert resolution_from_r65(0x0103) == 0.1
     assert resolution_from_r65(0x0104) == 0.1
     assert resolution_from_r65(0x0105) == 1.0
-    assert resolution_from_r65(0xFFFF) == 1.0
+    assert resolution_from_r65(0x0001) == 0.1
+    assert resolution_from_r65(0xFFFE) == 1.0
+    assert resolution_from_r65(0xFFFF) is None
     for bad in (-1, 0x10000):
         with pytest.raises(ValueError):
             resolution_from_r65(bad)
@@ -220,6 +241,8 @@ def test_r65_resolution_and_overrides() -> None:
     assert effective_resolution(auto, None) is None  # missing/timeout is not R65=0
     assert effective_resolution(auto, 0x0104) == 0.1
     assert effective_resolution(auto, 0x0105) == 1.0
+    assert effective_resolution(auto, 0xFFFF) is None and effective_resolution(auto, 0) is None
+    assert effective_resolution(EnergyResolution.TENTH, 0xFFFF) == 0.1  # an override wins
     assert effective_resolution(EnergyResolution.TENTH, 0x0105) == 0.1
     assert effective_resolution(EnergyResolution.ONE, 0x0100) == 1.0
     assert effective_resolution(EnergyResolution.TENTH, None) == 0.1
@@ -229,3 +252,13 @@ def test_r65_resolution_and_overrides() -> None:
 def test_decode_is_independent_of_entry_object_identity(p: Profile) -> None:
     clone = Entry.model_validate(p.entry("battery_soc").model_dump())
     assert decode(clone, {588: 50}) == 50
+
+
+def test_not_reported_words_are_unknown_per_field(p: Profile) -> None:
+    assert d(p, "device_type", {0: 0xFFFF}) is None
+    assert d(p, "mppt_count", {22: 0xFFFF}) is None
+    assert d(p, "phase_count", {22: 0xFFFF}) is None
+    assert d(p, "battery_input_code", {24: 0xFFFF}) is None
+    assert d(p, "mppt_count", {22: 0x0203}) == 2 and d(p, "phase_count", {22: 0x0203}) == 3
+    assert d(p, "device_type", {0: 0x0500}) == "three_phase_lv_hybrid"
+    assert d(p, "id_r22", {22: 0xFFFF}) == 0xFFFF  # the raw word stays available

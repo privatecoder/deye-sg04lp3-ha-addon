@@ -339,6 +339,8 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     blocked, pending = _text(energy.get("blocked")), energy.get("pending_change")
     if blocked:
         out["energy_status"] = f"blocked: {blocked}"
+    elif energy.get("needs_choice") is True:
+        out["energy_status"] = "r65_invalid"
     elif pending is not None:
         out["energy_status"] = "change_pending"
     elif out["energy_resolution"] is not None:

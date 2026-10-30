@@ -550,3 +550,28 @@ def test_model_dicts_are_not_mutated_by_validation() -> None:
     snapshot = copy.deepcopy(data)
     Profile.model_validate(data)
     assert data == snapshot
+
+
+def test_capability_words_0xffff_are_not_conflicts_but_other_values_are() -> None:
+    from deye_monitor.profiles.hardware import unreported_capabilities
+
+    hw = load_hardware("sg04lp3_eu")
+    assert capability_conflicts(hw, {0: 0xFFFF, 22: 0xFFFF, 24: 0xFFFF}) == []
+    assert unreported_capabilities({0: 0xFFFF, 22: 0xFFFF, 24: 0xFFFF, 15: 1}) == [
+        "device_type",
+        "mppt_phases",
+        "battery_input_code",
+    ]
+    assert unreported_capabilities({0: 0x0500, 22: 0x0203, 24: 1}) == []
+    # field by field: one unreported word does not hide a real deviation in another
+    assert {c.code for c in capability_conflicts(hw, {0: 0xFFFF, 22: 0x0503})} == {"mppt_count"}
+    assert {c.code for c in capability_conflicts(hw, {0: 0x0600, 22: 0xFFFF})} == {"device_type"}
+    assert [c.code for c in capability_conflicts(hw, {24: 7})] == ["battery_input_code"]
+
+
+def test_r24_codes_3_and_4_are_undefined_but_no_statement() -> None:
+    hw = load_hardware("sg04lp3_eu")
+    for code in (3, 4):  # V105.8 inverter:24: range [0,4], only 0/1/2 defined
+        assert capability_conflicts(hw, {24: code}) == []
+    assert capability_conflicts(hw, {24: 1}) == [] and capability_conflicts(hw, {24: 0}) == []
+    assert [c.code for c in capability_conflicts(hw, {24: 5})] == ["battery_input_code"]

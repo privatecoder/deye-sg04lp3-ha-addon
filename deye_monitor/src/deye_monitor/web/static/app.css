@@ -179,6 +179,8 @@ progress.load-bar.over::-moz-progress-bar { background: var(--err); }
 .hint { padding: .5rem .75rem; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: .9rem; display: flex; gap: .75rem; justify-content: space-between; align-items: center; flex-wrap: wrap; }
 .hint-text { display: grid; gap: .15rem; }
 .hint-detail { font-family: ui-monospace, monospace; font-size: .8rem; opacity: .85; overflow-wrap: anywhere; }
+.hint-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .35rem; }
+.hint.info { background: var(--info-soft); color: var(--text); }
 .hint.energy { background: var(--info-soft); color: var(--text); }
 .card-actions { margin-top: auto; display: flex; gap: .5rem; flex-wrap: wrap; padding-top: .5rem; }
 .empty { text-align: center; padding: 3rem 1rem; }

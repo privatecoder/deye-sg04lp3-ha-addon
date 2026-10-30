@@ -6,7 +6,7 @@ import { ApiError, api } from './api.js';
 import { t, errorText, localName, localText } from './i18n.js';
 import { h, uid, modal, toast, debounce } from './ui.js';
 import { state, canEdit, inverterById, profileOf, loadInverters, loadSession, mutate } from './state.js';
-import { stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, sensorList } from './common.js';
+import { stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList } from './common.js';
 import { openTransfer } from './transfer.js';
 
 const BASIC_KEYS = ['serial_number', 'operating_state', 'fault_word_1', 'fault_word_2', 'fault_word_3', 'fault_word_4'];
@@ -477,6 +477,10 @@ export function setupView(invId) {
       refs.hints.append(h('ul', { class: 'hints' }, observation.map((hint) => h('li', { class: 'hint observation' },
         h('span', {}, hint.text),
         live.has(hint.key) && canEdit() ? h('button', { class: 'btn small', type: 'button', onClick: () => setKey(hint.key, false) }, t('setup.deselect')) : null))));
+    }
+    const device = hintsOf(base).filter((x) => x.kind === 'energy' || x.kind === 'info');
+    if (device.length) {
+      refs.hints.append(h('ul', { class: 'hints' }, device.map((hint) => h('li', { class: `hint ${hint.kind}` }, hintBody(hint)))));
     }
     refs.prefillNote.hidden = draft.prefilled.size === 0;
     refs.awaiting.hidden = base.selection.chosen !== false;

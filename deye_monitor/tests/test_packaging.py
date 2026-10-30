@@ -52,7 +52,7 @@ _FORBIDDEN = (
 
 def test_manifest_basics() -> None:
     assert MANIFEST["slug"] == "deye_monitor"
-    assert MANIFEST["version"] == deye_monitor.__version__ == "0.2.0"
+    assert MANIFEST["version"] == deye_monitor.__version__ == "0.2.1"
     assert MANIFEST["arch"] == ["aarch64", "amd64"]
     assert MANIFEST["init"] is False
     assert MANIFEST["stage"] == "experimental"

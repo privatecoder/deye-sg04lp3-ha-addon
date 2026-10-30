@@ -114,6 +114,11 @@ const de = {
   'hint.obs.read_failed': '„{name}“ konnte zuletzt nicht gelesen werden.',
   'hint.obs.capability_conflict': '„{name}“ widerspricht dem, was das Gerät über seine Hardware meldet.',
   'hint.energy.pending': 'Neue Energieauflösung ({value} kWh pro Schritt) wird bestätigt; Energiewerte sind bis dahin nicht verfügbar.',
+  'hint.unreported': 'Hardwareangaben vom Gerät nicht gemeldet – es gilt das Profil (2 MPPT, 3 Phasen, 1 Batterieeingang).',
+  'hint.energy.r65_invalid': 'Der Wechselrichter meldet keine gültige Energieauflösung (R65). Bitte wähle sie: 0,1 kWh (für SG04LP3 üblich) oder 1 kWh. Energiewerte sind bis dahin nicht verfügbar.',
+  'hint.energy.choose_tenth': '0,1 kWh wählen',
+  'hint.energy.choose_one': '1 kWh wählen',
+  'hint.energy.chosen': 'Energieauflösung gespeichert; die Energiewerte beginnen eine neue Statistikreihe.',
   'hint.energy.blocked': 'Die Energiezähler sind angehalten, bis die Auflösung geklärt ist.',
 
   'point.grid_terminal': 'Netzanschluss (GRID)',
@@ -686,6 +691,11 @@ const en = {
   'hint.obs.read_failed': '“{name}” could not be read last time.',
   'hint.obs.capability_conflict': '“{name}” contradicts what the device reports about its hardware.',
   'hint.energy.pending': 'A new energy resolution ({value} kWh per step) is being confirmed; energy values are unavailable until then.',
+  'hint.unreported': 'Hardware details not reported by the device – the profile applies (2 MPPT, 3 phases, 1 battery input).',
+  'hint.energy.r65_invalid': 'The inverter reports no valid energy resolution (R65). Please choose it: 0.1 kWh (usual for SG04LP3) or 1 kWh. Energy values are unavailable until then.',
+  'hint.energy.choose_tenth': 'Choose 0.1 kWh',
+  'hint.energy.choose_one': 'Choose 1 kWh',
+  'hint.energy.chosen': 'Energy resolution saved; the energy values start a new statistics series.',
   'hint.energy.blocked': 'The energy counters are paused until the resolution is clarified.',
 
   'point.grid_terminal': 'Grid connection (GRID)',

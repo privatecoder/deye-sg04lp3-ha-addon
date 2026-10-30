@@ -153,7 +153,16 @@ class Entry(_Model):
     enum: dict[int, str] | None = None
     scale: Annotated[float, Field(allow_inf_nan=False)] | None = None
     raw_offset: Annotated[float, Field(allow_inf_nan=False)] = 0.0
+    # Offset by main firmware (R15) where the producer differs between paths; a firmware that is
+    # not listed uses the plausibility rule of ``decode`` (shown as a hint, never as certain).
+    fw_offsets: (
+        dict[Annotated[int, Field(ge=0, le=0xFFFF)], Annotated[float, Field(allow_inf_nan=False)]]
+        | None
+    ) = None
     scale_source: Literal["energy_resolution"] | None = None
+    # a word that means "not reported by the device" (decoded as unknown, never as a value)
+    not_reported: Annotated[int, Field(ge=0, le=0xFFFF)] | None = None
+    display: Literal["hex"] | None = None  # raw words shown as 0x…
     unit: str | None = None
     device_class: str | None = None
     state_class: Literal["measurement", "total", "total_increasing"] | None = None
@@ -270,7 +279,17 @@ class Entry(_Model):
                 out.append("numeric entries need exactly one of scale and scale_source")
             if self.scale is not None and self.scale <= 0:
                 out.append("scale must be > 0")
-        elif self.scale is not None or self.scale_source or self.raw_offset:
+            if self.fw_offsets is not None and (
+                self.scale is None or self.raw_offset or self.release == "unresolved"
+            ):
+                out.append("fw_offsets need a scale, a released entry and no raw_offset")
+        if self.not_reported is not None and self.addr is None:
+            out.append("not_reported applies to single-word entries")
+        if self.display is not None and (self.type not in ("raw", "u32") or self.scale is not None):
+            out.append("display requires an unscaled raw or u32 entry")
+        if not self.is_numeric and (
+            self.scale is not None or self.scale_source or self.raw_offset or self.fw_offsets
+        ):
             out.append(f"{self.type} entries carry no scale/offset")
         if self.platform == "binary_sensor" and not (
             self.type == "bitfield" and self.mask is not None and self.mask & (self.mask - 1) == 0

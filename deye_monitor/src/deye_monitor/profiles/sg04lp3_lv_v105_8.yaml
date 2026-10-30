@@ -90,6 +90,7 @@ entries:
     de: "Gerätetyp-Kennung, die der Wechselrichter meldet."
     en: "Device type code reported by the inverter."
   addr: 0
+  not_reported: 65535
   type: enum
   enum:
     512: string_inverter
@@ -240,6 +241,7 @@ entries:
     en: "Firmware version of the main controller."
   addr: 15
   type: raw
+  display: hex
   entity_category: diagnostic
   category: diagnostic
   point: diagnostic
@@ -288,6 +290,7 @@ entries:
   low: 18
   high: 17
   type: u32
+  display: hex
   entity_category: diagnostic
   category: diagnostic
   point: diagnostic
@@ -388,6 +391,7 @@ entries:
     de: "Anzahl der PV-Eingänge (MPPT), die das Gerät meldet."
     en: "Number of PV inputs (MPPT) the device reports."
   addr: 22
+  not_reported: 65535
   type: u16
   mask: 65280
   shift: 8
@@ -417,6 +421,7 @@ entries:
     de: "Anzahl der Phasen, die das Gerät meldet."
     en: "Number of phases the device reports."
   addr: 22
+  not_reported: 65535
   type: u16
   mask: 255
   scale: 1
@@ -491,6 +496,7 @@ entries:
     de: "Kennung des Batterieeingangs, die das Gerät meldet."
     en: "Code of the battery input the device reports."
   addr: 24
+  not_reported: 65535
   type: enum
   enum:
     0: one_input_default
@@ -1426,6 +1432,9 @@ entries:
   addr: 586
   type: s16
   scale: 0.1
+  fw_offsets:
+    0x1151: 0
+    0x1175: -1000
   unit: °C
   device_class: temperature
   state_class: measurement
@@ -1439,11 +1448,13 @@ entries:
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: confirmed
+  release: profile_dependent
   source: "V105.8 registers.json inverter: R586 (TXT 3517-3524)"
-  confidence: code_verified_signedness_document_scale
+  confidence: firmware_dependent_offset_1151_code_1175_live
   default_enabled: true
-  notes: signed16(raw)/10 without the -1000 offset used by R217/R541. Own 1151 producer/exporter evidence.
+  notes: "Offset by main firmware (R15): 0x1151 (direct MCU2 path, own producer/exporter evidence) signed16(raw)/10 without\
+    \ offset; 0x1175 (live, Logger path) (raw-1000)/10, observed raw 1176 = 17.6 C = BMS value. Another firmware: the offset is\
+    \ applied only if raw/10 > 80 C and (raw-1000)/10 lies in -40..80 C (diagnostics: identity.firmware_offsets)."
 - key: battery_voltage
   name:
     de: Batteriespannung

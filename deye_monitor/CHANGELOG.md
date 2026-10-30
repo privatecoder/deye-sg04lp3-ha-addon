@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.2.1
+
+Corrections from the first live read test (SUN-10K, firmware word R15 = 0x1175, Solarman logger):
+
+- Energy resolution: R65 = 0xFFFF (and 0) is not a protocol version. Nothing is derived from it any
+  more (it used to select 1 kWh and showed values ten times too high). Without a usable R65 and
+  without an override the energy counters are not published; the overview and the sensor page ask
+  for the choice (0.1 kWh, usual for the SG04LP3, or 1 kWh) with one click, which sets the
+  inverter's existing `energy_resolution` override. Diagnostics: energy source `unknown`, status
+  `r65_invalid`, event `energy_resolution_unknown`. A change of the resolution starts a new
+  statistics series as before; a factor that an earlier version had taken from R65 = 0xFFFF counts
+  as unknown after the update until the choice is made.
+- R0, R22 and R24 reading exactly 0xFFFF mean "not reported by the device": no capability conflict
+  (it used to show 255 MPPT / 255 phases), the dependent sensors are unknown, the profile applies
+  (2 MPPT, 3 phases, 1 battery input) and the overview says so. Any other deviating value is still
+  a conflict. The raw words stay in the diagnostics (`identity.capability_words`).
+- R24 codes 3 and 4 (declared range [0,4], but only 0/1/2 are defined in V105.8) are no longer
+  reported as a conflict; codes above 4 still are.
+- Battery temperature (R586) depends on the main firmware (R15): 0x1151 reads signed16 x 0.1,
+  0x1175 reads (raw - 1000) x 0.1 (live: raw 1176 = 17.6 C, as the BMS says). For another firmware
+  the offset is applied only if raw x 0.1 is above 80 C and the offset value lies in -40..80 C. The
+  decision is in the diagnostics (`identity.firmware_offsets`). The profile entry is now
+  `profile_dependent`, not `confirmed`.
+- Firmware words (main and communication board) are shown as hex (`0x1175`), not decimal.
+- Live-1 points: the "accept the template unchanged" button works on the first start (the answers
+  pre-filled from the device are saved with it), capability conflicts show the raw values, the
+  Docker image test reaches its fake inverters by container name.
+- BMS current limits R212/R213 are unchanged (bank sums are plausible).
+
 ## 0.2.0
 
 - Setup in the web interface (T14): connections and inverters are created, edited and deleted in

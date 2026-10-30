@@ -30,8 +30,6 @@ async def test_r65_boundary_selects_the_resolution(tmp_path: Path) -> None:
     for r65, factor, sub in (
         (0x0104, 0.1, "a"),
         (0x0105, 1.0, "b"),
-        (0x0000, 0.1, "c"),
-        (0xFFFF, 1.0, "d"),
     ):
         async with rig(
             [ep("gw1")],
@@ -49,6 +47,54 @@ async def test_r65_boundary_selects_the_resolution(tmp_path: Path) -> None:
                 "source": "r65",
                 "generation": 0,
             }
+
+
+async def test_an_unusable_r65_derives_nothing_and_asks_for_a_choice(tmp_path: Path) -> None:
+    for r65, sub in ((0xFFFF, "a"), (0x0000, "b")):
+        async with rig(
+            [ep("gw1")],
+            [inverter("deye1", "gw1")],
+            {"gw1": device_regs(SN, r65=r65)},
+            tmp_path / sub,
+        ) as r:
+            inv = r.inv("deye1")
+            await inv.step()
+            assert inv.state.value == "running"
+            assert energy_values(r.sink) and set(energy_values(r.sink)) == {None}
+            assert inv.energy.resolution is None and inv.energy.needs_choice
+            snap = inv.diagnostics()["energy"]
+            assert snap["source"] == "unknown" and snap["unknown_reason"] == "r65_invalid"
+            assert any(d["event"] == "energy_resolution_unknown" for _, d in r.sink.diagnostics)
+            assert not (tmp_path / sub / "energy.json").exists()  # no default factor persisted
+            assert r.sink.values("deye1", "battery_soc")[-1] is not None
+
+
+async def test_a_factor_confirmed_from_r65_ffff_is_unknown_until_the_user_chooses(
+    tmp_path: Path,
+) -> None:
+    # an installation that took 1 kWh from R65 = 0xFFFF (series generation 0, source r65)
+    async with rig(
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(SN, r65=0x0105)}, tmp_path
+    ) as r:
+        await r.inv("deye1").step()
+        assert energy_values(r.sink)[-1] == RAW
+    bad = device_regs(SN, r65=0xFFFF)
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": bad}, tmp_path) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        assert inv.energy.resolution is None and inv.energy.needs_choice
+        assert set(energy_values(r.sink)) == {None}
+    assert persisted(tmp_path)["generation"] == 0  # nothing new before the choice
+    # choosing 0.1 kWh starts a NEW series, the old one is never continued with another factor
+    chosen = inverter("deye1", "gw1", energy_resolution="0.1")
+    async with rig([ep("gw1")], [chosen], {"gw1": bad}, tmp_path) as r:
+        await r.inv("deye1").step()
+        assert energy_values(r.sink)[-1] == round(RAW * 0.1, 6)
+    assert persisted(tmp_path) == {
+        "effective_resolution": 0.1,
+        "source": "override",
+        "generation": 1,
+    }
 
 
 async def test_energy_is_unknown_without_a_valid_r65_and_never_defaults(tmp_path: Path) -> None:

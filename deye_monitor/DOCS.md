@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher (0.2.0, experimental).** The app validates its
+> **Status: device loop with MQTT publisher (0.2.1, experimental).** The app validates its
 > configuration, then connects to the configured endpoints (read-only, Modbus function code 03
 > only), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
@@ -10,7 +10,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.0 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.1 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -294,6 +294,16 @@ running; a shutdown also interrupts a waiting restart. R65 (the DSP protocol ver
 selected by default; it is read automatically when an energy entity is selected and
 `energy_resolution` is `auto`, and it can be selected explicitly as a diagnostic without changing an
 override.
+
+### Choosing the energy resolution
+
+Some firmware/logger paths report R65 = 0xFFFF (or 0), which is not a protocol version. The app then
+derives no resolution and does not publish the energy counters; the overview and the sensor page of
+the inverter show "The inverter reports no valid energy resolution (R65)". Choose **0.1 kWh** (usual
+for the SG04LP3; compare the daily energy with the inverter display) or **1 kWh** with the button
+there, or set "Energy resolution" in the inverter's connection settings. The choice starts a new
+statistics series (the old one is never continued with another factor). Check afterwards that
+the daily PV energy matches the display.
 
 ## First live read test
 
