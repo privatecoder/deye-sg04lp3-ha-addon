@@ -5,6 +5,7 @@ import { t, tOr, errorText } from './i18n.js';
 import { h, uid, busy } from './ui.js';
 import { ApiError, api } from './api.js';
 import { state, mutate, reloadAfterPlantChange } from './state.js';
+import { conflictText, hintBody } from './common.js';
 
 export const TRANSPORTS = ['modbus_tcp', 'rtu_over_tcp', 'solarman_v5_tcp', 'serial_rtu'];
 const DEFAULT_PORT = { modbus_tcp: 502, rtu_over_tcp: 502, solarman_v5_tcp: 8899 };
@@ -398,7 +399,7 @@ export function testResultView(result) {
   if (result.serial_vs_bound === true) notes.push(['ok', t('test.bound_ok')]);
   if (result.serial_vs_bound === false) notes.push(['bad', t('test.bound_bad')]);
   for (const conflict of (model && model.conflicts) || []) {
-    notes.push(['warn', tOr(`hint.conflict.${conflict.code}`, 'hint.conflict.generic', { code: conflict.code, detail: conflict.detail || '' })]);
+    notes.push(['warn', hintBody({ text: conflictText(conflict), detail: conflict.detail || '' })]);
   }
   return h('div', { class: `test-result ${ok ? 'ok' : 'fail'}`, tabindex: '-1' },
     h('h4', {}, ok ? t('test.ok_title') : t('test.fail_title')),

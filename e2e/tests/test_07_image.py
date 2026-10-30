@@ -19,7 +19,8 @@ import pytest
 from conftest import record_versions
 from harness import docker
 from harness.devices import registers
-from harness.fakes import LOGGER_SERIAL, FakeInverter
+from harness.fakes import LOGGER_SERIAL
+from harness.remote import RemoteFakes
 from harness.stack import APP_DIR, ImageApp, options
 from tests.helpers import inverter_states, ours, quiesce_and_check, until
 
@@ -67,19 +68,6 @@ def build_image() -> dict[str, str]:
     }
 
 
-def fake_addresses(net: docker.Net) -> tuple[str, str]:
-    """(bind address on the host, address of the host as seen from a container)."""
-    if platform.system() == "Darwin":  # Docker Desktop: the VM reaches the host's loopback
-        return "127.0.0.1", "host.docker.internal"
-    # Linux: the gateway of the run's network is the host as seen from the container. It is read
-    # from Docker, and the fakes listen on all addresses because the bridge address may not be
-    # configured on the host at bind time (it is not on the hosted runners).
-    gateway = docker.run(
-        "network", "inspect", net.name, "--format", "{{(index .IPAM.Config 0).Gateway}}"
-    ).stdout.strip()
-    return "0.0.0.0", gateway or "172.30.32.1"  # noqa: S104 - test fakes on a CI/dev host
-
-
 @pytest.fixture(scope="module")
 async def image_app(running):
     async with AsyncExitStack() as ex:
@@ -102,15 +90,20 @@ async def image_app(running):
                 | {"labels": image["labels"]}
             }
         )
-        bind, seen = fake_addresses(net)
-        fakes = {
-            "i_tcp": FakeInverter("i_tcp", "mbap", regs=registers(SN["i_tcp"], soc=61)),
-            "i_rtu": FakeInverter("i_rtu", "rtu", regs=registers(SN["i_rtu"], soc=62)),
-            "i_v5": FakeInverter("i_v5", "v5", regs=registers(SN["i_v5"], soc=63)),
-        }
-        for f in fakes.values():
-            ex.push_async_callback(f.stop)
-            await f.start(bind)
+        # the fake inverters live on the private network too and are reached by container name
+        remote = RemoteFakes(
+            net.name,
+            image["tag"],
+            {
+                "i_tcp": ("mbap", registers(SN["i_tcp"], soc=61)),
+                "i_rtu": ("rtu", registers(SN["i_rtu"], soc=62)),
+                "i_v5": ("v5", registers(SN["i_v5"], soc=63)),
+            },
+        )
+        ex.callback(remote.cleanup)
+        remote.start()
+        fakes = remote.fakes
+        seen = remote.host
         endpoints = [
             {
                 "id": "g_tcp",

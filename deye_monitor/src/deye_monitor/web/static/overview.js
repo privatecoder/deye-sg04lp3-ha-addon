@@ -3,7 +3,7 @@
 import { t, problemText } from './i18n.js';
 import { h } from './ui.js';
 import { state, canEdit, loadLevel, hasPlant } from './state.js';
-import { stateChip, reasonText, roleText, ageText, absoluteTime, levelChip, loadProgress, hintsOf } from './common.js';
+import { stateChip, reasonText, roleText, ageText, absoluteTime, levelChip, loadProgress, hintsOf, hintBody } from './common.js';
 import { openTransfer } from './transfer.js';
 import { maintenanceSection } from './maintenance.js';
 import { noticeBanners } from './plant.js';
@@ -50,7 +50,7 @@ export function overviewView() {
         : null,
       hints.length
         ? h('ul', { class: 'hints', 'aria-label': t('overview.hints') },
-            hints.slice(0, 4).map((hint) => h('li', { class: `hint ${hint.kind}` }, hint.text)),
+            hints.slice(0, 4).map((hint) => h('li', { class: `hint ${hint.kind}` }, hintBody(hint))),
             hints.length > 4 ? h('li', { class: 'muted' }, t('overview.more_hints', { n: hints.length - 4 })) : null)
         : null,
       h('footer', { class: 'card-actions' },

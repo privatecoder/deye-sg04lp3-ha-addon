@@ -95,3 +95,58 @@ async def test_nothing_changes_without_the_require_choice_policy(
     async with ui_stack(tmp_path) as stack:
         s = await open_ui(browser, stack)
         await expect(s.page.locator(".awaiting")).to_have_count(0)
+
+
+async def test_the_template_is_accepted_with_the_prefilled_answers(
+    browser: Browser, tmp_path: Any
+) -> None:
+    # the device suggests "no battery" (R111 = 2): the answer is shown pre-filled and counts as
+    # unsaved, yet accepting the template unchanged must be possible and take the answer along
+    async with ui_stack(tmp_path, require_choice=True) as stack:
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        page = s.page
+        await expect(page.locator(".prefilled").first).to_be_visible()
+        button = page.get_by_role("button", name="Vorlage unverändert übernehmen")
+        await expect(button).to_be_enabled()
+        await button.click()
+        await expect(page.locator(".toast.ok")).to_be_visible()
+        sel = stack.plant.manager.selection("deye1")
+        assert sel.chosen and not sel.added and not sel.removed
+        assert sel.features.battery is False  # the displayed answer was saved ...
+        assert "battery" in sel.confirmed  # ... as confirmed
+        await expect(page.locator(".banner.awaiting")).to_be_hidden()
+        await s.check()
+
+
+async def test_the_template_button_waits_for_the_save_when_sensors_were_changed(
+    browser: Browser, tmp_path: Any
+) -> None:
+    async with ui_stack(tmp_path, running=False, require_choice=True) as stack:
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        page = s.page
+        await page.locator('button[data-quick="none"]').click()
+        button = page.get_by_role("button", name="Vorlage unverändert übernehmen")
+        await expect(button).to_be_disabled()
+        await expect(page.locator(".banner.awaiting")).to_contain_text("bitte unten speichern")
+        await page.locator('button[data-quick="none"]').click()  # idempotent: still deviating
+        assert not stack.plant.manager.selection("deye1").chosen
+
+
+async def test_a_capability_conflict_shows_the_raw_values(browser: Browser, tmp_path: Any) -> None:
+    from tests.device_helpers import device_regs, ep, inverter
+    from tests.selection_helpers import A
+
+    banks = {"gw1": device_regs(A, r0=0x0600, r22=0x0503, r24=7)}
+    async with ui_stack(
+        tmp_path,
+        endpoints=[ep("gw1", host="192.0.2.11")],
+        inverters=[inverter("deye1", "gw1")],
+        banks=banks,
+    ) as stack:
+        s = await open_ui(browser, stack)
+        detail = s.page.locator("article.inverter .hint-detail")
+        await expect(detail.filter(has_text="R0=0x0600, expected 0x0500")).to_have_count(1)
+        await expect(detail.filter(has_text="R22 reports 5 MPPT")).to_have_count(1)
+        await expect(detail.filter(has_text="R24=7")).to_have_count(1)

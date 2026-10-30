@@ -480,7 +480,8 @@ export function setupView(invId) {
     }
     refs.prefillNote.hidden = draft.prefilled.size === 0;
     refs.awaiting.hidden = base.selection.chosen !== false;
-    refs.takeTemplate.disabled = draft.saving || !canEdit() || dirty();
+    refs.takeTemplate.disabled = draft.saving || !canEdit() || sensorDeviations();
+    refs.takeTemplateNote.hidden = !sensorDeviations();
   }
 
   function paintHeader() {
@@ -519,15 +520,17 @@ export function setupView(invId) {
     for (const name of [...draft.confirm]) if (baseConfirmed().has(name)) draft.confirm.delete(name);
   }
 
-  async function save() {
+  async function save(choose = false) {
     if (draft.saving) return;
+    // Accepting the template also accepts the answers shown pre-filled from the device.
+    if (choose) for (const name of draft.prefilled) if (name in draft.fOver) draft.confirm.add(name);
     const sent = { fOver: { ...draft.fOver }, kOver: new Map(draft.kOver), restoreAll: draft.restoreAll, restoreSeq: draft.restoreSeq, confirm: new Set(draft.confirm) };
     draft.saving = true;
     failure = null;
     paintBar();
     let result;
     try {
-      result = await mutate('POST', `api/inverters/${invId}/sensors`, editBody(), baseRevision);
+      result = await mutate('POST', `api/inverters/${invId}/sensors`, choose ? { ...editBody(), choose: true } : editBody(), baseRevision);
     } catch (error) {
       if (error instanceof ApiError && error.key === 'stale_revision') conflict = { current: error.params.current };
       else failure = error;
@@ -597,27 +600,11 @@ export function setupView(invId) {
     openTransfer(invId);
   }
 
-  // The template as it stands is a choice, too: it ends the "awaiting selection" state.
-  async function takeTemplate() {
-    if (draft.saving || dirty()) return;
-    draft.saving = true;
-    failure = null;
-    paintBar();
-    try {
-      const result = await mutate('POST', `api/inverters/${invId}/sensors`, { choose: true }, baseRevision);
-      await loadInverters();
-      base = inverterById(invId);
-      draft.base = base;
-      baseRevision = result.revision;
-      draft.baseRevision = baseRevision;
-      toast(t('setup.saved', { r: result.revision }), 'ok');
-    } catch (error) {
-      if (error instanceof ApiError && error.key === 'stale_revision') conflict = { current: error.params.current };
-      else failure = error;
-    }
-    draft.saving = false;
-    paint();
-  }
+  // The template as it stands is a choice, too: it ends the "awaiting selection" state. The answers
+  // shown (also those pre-filled from the device) go along; only sensor deviations must be saved
+  // with the regular button.
+  const sensorDeviations = () => draft.kOver.size > 0 || draft.restoreAll;
+  const takeTemplate = () => save(true);
 
   // -- assemble -------------------------------------------------------------------------------
 
@@ -627,10 +614,11 @@ export function setupView(invId) {
   refs.budget = h('div', { class: 'budget', 'aria-live': 'polite' });
   refs.dirtyNote = h('span', { class: 'dirty-note' });
   refs.overload = h('p', { class: 'banner warn', hidden: true, role: 'alert' }, t('setup.overloaded'));
+  refs.takeTemplateNote = h('p', { class: 'muted small', hidden: true }, t('setup.take_template_dirty'));
   refs.takeTemplate = h('button', { class: 'btn', type: 'button', onClick: takeTemplate }, t('setup.take_template'));
   refs.awaiting = h('div', { class: 'banner warn awaiting', role: 'status', hidden: true },
-    h('strong', {}, t('setup.awaiting_title')), h('p', {}, t('setup.awaiting_text')), refs.takeTemplate);
-  refs.save = h('button', { class: 'btn primary', type: 'button', onClick: save }, t('setup.save'));
+    h('strong', {}, t('setup.awaiting_title')), h('p', {}, t('setup.awaiting_text')), refs.takeTemplate, refs.takeTemplateNote);
+  refs.save = h('button', { class: 'btn primary', type: 'button', onClick: () => save() }, t('setup.save'));
   refs.discard = h('button', { class: 'btn', type: 'button', onClick: discard }, t('setup.discard'));
   const step1 = buildFeatures();
   const step2 = buildSensors();

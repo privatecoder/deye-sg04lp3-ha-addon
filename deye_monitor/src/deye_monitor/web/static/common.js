@@ -94,12 +94,24 @@ export function sensorList(inv, keys) {
   return keys.map((k) => sensorName(inv, k)).join(', ');
 }
 
+// The explanation of one capability conflict; the raw values (`detail`) are shown beneath it.
+export function conflictText(conflict) {
+  return tOr(`hint.conflict.${conflict.code}`, 'hint.conflict.generic', { code: conflict.code, detail: conflict.detail || '' });
+}
+
+// Text of a hint with its raw-value detail (if any) as a small line beneath.
+export function hintBody(hint) {
+  return hint.detail
+    ? h('span', { class: 'hint-text' }, hint.text, h('small', { class: 'hint-detail' }, hint.detail))
+    : hint.text;
+}
+
 // Hints for one inverter: capability conflicts, observations and energy migration.
 export function hintsOf(inv) {
   const s = inv.status;
   const out = [];
   for (const conflict of s.capability_conflicts || []) {
-    out.push({ kind: 'conflict', text: tOr(`hint.conflict.${conflict.code}`, 'hint.conflict.generic', { code: conflict.code, detail: conflict.detail || '' }) });
+    out.push({ kind: 'conflict', text: conflictText(conflict), detail: conflict.detail || '' });
   }
   for (const hint of s.hints || []) {
     const name = sensorName(inv, hint.key);
