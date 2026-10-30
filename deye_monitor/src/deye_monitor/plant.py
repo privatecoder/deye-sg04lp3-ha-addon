@@ -18,15 +18,14 @@ that are still present only produce a notice, they never override the store.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import json
 import logging
 import shutil
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 from pydantic import ValidationError
 
@@ -36,11 +35,14 @@ from deye_monitor.selection import (
     InverterSpec,
     Problem,
     SelectionManager,
+    SpecsUndo,
     specs_from_config,
 )
 from deye_monitor.store import JsonStore, LoadStatus
 
 log = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 SLOT_NAMES = ("plant.a.json", "plant.b.json")
 SCHEMA_VERSION = 1
@@ -205,9 +207,23 @@ class SwitchError(Exception):
 class Generations(Protocol):
     """What the plant service needs from the running application."""
 
-    async def switch(self, cfg: AppConfig, specs: Mapping[str, InverterSpec]) -> None:
-        """Stop the running generation and start one for ``cfg`` (raises ``SwitchError`` after
-        restoring the previous one where possible)."""
+    async def switch(
+        self,
+        cfg: AppConfig,
+        specs: Mapping[str, InverterSpec],
+        *,
+        restore: SpecsUndo | None = None,
+        fallback: bool = True,
+    ) -> SpecsUndo:
+        """Stop the running generation and start a PROPOSED one for ``cfg`` (no shared file is
+        touched, nothing is published until ``accept_generation``). Returns the token that puts
+        the selection state back exactly. Raises ``SwitchError`` after rebuilding the previous
+        generation where that is allowed (``fallback``). With ``restore`` the call is the roll-back
+        of a proposal: the selection state is restored and the accepted generation started."""
+        ...
+
+    def accept_generation(self) -> None:
+        """The proposed generation is durable: persist its held-back state and let it publish."""
         ...
 
     def forget_binding(self, inverter_id: str) -> bool:
@@ -243,6 +259,8 @@ class PlantService:
         self._generations = generations
         self._lock = asyncio.Lock()
         self.notices = [dict(n) for n in notices]
+        self.recovery_failed = False
+        self._probes: set[asyncio.Future[Any]] = set()
 
     @property
     def revision(self) -> int:
@@ -255,6 +273,40 @@ class PlantService:
     def config(self, plant: PlantConfig | None = None) -> AppConfig:
         return self.options.with_plant(plant or self.store.plant)
 
+    def _lock_after_failed_recovery(self) -> None:
+        """The accepted plant could not be started again: nothing runs and nothing may change until
+        the app is restarted (it starts from the accepted plant)."""
+        self.recovery_failed = True
+        if not any(n.get("code") == "plant_recovery_failed" for n in self.notices):
+            self.notices.append({"code": "plant_recovery_failed", "differs": False})
+
+    async def probe(self, start: Callable[[], Awaitable[T]]) -> T:
+        """Run a connection test inside the current generation. ``start`` is called while no plant
+        change is running and builds the test from that generation; a plant change cancels the test
+        and waits for it before the generation is stopped, so a test never outlives its generation
+        (a request waiting at the scheduler can not reopen a retired transport)."""
+        async with self._lock:
+            if self.recovery_failed:
+                raise ChangeError("plant_recovery_failed", 409)
+            task = asyncio.ensure_future(start())
+            self._probes.add(task)
+        try:
+            return await task
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling() == 0 and task.cancelled():
+                raise ChangeError("plant_changed_during_test", 409) from None
+            raise
+        finally:
+            self._probes.discard(task)
+
+    async def _end_probes(self) -> None:
+        probes = list(self._probes)
+        for task in probes:
+            task.cancel()
+        if probes:
+            await asyncio.gather(*probes, return_exceptions=True)
+
     async def change(
         self,
         expected_revision: int,
@@ -263,6 +315,8 @@ class PlantService:
         forget_bindings: frozenset[str] = frozenset(),
     ) -> PlantChange:
         async with self._lock, self.manager.lock:
+            if self.recovery_failed:
+                raise ChangeError("plant_recovery_failed", 409)
             if self.manager.recovery_required:
                 raise ChangeError("selection_recovery_required", 409)
             if expected_revision != self.store.revision:
@@ -271,6 +325,10 @@ class PlantService:
             new = build(old)  # raises ChangeError for anything invalid
             if new == old:
                 return PlantChange(self.store.revision, False)
+            if not self.manager.prune_locked():
+                # a stale selection record of a removed id is still on disk: a new inverter with
+                # that id could take it over after a restart
+                raise ChangeError("persist_failed", 500)
             removed = tuple(
                 i.id for i in old.inverters if i.id not in {n.id for n in new.inverters}
             )
@@ -281,10 +339,14 @@ class PlantService:
                 log.exception("plant: specs could not be built")
                 raise ChangeError("invalid_plant", 422) from None
             old_cfg = self.config(old)
+            old_specs = dict(self.manager.specs)
+            await self._end_probes()
             try:
-                await self._generations.switch(new_cfg, specs)
+                undo = await self._generations.switch(new_cfg, specs)
             except SwitchError as exc:
                 log.error("plant change %d could not be adopted", self.store.revision + 1)
+                if not exc.restored:
+                    self._lock_after_failed_recovery()
                 raise ChangeError(
                     "adoption_failed" if exc.restored else "plant_recovery_failed",
                     500,
@@ -294,10 +356,15 @@ class PlantService:
             try:
                 self.store.commit(new, revision)
             except OSError:
-                log.error("plant could not be written; the previous plant stays active")
-                with contextlib.suppress(SwitchError):
-                    await self._generations.switch(old_cfg, specs_from_config(old_cfg))
+                log.error("plant could not be written; going back to the accepted plant")
+                try:
+                    await self._generations.switch(old_cfg, old_specs, restore=undo, fallback=False)
+                except SwitchError:
+                    log.error("the accepted plant could not be started again; nothing is running")
+                    self._lock_after_failed_recovery()
+                    raise ChangeError("plant_recovery_failed", 500) from None
                 raise ChangeError("persist_failed", 500) from None
+            self._generations.accept_generation()
             notes: list[str] = []
             for inverter_id in sorted(forget_bindings & set(removed)):
                 try:

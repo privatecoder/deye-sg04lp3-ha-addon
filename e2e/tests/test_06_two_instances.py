@@ -28,34 +28,69 @@ SLAVE_PHASE_C = 0x0201  # parallel enabled, slave, phase C
 async def instance_b(running):
     async with AsyncExitStack() as ex:
         fakes = {
-            "b_tcp": FakeInverter("b_tcp", "mbap", regs=registers(BS["b_tcp"], soc=70, role=MASTER_PHASE_B)),
-            "b_rtu": FakeInverter("b_rtu", "rtu", regs=registers(BS["b_rtu"], soc=71, role=SLAVE_PHASE_C)),
+            "b_tcp": FakeInverter(
+                "b_tcp", "mbap", regs=registers(BS["b_tcp"], soc=70, role=MASTER_PHASE_B)
+            ),
+            "b_rtu": FakeInverter(
+                "b_rtu", "rtu", regs=registers(BS["b_rtu"], soc=71, role=SLAVE_PHASE_C)
+            ),
         }
         for f in fakes.values():
             ex.push_async_callback(f.stop)
             await f.start()
 
         def endpoint(eid, kind, fake):
-            return {"id": eid, "transport": kind, "host": "127.0.0.1", "port": fake.port, "timeout_s": 2.0, "request_gap_ms": 20}
+            return {
+                "id": eid,
+                "transport": kind,
+                "host": "127.0.0.1",
+                "port": fake.port,
+                "timeout_s": 2.0,
+                "request_gap_ms": 20,
+            }
 
-        endpoints = [endpoint("gw_a", "modbus_tcp", fakes["b_tcp"]), endpoint("gw_b", "rtu_over_tcp", fakes["b_rtu"])]
+        endpoints = [
+            endpoint("gw_a", "modbus_tcp", fakes["b_tcp"]),
+            endpoint("gw_b", "rtu_over_tcp", fakes["b_rtu"]),
+        ]
         inverters = [
-            {"id": "b_tcp", "name": "b_tcp", "endpoint": "gw_a", "unit_id": 1, "poll_fast_s": 2, "poll_energy_s": 10},
-            {"id": "b_rtu", "name": "b_rtu", "endpoint": "gw_b", "unit_id": 1, "poll_fast_s": 2, "poll_energy_s": 10},
+            {
+                "id": "b_tcp",
+                "name": "b_tcp",
+                "endpoint": "gw_a",
+                "unit_id": 1,
+                "poll_fast_s": 2,
+                "poll_energy_s": 10,
+            },
+            {
+                "id": "b_rtu",
+                "name": "b_rtu",
+                "endpoint": "gw_b",
+                "unit_id": 1,
+                "poll_fast_s": 2,
+                "poll_energy_s": 10,
+            },
         ]
         # the same default topic prefix as instance A on purpose: only the instance id separates them
-        app = ProcessApp("b", options("127.0.0.1", running.broker.port, endpoints, inverters, instance_id=B))
+        app = ProcessApp(
+            "b", options("127.0.0.1", running.broker.port, endpoints, inverters, instance_id=B)
+        )
         ex.callback(app.cleanup)
         app.start()
         await app.wait_api(60)
         await app.choose_all(["b_tcp", "b_rtu"])
         # b_tcp is an island inverter: no grid, load and inverter values instead
-        status, body = await app.sensors("b_tcp", features={"utility_grid": False, "grid_port_use": "unused"})
+        status, body = await app.sensors(
+            "b_tcp", features={"utility_grid": False, "grid_port_use": "unused"}
+        )
         assert status == 200, body
 
         async def data():
             states = await running.ha.states()
-            return all(inverter_states(states, B, i).get("battery_soc") == str(v) for i, v in (("b_tcp", 70), ("b_rtu", 71)))
+            return all(
+                inverter_states(states, B, i).get("battery_soc") == str(v)
+                for i, v in (("b_tcp", 70), ("b_rtu", 71))
+            )
 
         await until(data, "instance B delivers data", 120, 2)
         yield app, fakes
@@ -65,7 +100,11 @@ async def instance_b(running):
 async def inverter_snapshot(running):
     """Everything B's inverters show in Home Assistant (energy included) and its retained documents."""
     states = await running.ha.states()
-    mine = {e: s["state"] for e, s in states.items() if re.match(rf"^(sensor|binary_sensor)\.deye_{B}_b_(tcp|rtu)_", e)}
+    mine = {
+        e: s["state"]
+        for e, s in states.items()
+        if re.match(rf"^(sensor|binary_sensor)\.deye_{B}_b_(tcp|rtu)_", e)
+    }
     registry = sorted(u for u in await ours(running.ha, B) if "_app_" not in u)
     docs = {t: p for t, p in (await running.broker.retained("homeassistant/#")).items() if B in t}
     return mine, registry, docs
@@ -73,7 +112,9 @@ async def inverter_snapshot(running):
 
 async def test_island_inverter_and_configured_parallel_roles(running, instance_b):
     entries = await ours(running.ha, B)
-    assert not [u for u in entries if u.endswith("b_tcp_grid_voltage_a")], "an island inverter has no grid values"
+    assert not [u for u in entries if u.endswith("b_tcp_grid_voltage_a")], (
+        "an island inverter has no grid values"
+    )
     assert [u for u in entries if u.endswith("b_rtu_grid_voltage_a")]
     assert [u for u in entries if u.endswith("b_tcp_load_power_total")]
     keys = ("parallel_enable", "parallel_master", "parallel_phase")
@@ -85,7 +126,9 @@ async def test_island_inverter_and_configured_parallel_roles(running, instance_b
         got = (tuple(tcp.get(k) for k in keys), tuple(rtu.get(k) for k in keys))
         return got == ((("on", "on", "B")), ("on", "off", "C")) or None
 
-    await until(roles, "the configured parallel roles are shown (master/phase B and slave/phase C)", 60, 1)
+    await until(
+        roles, "the configured parallel roles are shown (master/phase B and slave/phase C)", 60, 1
+    )
 
 
 async def test_identities_are_disjoint(running, instance_b):
@@ -104,13 +147,17 @@ async def test_changes_at_instance_a_do_not_touch_instance_b(running, instance_b
     ha, app = running.ha, running.app
     before = await inverter_snapshot(running)
     assert before[1], "instance B has registered entities"
-    assert any("_energy_" in e for e in before[0]), "B's energy availability and values are compared, too"
+    assert any("_energy_" in e for e in before[0]), (
+        "B's energy availability and values are compared, too"
+    )
     log = await MessageLog(running.broker, f"deye_monitor/{B}/#").start()
     try:
         # A: deselect a sensor, change the feature set (explicit deviation stays), switch the generation
         status, body = await app.sensors("deye_v5", remove=["pv2_power"])
         assert status == 200, body
-        status, body = await app.sensors("deye_ser", features={"battery": False}, add=["battery_soc"])
+        status, body = await app.sensors(
+            "deye_ser", features={"battery": False}, add=["battery_soc"]
+        )
         assert status == 200, body
         await app.terminate()
         app.edit_plant("deye_rtu", energy_resolution="1")
@@ -127,7 +174,12 @@ async def test_changes_at_instance_a_do_not_touch_instance_b(running, instance_b
                 and "battery_voltage" not in got  # the template dropped it
             )
 
-        await until(a_done, "instance A shows the deselection, the new generation and the explicit deviation", 180, 2)
+        await until(
+            a_done,
+            "instance A shows the deselection, the new generation and the explicit deviation",
+            180,
+            2,
+        )
         await asyncio.sleep(3)
     finally:
         await log.stop()
@@ -136,7 +188,11 @@ async def test_changes_at_instance_a_do_not_touch_instance_b(running, instance_b
     assert after[1] == before[1], "no registry entry of B appeared or vanished"
     assert after[2] == before[2], "no retained document of B was touched"
     # B never published a different energy series than the one it started with
-    series = {m for m in (re.findall(r"_energy_[a-z_]+_(g\d+)", t) for _, t, _, _ in log.messages) for m in m}
+    series = {
+        m
+        for m in (re.findall(r"_energy_[a-z_]+_(g\d+)", t) for _, t, _, _ in log.messages)
+        for m in m
+    }
     assert series <= {"g0"}
 
 

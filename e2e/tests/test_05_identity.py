@@ -33,9 +33,13 @@ async def test_a_replaced_device_is_quarantined_and_publishes_nothing_under_the_
         async def quarantined():
             inv = (await app.inverters())["deye_tcp"]
             got = inverter_states(await ha.states(), INSTANCE, "deye_tcp")
-            return inv["status"]["state"] == "quarantined" and all(v == "unavailable" for v in got.values())
+            return inv["status"]["state"] == "quarantined" and all(
+                v == "unavailable" for v in got.values()
+            )
 
-        await until(quarantined, "the inverter is quarantined and its entities are unavailable", 150, 1)
+        await until(
+            quarantined, "the inverter is quarantined and its entities are unavailable", 150, 1
+        )
         await asyncio.sleep(10)  # more cycles of the foreign device: still nothing
         other = inverter_states(await ha.states(), INSTANCE, "deye_v5")
         assert other["battery_soc"] == "55", "other inverters are unaffected"
@@ -43,7 +47,9 @@ async def test_a_replaced_device_is_quarantined_and_publishes_nothing_under_the_
         assert 99 not in log.json_values("battery_soc"), "a foreign value was published"
         assert not [v for v in log.json_values("serial_number") if v not in (None, "2401000001")]
         # Home Assistant itself never saw a foreign value
-        seen = await history(ha, entity_id(INSTANCE, "deye_tcp", "battery_soc"), t0, datetime.now(UTC))
+        seen = await history(
+            ha, entity_id(INSTANCE, "deye_tcp", "battery_soc"), t0, datetime.now(UTC)
+        )
         assert "99" not in seen and seen, seen
     finally:
         await log.stop()
@@ -54,4 +60,6 @@ async def test_a_replaced_device_is_quarantined_and_publishes_nothing_under_the_
     async def recovered():
         return inverter_states(await ha.states(), INSTANCE, "deye_tcp").get("battery_soc") == "55"
 
-    await until(recovered, "the inverter recovers when the bound serial number answers again", 180, 2)
+    await until(
+        recovered, "the inverter recovers when the bound serial number answers again", 180, 2
+    )

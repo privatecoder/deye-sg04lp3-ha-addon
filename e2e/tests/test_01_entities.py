@@ -13,14 +13,19 @@ from tests.helpers import INV, inverter_states, ours, uid
 
 pytestmark = pytest.mark.usefixtures("running")
 
-COMMAND_FIELDS = re.compile(r"(command|^cmd_|_cmd_|^set_|_set_topic|payload_(press|open|close|stop|lock|unlock|install|reset|turn_on|turn_off))")
+COMMAND_FIELDS = re.compile(
+    r"(command|^cmd_|_cmd_|^set_|_set_topic|payload_(press|open|close|stop|lock|unlock|install|reset|turn_on|turn_off))"
+)
 
 
 async def test_registry_ids_domains_and_metadata(running):
     entries = await ours(running.ha, INSTANCE)
     assert entries, "no MQTT entities of the app in the registry"
     for unique_id, e in entries.items():
-        assert e["entity_id"] == f"{e['entity_id'].split('.')[0]}.{unique_id}", (unique_id, e["entity_id"])
+        assert e["entity_id"] == f"{e['entity_id'].split('.')[0]}.{unique_id}", (
+            unique_id,
+            e["entity_id"],
+        )
         assert e["entity_id"].split(".")[0] in ("sensor", "binary_sensor"), e["entity_id"]
     for inverter in INV:
         assert uid(INSTANCE, inverter, "battery_soc") in entries
@@ -50,7 +55,11 @@ async def test_units_device_and_state_classes(running):
     for inverter in INV:
         for key, (unit, dclass, sclass) in expect.items():
             attrs = states[f"sensor.{uid(INSTANCE, inverter, key)}"]["attributes"]
-            assert (attrs.get("unit_of_measurement"), attrs.get("device_class"), attrs.get("state_class")) == (unit, dclass, sclass), (inverter, key, attrs)
+            assert (
+                attrs.get("unit_of_measurement"),
+                attrs.get("device_class"),
+                attrs.get("state_class"),
+            ) == (unit, dclass, sclass), (inverter, key, attrs)
 
 
 async def test_values_match_the_fake_registers(running):
@@ -89,9 +98,15 @@ async def test_only_sensor_and_binary_sensor_platforms_and_no_command_fields(run
             offenders.append(f"{path}={node}")
 
     for topic, doc in ours_docs.items():
-        assert topic.startswith(("homeassistant/device/", "homeassistant/sensor/", "homeassistant/binary_sensor/")), topic
+        assert topic.startswith(
+            ("homeassistant/device/", "homeassistant/sensor/", "homeassistant/binary_sensor/")
+        ), topic
         for key, comp in doc.get("components", {}).items():
-            assert comp.get("platform") in ("sensor", "binary_sensor"), (topic, key, comp.get("platform"))
+            assert comp.get("platform") in ("sensor", "binary_sensor"), (
+                topic,
+                key,
+                comp.get("platform"),
+            )
         walk(doc, topic)
     assert offenders == []
 

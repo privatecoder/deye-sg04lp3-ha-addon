@@ -36,7 +36,9 @@ async def test_deselect_removes_the_entity_from_the_registry_and_neighbours_stay
     assert await in_registry(ha, "deye_v5", "pv2_power")  # other inverters are untouched
 
 
-async def test_a_cold_start_of_home_assistant_keeps_it_removed_and_reselecting_brings_it_back(running):
+async def test_a_cold_start_of_home_assistant_keeps_it_removed_and_reselecting_brings_it_back(
+    running,
+):
     ha, app = running.ha, running.app
     await ha.stop()
     await ha.cold_start()
@@ -49,7 +51,9 @@ async def test_a_cold_start_of_home_assistant_keeps_it_removed_and_reselecting_b
     fresh = (await ha.states())[entity_id(INSTANCE, "deye_tcp", "pv1_power")]
     # a value after the birth message: published after the restart began, no cache replay
     assert datetime.fromisoformat(fresh["last_updated"]) >= started, fresh["last_updated"]
-    assert not await in_registry(ha, "deye_tcp", "pv2_power"), "the removed component must stay removed"
+    assert not await in_registry(ha, "deye_tcp", "pv2_power"), (
+        "the removed component must stay removed"
+    )
     assert entity_id(INSTANCE, "deye_tcp", "pv2_power") not in await ha.states()
 
     status, body = await app.sensors("deye_tcp", add=["pv2_power"])
@@ -66,8 +70,18 @@ async def drop_and_restore(running, barrier: str | None):
     ``barrier`` the app blocks right after that persistence phase (proven) and is killed there;
     otherwise it is killed after the discovery sync. The app restarts, HA starts cold."""
     ha, app = running.ha, running.app
-    victims = ["pv1_voltage", "pv1_current", "battery_energy_charge_today_g0", "battery_energy_charge_total_g0"]
-    keys = ["pv1_voltage", "pv1_current", "battery_energy_charge_today", "battery_energy_charge_total"]
+    victims = [
+        "pv1_voltage",
+        "pv1_current",
+        "battery_energy_charge_today_g0",
+        "battery_energy_charge_total_g0",
+    ]
+    keys = [
+        "pv1_voltage",
+        "pv1_current",
+        "battery_energy_charge_today",
+        "battery_energy_charge_total",
+    ]
     await ha.stop()
     if barrier is not None:
         await app.arm_barrier(barrier)
@@ -96,16 +110,23 @@ async def drop_and_restore(running, barrier: str | None):
 
     async def cleaned():
         entries = await ours(ha, INSTANCE)
-        return all(uid(INSTANCE, "deye_v5", k) not in entries for k in victims) and uid(INSTANCE, "deye_rtu", "grid_frequency") not in entries
+        return (
+            all(uid(INSTANCE, "deye_v5", k) not in entries for k in victims)
+            and uid(INSTANCE, "deye_rtu", "grid_frequency") not in entries
+        )
 
-    await until(cleaned, "the offline removals reach the Home Assistant registry after a cold start", 240, 3)
+    await until(
+        cleaned, "the offline removals reach the Home Assistant registry after a cold start", 240, 3
+    )
     states = await ha.states()
     for k in victims:
         assert entity_id(INSTANCE, "deye_v5", k) not in states, k
 
     async def neighbours():
         got = inverter_states(await ha.states(), INSTANCE, "deye_v5")
-        return got.get("pv1_power") == "4200" and got.get("battery_energy_discharge_today_g0") not in (None, "unavailable", "unknown")
+        return got.get("pv1_power") == "4200" and got.get(
+            "battery_energy_discharge_today_g0"
+        ) not in (None, "unavailable", "unknown")
 
     await until(neighbours, "neighbours of the removed sensors keep working", 120, 2)
     assert await in_registry(ha, "deye_tcp", "battery_energy_charge_today_g0")
@@ -117,7 +138,9 @@ async def drop_and_restore(running, barrier: str | None):
 
     async def restored():
         got = inverter_states(await ha.states(), INSTANCE, "deye_v5")
-        return got.get("pv1_voltage") == "360.5" and got.get("battery_energy_charge_total_g0") not in (None, "unavailable", "unknown")
+        return got.get("pv1_voltage") == "360.5" and got.get(
+            "battery_energy_charge_total_g0"
+        ) not in (None, "unavailable", "unknown")
 
     await until(restored, "the reselected sensors come back", 120, 2)
 

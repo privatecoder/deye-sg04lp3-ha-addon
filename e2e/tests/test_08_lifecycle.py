@@ -30,7 +30,11 @@ def energy_file(app: ProcessApp) -> dict:
 
 async def series(ha, inverter="c_gen") -> set[str]:
     prefix = f"deye_{C}_{inverter}_{KEY}_"
-    return {u[len(prefix):] for u in await ours(ha, C) if u.startswith(prefix) and SERIES.match(u[len(prefix):])}
+    return {
+        u[len(prefix) :]
+        for u in await ours(ha, C)
+        if u.startswith(prefix) and SERIES.match(u[len(prefix) :])
+    }
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +52,14 @@ async def instance_c(running):
             await f.start()
 
         def endpoint(eid, kind, fake):
-            return {"id": eid, "transport": kind, "host": "127.0.0.1", "port": fake.port, "timeout_s": 1.0, "request_gap_ms": 20}
+            return {
+                "id": eid,
+                "transport": kind,
+                "host": "127.0.0.1",
+                "port": fake.port,
+                "timeout_s": 1.0,
+                "request_gap_ms": 20,
+            }
 
         endpoints = [
             endpoint("e_gen", "modbus_tcp", fakes["gen"]),
@@ -60,10 +71,26 @@ async def instance_c(running):
         poll = {"poll_fast_s": 2, "poll_energy_s": 10}
         inverters = [
             {"id": "c_gen", "name": "c_gen", "endpoint": "e_gen", "unit_id": 1, **poll},
-            {"id": "c_fb", "name": "c_fb", "endpoint": "e_fbp", "fallback_endpoint": "e_fbq", "unit_id": 1, **poll},
-            {"id": "c_dx", "name": "c_dx", "endpoint": "e_dxp", "fallback_endpoint": "e_dxq", "unit_id": 1, **poll},
+            {
+                "id": "c_fb",
+                "name": "c_fb",
+                "endpoint": "e_fbp",
+                "fallback_endpoint": "e_fbq",
+                "unit_id": 1,
+                **poll,
+            },
+            {
+                "id": "c_dx",
+                "name": "c_dx",
+                "endpoint": "e_dxp",
+                "fallback_endpoint": "e_dxq",
+                "unit_id": 1,
+                **poll,
+            },
         ]
-        app = ProcessApp("c", options("127.0.0.1", running.broker.port, endpoints, inverters, instance_id=C))
+        app = ProcessApp(
+            "c", options("127.0.0.1", running.broker.port, endpoints, inverters, instance_id=C)
+        )
         ex.callback(app.cleanup)
         app.start()
         await app.wait_api(60)
@@ -73,7 +100,8 @@ async def instance_c(running):
             states = await running.ha.states()
             return all(
                 inverter_states(states, C, i).get("battery_soc") == str(v)
-                and inverter_states(states, C, i).get("pv_energy_total_g0") not in (None, "unknown", "unavailable")
+                and inverter_states(states, C, i).get("pv_energy_total_g0")
+                not in (None, "unknown", "unavailable")
                 for i, v in (("c_gen", 41), ("c_fb", 42), ("c_dx", 44))
             )
 
@@ -94,13 +122,20 @@ async def test_failed_r65_confirmation_changes_no_generation(running, instance_c
         inv = (await app.inverters())["c_gen"]["status"]
         return (inv.get("energy") or {}).get("pending_change") is not None
 
-    await until(pending, "the changed R65 shows as a pending change, not as a new resolution", 150, 0.5)
+    await until(
+        pending, "the changed R65 shows as a pending change, not as a new resolution", 150, 0.5
+    )
     fake.fail_ranges.append((65, 66))  # ... and the confirming read fails
 
     async def failing_confirmation_observed():
         return fake.hits.get(65, 0) >= 1  # the fake answered a read of R65 with an exception
 
-    await until(failing_confirmation_observed, "the confirming read of R65 was attempted and failed", 150, 0.5)
+    await until(
+        failing_confirmation_observed,
+        "the confirming read of R65 was attempted and failed",
+        150,
+        0.5,
+    )
     fake.fail_ranges.clear()
     fake.regs[65] = 0x0104  # the device was fine all along
     fake.drop_connections()
@@ -114,12 +149,16 @@ async def test_failed_r65_confirmation_changes_no_generation(running, instance_c
     assert await series(running.ha) == {"g0"}
 
     async def valid():
-        return inverter_states(await running.ha.states(), C, "c_gen").get("battery_energy_charge_total_g0") not in (None, "unknown", "unavailable")
+        return inverter_states(await running.ha.states(), C, "c_gen").get(
+            "battery_energy_charge_total_g0"
+        ) not in (None, "unknown", "unavailable")
 
     await until(valid, "the energy entity is valid again under the unchanged generation", 120, 2)
 
 
-async def test_a_crash_right_after_the_generation_was_persisted_continues_the_same_generation(running, instance_c):
+async def test_a_crash_right_after_the_generation_was_persisted_continues_the_same_generation(
+    running, instance_c
+):
     app, fakes = instance_c
     await app.terminate()
     app.edit_plant("c_gen", energy_resolution="1")
@@ -129,7 +168,9 @@ async def test_a_crash_right_after_the_generation_was_persisted_continues_the_sa
     # the exact point: persisted (proven by the file), the event loop is blocked, nothing published
     assert energy_file(app)["c_gen"]["generation"] == 1
     docs = await running.broker.retained("homeassistant/device/#")
-    assert not [t for t, p in docs.items() if C in t and b"energy_charge_total_g1" in p], "g1 was already published"
+    assert not [t for t, p in docs.items() if C in t and b"energy_charge_total_g1" in p], (
+        "g1 was already published"
+    )
     app.kill()
     app.disarm_barrier()
     app.start()
@@ -138,12 +179,21 @@ async def test_a_crash_right_after_the_generation_was_persisted_continues_the_sa
     async def switched():
         return await series(running.ha) == {"g1"}
 
-    await until(switched, "after the crash the same new generation g1 is published (never a fallback to g0)", 180, 2)
+    await until(
+        switched,
+        "after the crash the same new generation g1 is published (never a fallback to g0)",
+        180,
+        2,
+    )
     assert energy_file(app)["c_gen"]["generation"] == 1
-    assert not any(u.endswith("c_gen_battery_energy_charge_total_g0") for u in await ours(running.ha, C))
+    assert not any(
+        u.endswith("c_gen_battery_energy_charge_total_g0") for u in await ours(running.ha, C)
+    )
 
 
-async def test_damaged_energy_history_blocks_energy_until_an_explicit_reset_gives_a_new_namespace(running, instance_c):
+async def test_damaged_energy_history_blocks_energy_until_an_explicit_reset_gives_a_new_namespace(
+    running, instance_c
+):
     app, _ = instance_c
     await app.terminate()
     (app.dir / "energy-generations.json").write_text("{this is not json")  # noqa: ASYNC240
@@ -159,14 +209,19 @@ async def test_damaged_energy_history_blocks_energy_until_an_explicit_reset_give
     async def others_flow():
         return inverter_states(await running.ha.states(), C, "c_gen").get("battery_soc") == "41"
 
-    await until(others_flow, "non-energy values keep flowing while the energy series is blocked", 90, 2)
+    await until(
+        others_flow, "non-energy values keep flowing while the energy series is blocked", 90, 2
+    )
     got = inverter_states(await running.ha.states(), C, "c_gen")
     energy_keys = [k for k in got if "_energy_" in k]
     assert energy_keys and all(got[k] in ("unknown", "unavailable") for k in energy_keys), got
 
     counter = await app.action_counter()
     status, body = await app.api(
-        "POST", "api/stores/reset", {"kind": "energy", "scope": "inverter", "inverter": "c_gen", "confirm": True}, revision=counter
+        "POST",
+        "api/stores/reset",
+        {"kind": "energy", "scope": "inverter", "inverter": "c_gen", "confirm": True},
+        revision=counter,
     )
     assert status == 200, body
 
@@ -181,17 +236,29 @@ async def test_damaged_energy_history_blocks_energy_until_an_explicit_reset_give
     assert not found & {"g0", "g1"}, "no reuse of an already published series"
 
 
-async def test_fallback_with_the_same_serial_keeps_publishing_under_the_same_ids(running, instance_c):
+async def test_fallback_with_the_same_serial_keeps_publishing_under_the_same_ids(
+    running, instance_c
+):
     app, fakes = instance_c
     before = set(await ours(running.ha, C))
     await fakes["fbp"].set_down(True)
 
     async def on_fallback():
         status = (await app.inverters())["c_fb"]["status"]
-        return status["active_path"] != "primary" and inverter_states(await running.ha.states(), C, "c_fb").get("battery_soc") == "43"
+        return (
+            status["active_path"] != "primary"
+            and inverter_states(await running.ha.states(), C, "c_fb").get("battery_soc") == "43"
+        )
 
-    await until(on_fallback, "the inverter continues through the fallback endpoint (same serial number)", 200, 2)
-    assert {u for u in before if "c_fb_" in u} <= set(await ours(running.ha, C)), "entity ids do not depend on the path"
+    await until(
+        on_fallback,
+        "the inverter continues through the fallback endpoint (same serial number)",
+        200,
+        2,
+    )
+    assert {u for u in before if "c_fb_" in u} <= set(await ours(running.ha, C)), (
+        "entity ids do not depend on the path"
+    )
     assert len(fakes["fbq"].wire.reads) > 20
     await fakes["fbp"].set_down(False)
 
@@ -206,10 +273,20 @@ async def test_fallback_with_a_different_serial_is_never_published(running, inst
             state = (await app.inverters())["c_dx"]["status"]["state"]
             return len(fakes["dxq"].wire.reads) > 0 and state in ("quarantined", "offline")
 
-        await until(foreign_device_contacted_and_withdrawn, "the foreign device behind the fallback was contacted and the inverter withdrawn", 200, 2)
+        await until(
+            foreign_device_contacted_and_withdrawn,
+            "the foreign device behind the fallback was contacted and the inverter withdrawn",
+            200,
+            2,
+        )
         await asyncio.sleep(10)
-        assert 99 not in log.json_values("battery_soc"), "a value of the foreign device was published"
-        assert inverter_states(await running.ha.states(), C, "c_dx").get("battery_soc") == "unavailable"
+        assert 99 not in log.json_values("battery_soc"), (
+            "a value of the foreign device was published"
+        )
+        assert (
+            inverter_states(await running.ha.states(), C, "c_dx").get("battery_soc")
+            == "unavailable"
+        )
     finally:
         await log.stop()
     await fakes["dxp"].set_down(False)

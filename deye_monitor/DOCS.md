@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher (0.1.0, experimental).** The app validates its
+> **Status: device loop with MQTT publisher (0.2.0, experimental).** The app validates its
 > configuration, then connects to the configured endpoints (read-only, Modbus function code 03
 > only), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
@@ -10,7 +10,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.1.0 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.0 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -370,7 +370,12 @@ from the empty overview; the page **Set up plant** (top navigation) edits everyt
 * **Changes apply immediately, without restarting the app.** The app stops the running polling and
   MQTT session in order and starts them again for the new plant (a short pause; the inverters are
   published `offline` in between and come back after identification). If the new plant cannot be
-  started, or cannot be saved, the previous plant is restored and the change is reported as failed.
+  started, or cannot be saved, the previous plant is restored exactly (selection records included)
+  and the change is reported as failed. Until a change is saved, the proposed generation publishes
+  nothing to MQTT and does not touch `identity.json` (an `expected_serial` is bound after saving).
+  If the previous plant cannot be started again either, nothing keeps running, the interface says
+  so and further changes are blocked until the app is restarted (it then starts from the saved
+  plant). A running connection check is cancelled by a plant change.
   Removed inverters are taken out of the discovery through the existing cleanup ledger.
 
 ### Using the web interface

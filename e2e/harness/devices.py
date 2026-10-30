@@ -14,24 +14,66 @@ def pair(value: int, low: int, high: int, signed: bool = False) -> dict[int, int
     return {low: raw & 0xFFFF, high: raw >> 16}
 
 
-def registers(serial: str, *, soc: int = 55, pv1: int = 4200, role: int = 0, energy_total_raw: int = 34567) -> dict[int, int]:
+def registers(
+    serial: str, *, soc: int = 55, pv1: int = 4200, role: int = 0, energy_total_raw: int = 34567
+) -> dict[int, int]:
     regs: dict[int, int] = {
-        0: 0x0500, 22: 0x0203, 24: 1, 15: 0x1001, 17: 0x1000, 18: 0x0070, 65: 0x0104,
-        500: 2, 551: 1, 553: 0, 554: 0, 555: 0x0001, 556: 0, 557: 0, 558: 0,
-        541: 1355, 586: 253, 587: 5120, 588: soc, 591: s16(-150),
-        598: 2300, 599: 2310, 600: 2320, 609: 5001,
-        672: pv1, 676: 3605, 677: 117, 673: 1800, 678: 3101, 679: 58,
+        0: 0x0500,
+        22: 0x0203,
+        24: 1,
+        15: 0x1001,
+        17: 0x1000,
+        18: 0x0070,
+        65: 0x0104,
+        500: 2,
+        551: 1,
+        553: 0,
+        554: 0,
+        555: 0x0001,
+        556: 0,
+        557: 0,
+        558: 0,
+        541: 1355,
+        586: 253,
+        587: 5120,
+        588: soc,
+        591: s16(-150),
+        598: 2300,
+        599: 2310,
+        600: 2320,
+        609: 5001,
+        672: pv1,
+        676: 3605,
+        677: 117,
+        673: 1800,
+        678: 3101,
+        679: 58,
         336: role,
-        80: 1, 98: 0, 133: 0, 111: 0,
+        80: 1,
+        98: 0,
+        133: 0,
+        111: 0,
         # energy counters (raw words; the resolution comes from R65)
-        514: 123, 515: 45, 520: 67, 521: 89, 526: 111, 529: 222,
+        514: 123,
+        515: 45,
+        520: 67,
+        521: 89,
+        526: 111,
+        529: 222,
     }
     regs.update(serial_words(serial))
     regs.update(pair(80000, 20, 21))  # rated power 8 kW at 0.1 W
     regs.update(pair(-1500, 625, 690))  # grid selected power (s32)
     regs.update(pair(3200, 636, 694))
     regs.update(pair(70000, 653, 659))
-    for low, high, v in ((516, 517, energy_total_raw), (518, 519, 20100), (522, 523, 5000), (524, 525, 6000), (527, 528, 70000), (534, 535, 123456)):
+    for low, high, v in (
+        (516, 517, energy_total_raw),
+        (518, 519, 20100),
+        (522, 523, 5000),
+        (524, 525, 6000),
+        (527, 528, 70000),
+        (534, 535, 123456),
+    ):
         regs.update(pair(v, low, high))
     return regs
 

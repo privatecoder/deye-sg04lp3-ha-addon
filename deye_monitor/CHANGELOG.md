@@ -1,13 +1,31 @@
 # Changelog
 
-## 0.1.0
+## 0.2.0
 
-- Plant setup in the web interface (T14): connections and inverters are created, edited and deleted
-  in the Ingress interface (setup assistant for the first start, read-only connection check,
+- Setup in the web interface (T14): connections and inverters are created, edited and deleted in
+  the Ingress interface (setup assistant for the first start, read-only connection check,
   transport chooser with explanations, serial device list, live adoption with rollback) and stored
   in `/data/plant.{a,b}.json`; the app options keep only `mqtt`, `log_level` and `instance_id`.
   `endpoints`/`inverters` in the options are taken over once (migration) and then only produce a
-  hint.
+  hint. The app stays strictly read-only (`allow_writes` cannot be set in the interface).
+- Manifest: default-valued keys flagged by the Home Assistant app linter were removed.
+- Review 9 corrections of the plant change:
+  - A rejected change (disk write or start failure) restores the accepted state exactly: selection
+    records are put back as they were, the proposed generation neither publishes discovery nor
+    retires entities, and it does not touch `identity.json`; an `expected_serial` is bound only
+    after the plant is durable (also safe against a process kill in between).
+  - If the accepted plant cannot be started again after a rejected change, nothing keeps running,
+    the interface shows it and blocks further changes until the app is restarted.
+  - A plant change cancels running connection checks before the generation is stopped; a check
+    can no longer reopen a retired connection. Unsaved checks on an explicitly shared `bus_id` use
+    that bus' scheduler.
+  - A stale selection record of a deleted inverter is removed before the next plant change and at
+    start, so a re-created inverter with the same id never inherits an old selection.
+  - Editing a connection keeps its saved port; a saved change whose reload fails is not reported
+    as failed and not sent again.
+  - End-to-end: the wire check also covers the plant setup scenario's fake inverter.
+
+## 0.1.0
 
 - Initial packaging: configuration schema, translations (en, de), s6 service, container build.
 - Protocol layer (Modbus FC03, Solarman V5), read-only guard, transports and bus scheduler.

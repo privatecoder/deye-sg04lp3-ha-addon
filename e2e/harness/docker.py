@@ -162,7 +162,14 @@ def _subnet_holders(subnet: str | None) -> list[str]:
         return []
     out = []
     for net in run("network", "ls", "-q", check=False).stdout.split():
-        info = run("network", "inspect", net, "--format", "{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}} {{.Labels}}", check=False).stdout.strip()
+        info = run(
+            "network",
+            "inspect",
+            net,
+            "--format",
+            "{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}} {{.Labels}}",
+            check=False,
+        ).stdout.strip()
         if subnet.split("/")[0].rsplit(".", 2)[0] in info:
             out.append(info)
     return out
@@ -209,7 +216,9 @@ class Container:
     args: list[str] = field(default_factory=list)
     command: list[str] = field(default_factory=list)
     ip: str | None = None
-    published: dict[int, int] = field(default_factory=dict)  # container port -> loopback port (assigned)
+    published: dict[int, int] = field(
+        default_factory=dict
+    )  # container port -> loopback port (assigned)
     started: bool = False
 
     def start(self) -> None:
@@ -250,7 +259,10 @@ class Container:
         return proc.stdout + proc.stderr
 
     def running(self) -> bool:
-        return run("inspect", "-f", "{{.State.Running}}", self.name, check=False).stdout.strip() == "true"
+        return (
+            run("inspect", "-f", "{{.State.Running}}", self.name, check=False).stdout.strip()
+            == "true"
+        )
 
 
 def wait_for(predicate, what: str, deadline_s: float, step_s: float = 0.5):  # type: ignore[no-untyped-def]
@@ -275,7 +287,11 @@ PROXY_DIGEST = "sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b
 def ensure_images() -> dict[str, str]:
     """Pull what is missing and verify the pinned digests; returns image -> digest for the report."""
     seen: dict[str, str] = {}
-    for image, digest in ((MOSQUITTO, MOSQUITTO_DIGEST), (HOME_ASSISTANT, HOME_ASSISTANT_DIGEST), (PROXY, PROXY_DIGEST)):
+    for image, digest in (
+        (MOSQUITTO, MOSQUITTO_DIGEST),
+        (HOME_ASSISTANT, HOME_ASSISTANT_DIGEST),
+        (PROXY, PROXY_DIGEST),
+    ):
         if run("image", "inspect", image, check=False).returncode != 0:
             run("pull", image, timeout=1500)
         actual = image_digest(image)

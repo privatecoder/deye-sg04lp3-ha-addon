@@ -40,10 +40,11 @@ export async function openEndpointDialog(endpoint = null) {
     build(close) {
       const save = h('button', { class: 'btn primary', type: 'button', disabled: !canEdit() }, t('ep.save'));
       save.addEventListener('click', async () => {
+        const done = (id) => { toast(t('ep.saved'), 'ok'); close(id); };
         busy(save, true);
-        const id = await saveEndpoint(form, { editing, message });
+        const id = await saveEndpoint(form, { editing, message, onLoaded: done });
         busy(save, false);
-        if (id) { toast(t('ep.saved'), 'ok'); close(id); }
+        if (id) done(id);
       });
       return h('div', { class: 'modal-body' }, form.el, panel.el, message,
         h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onClick: () => close(null) }, t('common.cancel')), save));
@@ -76,10 +77,11 @@ export function openInverterDialog(inverter = null, defaultEndpoint = null) {
     build(close) {
       const save = h('button', { class: 'btn primary', type: 'button', disabled: !canEdit() }, t('inv.save'));
       save.addEventListener('click', async () => {
+        const done = (id) => { toast(t('inv.saved'), 'ok'); close(id); };
         busy(save, true);
-        const id = await saveInverter(form, { editing, message });
+        const id = await saveInverter(form, { editing, message, onLoaded: done });
         busy(save, false);
-        if (id) { toast(t('inv.saved'), 'ok'); close(id); }
+        if (id) done(id);
       });
       return h('div', { class: 'modal-body' }, form.el, h('p', { class: 'note' }, t('inv.apply_note')), panel.el, message,
         h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onClick: () => close(null) }, t('common.cancel')), save));
@@ -111,10 +113,11 @@ function confirmEndpointDelete(ep) {
     build(close) {
       const go = h('button', { class: 'btn danger', type: 'button' }, t('ep.delete_do'));
       go.addEventListener('click', async () => {
+        const done = () => { toast(t('ep.deleted'), 'ok'); close(true); };
         busy(go, true);
-        const result = await deleteEndpoint(ep.id, { message });
+        const result = await deleteEndpoint(ep.id, { message, onLoaded: done });
         busy(go, false);
-        if (result) { toast(t('ep.deleted'), 'ok'); close(true); }
+        if (result) done();
       });
       return h('div', { class: 'modal-body' }, h('p', {}, t('ep.delete_text', { id: ep.id })), message,
         h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onClick: () => close(false) }, t('common.cancel')), go));
@@ -130,14 +133,15 @@ function confirmInverterDelete(inv) {
       const binding = h('input', { type: 'checkbox', id: 'delete-binding' });
       const go = h('button', { class: 'btn danger', type: 'button' }, t('inv.delete_do'));
       go.addEventListener('click', async () => {
-        busy(go, true);
-        const result = await deleteInverter(inv.id, binding.checked, { message });
-        busy(go, false);
-        if (result) {
+        const done = (result) => {
           toast(t('inv.deleted'), 'ok');
           if ((result.notes || []).includes('binding_not_removed')) toast(t('inv.deleted_binding_failed'), 'error');
           close(true);
-        }
+        };
+        busy(go, true);
+        const result = await deleteInverter(inv.id, binding.checked, { message, onLoaded: done });
+        busy(go, false);
+        if (result) done(result);
       });
       return h('div', { class: 'modal-body' },
         h('p', { class: 'banner warn' }, t('inv.delete_text', { name: inv.name })),

@@ -31,7 +31,12 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 ARTIFACTS = HERE / "artifacts" / docker.RUN_ID  # per run: parallel runs never overwrite each other
 INSTANCE = "e2eaaaa1"
-SERIALS = {"deye_tcp": "2401000001", "deye_rtu": "2401000002", "deye_v5": "2401000003", "deye_ser": "2401000004"}
+SERIALS = {
+    "deye_tcp": "2401000001",
+    "deye_rtu": "2401000002",
+    "deye_v5": "2401000003",
+    "deye_ser": "2401000004",
+}
 
 
 @dataclass
@@ -45,19 +50,65 @@ class Stack:
     extras: list[object] = field(default_factory=list)
 
 
-def app_options(broker_port: int, fakes: dict[str, FakeInverter], instance: str, prefix: str = "deye_monitor") -> dict:
+def app_options(
+    broker_port: int, fakes: dict[str, FakeInverter], instance: str, prefix: str = "deye_monitor"
+) -> dict:
     endpoints = [
-        {"id": "gw_tcp", "transport": "modbus_tcp", "host": "127.0.0.1", "port": fakes["deye_tcp"].port, "timeout_s": 2.0, "request_gap_ms": 20},
-        {"id": "gw_rtu", "transport": "rtu_over_tcp", "host": "127.0.0.1", "port": fakes["deye_rtu"].port, "timeout_s": 2.0, "request_gap_ms": 20},
-        {"id": "gw_v5", "transport": "solarman_v5_tcp", "host": "127.0.0.1", "port": fakes["deye_v5"].port, "logger_serial": LOGGER_SERIAL, "timeout_s": 2.0, "request_gap_ms": 20},
-        {"id": "gw_ser", "transport": "serial_rtu", "serial_device": fakes["deye_ser"].path, "baudrate": 9600, "timeout_s": 2.0, "request_gap_ms": 20},
+        {
+            "id": "gw_tcp",
+            "transport": "modbus_tcp",
+            "host": "127.0.0.1",
+            "port": fakes["deye_tcp"].port,
+            "timeout_s": 2.0,
+            "request_gap_ms": 20,
+        },
+        {
+            "id": "gw_rtu",
+            "transport": "rtu_over_tcp",
+            "host": "127.0.0.1",
+            "port": fakes["deye_rtu"].port,
+            "timeout_s": 2.0,
+            "request_gap_ms": 20,
+        },
+        {
+            "id": "gw_v5",
+            "transport": "solarman_v5_tcp",
+            "host": "127.0.0.1",
+            "port": fakes["deye_v5"].port,
+            "logger_serial": LOGGER_SERIAL,
+            "timeout_s": 2.0,
+            "request_gap_ms": 20,
+        },
+        {
+            "id": "gw_ser",
+            "transport": "serial_rtu",
+            "serial_device": fakes["deye_ser"].path,
+            "baudrate": 9600,
+            "timeout_s": 2.0,
+            "request_gap_ms": 20,
+        },
     ]
-    endpoint_of = {"deye_tcp": "gw_tcp", "deye_rtu": "gw_rtu", "deye_v5": "gw_v5", "deye_ser": "gw_ser"}
+    endpoint_of = {
+        "deye_tcp": "gw_tcp",
+        "deye_rtu": "gw_rtu",
+        "deye_v5": "gw_v5",
+        "deye_ser": "gw_ser",
+    }
     inverters = [
-        {"id": iid, "name": iid, "endpoint": endpoint_of[iid], "unit_id": 1, "expected_serial": SERIALS[iid], "poll_fast_s": 2, "poll_energy_s": 10}
+        {
+            "id": iid,
+            "name": iid,
+            "endpoint": endpoint_of[iid],
+            "unit_id": 1,
+            "expected_serial": SERIALS[iid],
+            "poll_fast_s": 2,
+            "poll_energy_s": 10,
+        }
         for iid in SERIALS
     ]
-    return options("127.0.0.1", broker_port, endpoints, inverters, instance_id=instance, topic_prefix=prefix)
+    return options(
+        "127.0.0.1", broker_port, endpoints, inverters, instance_id=instance, topic_prefix=prefix
+    )
 
 
 @pytest.fixture(scope="session")
@@ -116,7 +167,9 @@ async def running(stack: Stack) -> Stack:
 
         return all(good(i) for i in INV)
 
-    await until(all_data, "all four inverters deliver data (incl. energy) to Home Assistant", 120, 2)
+    await until(
+        all_data, "all four inverters deliver data (incl. energy) to Home Assistant", 120, 2
+    )
     return stack
 
 
@@ -145,7 +198,12 @@ def _tree_hash(paths: list[Path]) -> tuple[str, int]:
     for base in paths:
         files = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
         for f in files:
-            if "__pycache__" in f.parts or f.suffix == ".pyc" or "artifacts" in f.parts or ".venv" in f.parts:
+            if (
+                "__pycache__" in f.parts
+                or f.suffix == ".pyc"
+                or "artifacts" in f.parts
+                or ".venv" in f.parts
+            ):
                 continue
             digest.update(str(f.relative_to(REPO)).encode() + b"\0" + f.read_bytes() + b"\0")
             count += 1
@@ -163,7 +221,14 @@ def record_versions(extra: dict) -> None:
 def _write_versions(images: dict[str, str], cleaned: list[str]) -> None:
     import deye_monitor
 
-    app_hash, app_files = _tree_hash([REPO / "deye_monitor" / "src", REPO / "deye_monitor" / "Dockerfile", REPO / "deye_monitor" / "pyproject.toml", REPO / "deye_monitor" / "uv.lock"])
+    app_hash, app_files = _tree_hash(
+        [
+            REPO / "deye_monitor" / "src",
+            REPO / "deye_monitor" / "Dockerfile",
+            REPO / "deye_monitor" / "pyproject.toml",
+            REPO / "deye_monitor" / "uv.lock",
+        ]
+    )
     e2e_hash, e2e_files = _tree_hash([HERE / "harness", HERE / "tests", HERE / "conftest.py"])
     record_versions(
         {

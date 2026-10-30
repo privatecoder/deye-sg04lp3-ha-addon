@@ -12,7 +12,9 @@ from harness.devices import EXPECTED  # noqa: F401 - re-exported for the tests
 INV = ("deye_tcp", "deye_rtu", "deye_v5", "deye_ser")
 
 
-async def until(check: Callable[[], Awaitable[Any]], what: str, deadline_s: float = 60, step_s: float = 1.0) -> Any:
+async def until(
+    check: Callable[[], Awaitable[Any]], what: str, deadline_s: float = 60, step_s: float = 1.0
+) -> Any:
     """Poll ``check`` (async) until it returns a truthy value; fails with ``what`` and the last value."""
     loop = asyncio.get_running_loop()
     end = loop.time() + deadline_s
@@ -41,7 +43,8 @@ async def ours(ha: Any, instance: str) -> dict[str, dict[str, Any]]:
     return {
         e["unique_id"]: e
         for e in await registry(ha)
-        if e.get("platform") == "mqtt" and str(e.get("unique_id", "")).startswith(f"deye_{instance}_")
+        if e.get("platform") == "mqtt"
+        and str(e.get("unique_id", "")).startswith(f"deye_{instance}_")
     }
 
 
@@ -54,7 +57,9 @@ async def state_of(ha: Any, eid: str) -> str | None:
     return states[eid]["state"] if eid in states else None
 
 
-def inverter_states(states: dict[str, dict[str, Any]], instance: str, inverter: str) -> dict[str, str]:
+def inverter_states(
+    states: dict[str, dict[str, Any]], instance: str, inverter: str
+) -> dict[str, str]:
     prefix = re.compile(rf"^(sensor|binary_sensor)\.deye_{instance}_{inverter}_(.+)$")
     return {m.group(2): s["state"] for eid, s in states.items() if (m := prefix.match(eid))}
 

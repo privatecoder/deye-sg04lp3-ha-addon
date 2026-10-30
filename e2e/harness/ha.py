@@ -164,14 +164,22 @@ class HomeAssistant:
                 await ws.send_json({"type": "auth", "access_token": access})
                 await ws.receive_json()
                 await ws.send_json(
-                    {"id": 1, "type": "auth/long_lived_access_token", "client_name": "e2e", "lifespan": 3}
+                    {
+                        "id": 1,
+                        "type": "auth/long_lived_access_token",
+                        "client_name": "e2e",
+                        "lifespan": 3,
+                    }
                 )
                 self.token = str((await ws.receive_json())["result"])
             self._token_file().write_text(self.token)
             for step, body in (
                 ("core_config", {}),
                 ("analytics", {}),
-                ("integration", {"client_id": CLIENT_ID, "redirect_uri": CLIENT_ID + "?auth_callback=1"}),
+                (
+                    "integration",
+                    {"client_id": CLIENT_ID, "redirect_uri": CLIENT_ID + "?auth_callback=1"},
+                ),
             ):
                 async with s.post(
                     f"{self.base}/api/onboarding/{step}",
@@ -238,7 +246,11 @@ class HomeAssistant:
                     "broker": broker,
                     "port": port,
                     "protocol": "3.1.1",
-                    "other_settings": {"set_client_cert": False, "set_ca_cert": "off", "tls_insecure": False},
+                    "other_settings": {
+                        "set_client_cert": False,
+                        "set_ca_cert": "off",
+                        "tls_insecure": False,
+                    },
                 }
             step = await self.post(f"/api/config/config_entries/flow/{step['flow_id']}", data)
         raise RuntimeError(f"mqtt config flow did not finish: {step}")

@@ -133,6 +133,8 @@ export function endpointForm({ initial = null, editing = false, existingIds = []
   }
   const deviceField = register(field('serial_device', t('ep.serial_device'), deviceSelect, t('ep.serial_device_help')));
   const noDevices = h('p', { class: 'banner warn', role: 'status' }, t('ep.serial_device_none'));
+  // the transport whose default port was last applied: a saved port is never replaced by a default
+  let portBase = transport;
   const baudField = register(field('baudrate', t('ep.baudrate'), numberInput(f.baudrate ?? 9600), t('ep.baudrate_help')));
 
   const advanced = {
@@ -184,10 +186,14 @@ export function endpointForm({ initial = null, editing = false, existingIds = []
     baudField.el.hidden = transport !== 'serial_rtu';
     advanced.rtu_late_window_s.el.hidden = !(transport === 'rtu_over_tcp' || transport === 'serial_rtu');
     if (tcp && DEFAULT_PORT[transport] !== undefined) {
-      const known = Object.values(DEFAULT_PORT).map(String);
+      // default only for a new connection or a real transport change, and only while the port still
+      // is the default of the previous transport (a deliberately set port stays, also 8899 on Modbus)
       const port = portField.control;
-      if (port.value.trim() === '' || known.includes(port.value.trim())) port.value = String(DEFAULT_PORT[transport]);
+      const text = port.value.trim();
+      const wasDefault = portBase !== null && portBase !== transport && text === String(DEFAULT_PORT[portBase]);
+      if (text === '' || wasDefault) port.value = String(DEFAULT_PORT[transport]);
     }
+    portBase = transport;
     if (chosen && !idTouched) idInput.value = nextId(SUGGESTED_ID[transport], existingIds);
   }
 
@@ -445,14 +451,41 @@ export const existingInverterIds = () => (state.plant ? state.plant.inverters.ma
 
 // -- changing calls (shared by the plant page and the setup assistant) -------------------------
 
-// Run a plant change with the plant revision the user saw. Returns the response, or ``null`` after
-// the error was shown in ``message`` (and in the fields of ``form``).
-async function plantCall(method, path, body, { form = null, message }) {
-  message.replaceChildren();
+// Changes the server accepted whose follow-up reload failed, per message element: the call is NOT
+// repeated (it would run into a stale revision or an existing id); only the reading is retried.
+const unloaded = new WeakMap();
+
+async function reloaded(result, message, id, onLoaded) {
   try {
-    const result = await mutate(method, path, body, state.plant ? state.plant.revision : 0);
     await reloadAfterPlantChange();
-    return result;
+  } catch {
+    const retry = () => reloaded(result, message, id, onLoaded);
+    retry.id = id;
+    unloaded.set(message, retry);
+    const button = h('button', { class: 'btn', type: 'button', id: 'plant-reload' }, t('plant.reload_btn'));
+    button.addEventListener('click', async () => {
+      busy(button, true);
+      const again = await retry();
+      busy(button, false);
+      if (again && onLoaded) onLoaded(again);
+    });
+    message.replaceChildren(h('div', { class: 'banner warn', role: 'alert' }, h('p', {}, t('plant.saved_not_loaded')), button));
+    return null;
+  }
+  unloaded.delete(message);
+  message.replaceChildren();
+  return result;
+}
+
+// Run a plant change with the plant revision the user saw. Returns the response, or ``null`` after
+// the error was shown in ``message`` (and in the fields of ``form``). ``onLoaded`` continues after a
+// reload that had to be repeated.
+async function plantCall(method, path, body, { form = null, message, id = null, onLoaded = null }) {
+  if (unloaded.has(message)) return unloaded.get(message)();
+  message.replaceChildren();
+  let result;
+  try {
+    result = await mutate(method, path, body, state.plant ? state.plant.revision : 0);
   } catch (error) {
     const text = applyServerError(error, form ? form.fields : new Map());
     if (error instanceof ApiError && error.key === 'stale_revision') {
@@ -463,30 +496,29 @@ async function plantCall(method, path, body, { form = null, message }) {
     }
     return null;
   }
+  return reloaded(result, message, id, onLoaded);
 }
 
-export async function saveEndpoint(form, { editing, message }) {
+async function save(form, { editing, message, onLoaded }, collection) {
+  const waiting = unloaded.get(message);
+  if (waiting) return (await waiting()) ? waiting.id : null; // accepted before: only read again
   if (!form.validate()) {
     message.replaceChildren(h('p', { class: 'banner warn', role: 'alert' }, t('test.fix_form')));
     return null;
   }
   const values = form.values();
-  const result = await plantCall(editing ? 'PUT' : 'POST', editing ? `api/plant/endpoints/${values.id}` : 'api/plant/endpoints', values, { form, message });
+  const path = editing ? `api/plant/${collection}/${values.id}` : `api/plant/${collection}`;
+  const result = await plantCall(editing ? 'PUT' : 'POST', path, values, {
+    form, message, id: values.id, onLoaded: onLoaded && (() => onLoaded(values.id)),
+  });
   return result ? values.id : null;
 }
 
-export async function saveInverter(form, { editing, message }) {
-  if (!form.validate()) {
-    message.replaceChildren(h('p', { class: 'banner warn', role: 'alert' }, t('test.fix_form')));
-    return null;
-  }
-  const values = form.values();
-  const result = await plantCall(editing ? 'PUT' : 'POST', editing ? `api/plant/inverters/${values.id}` : 'api/plant/inverters', values, { form, message });
-  return result ? values.id : null;
-}
+export const saveEndpoint = (form, options) => save(form, options, 'endpoints');
+export const saveInverter = (form, options) => save(form, options, 'inverters');
 
-export const deleteEndpoint = (id, { message }) =>
-  plantCall('POST', `api/plant/endpoints/${id}/delete`, { confirm: true }, { message });
+export const deleteEndpoint = (id, { message, onLoaded = null }) =>
+  plantCall('POST', `api/plant/endpoints/${id}/delete`, { confirm: true }, { message, onLoaded });
 
-export const deleteInverter = (id, removeBinding, { message }) =>
-  plantCall('POST', `api/plant/inverters/${id}/delete`, { confirm: true, remove_binding: removeBinding }, { message });
+export const deleteInverter = (id, removeBinding, { message, onLoaded = null }) =>
+  plantCall('POST', `api/plant/inverters/${id}/delete`, { confirm: true, remove_binding: removeBinding }, { message, onLoaded });

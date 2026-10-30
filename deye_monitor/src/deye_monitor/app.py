@@ -39,6 +39,7 @@ from deye_monitor.selection import (
     InverterSpec,
     SelectionManager,
     SelectionStore,
+    SpecsUndo,
     specs_from_config,
 )
 from deye_monitor.store import JsonStore
@@ -165,16 +166,24 @@ class Application:
         self.publisher: MqttPublisher | None = None
         self.publisher_task: asyncio.Task[None] | None = None
         self.running = False
+        self.unaccepted = False
+        self.proposing = False
 
     def install(self, cfg: AppConfig) -> Runtime:
         """Build runtime and publisher for ``cfg`` (synchronous: nothing awaits in between, so the
-        web interface never sees a half-built generation)."""
+        web interface never sees a half-built generation).
+
+        While ``proposing`` is set (by ``switch``) the generation is only proposed: it touches no
+        shared file (identity bindings stay in memory) and its publisher does not run (no
+        discovery, no state) until ``accept_generation()``; ``stop_generation()`` discards it."""
+        provisional, self.proposing = self.proposing, False
         initial = self.manager.initial()
         runtime = Runtime(
             cfg,
             sink=self.relay,
             features={i: f for i, (f, _, _) in initial.items()},
             selections={i: (keys, rev) for i, (_, keys, rev) in initial.items()},
+            provisional=provisional,
         )
         for inverter_id, inv in runtime.inverters.items():
             inv.awaiting_selection = not self.manager.selection(inverter_id).chosen
@@ -183,20 +192,37 @@ class Application:
             log.error("no MQTT broker configured and no MQTT service found: nothing is published")
         else:
             publisher = build_publisher(cfg, runtime, self.mqtt, self.instance_id)
-        self.relay.target = publisher if publisher is not None else NullSink()
+        self.relay.target = publisher if publisher is not None and not provisional else NullSink()
         self.manager.attach(LiveApplier(runtime, publisher))
         self.cfg, self.runtime, self.publisher = cfg, runtime, publisher
+        self.unaccepted = provisional
         if self.web is not None:
             self.web.runtime, self.web.publisher = runtime, publisher
         return runtime
 
-    async def start_generation(self) -> None:
-        assert self.runtime is not None
+    def _start_publisher(self) -> None:
         if self.publisher is not None:
             self.publisher_task = asyncio.create_task(self.publisher.run(), name="mqtt-publisher")
             self.publisher_task.add_done_callback(_log_publisher_end)
+
+    async def start_generation(self) -> None:
+        assert self.runtime is not None
+        if not self.unaccepted:
+            self._start_publisher()
         await self.runtime.start()
         self.running = True
+
+    def accept_generation(self) -> None:
+        """The proposed generation is durable: write its held-back bindings and let its publisher
+        run."""
+        assert self.runtime is not None
+        if not self.unaccepted:
+            return
+        self.unaccepted = False
+        self.runtime.book.accept()
+        if self.publisher is not None:
+            self.relay.target = self.publisher
+        self._start_publisher()
 
     async def stop_generation(self) -> None:
         self.running = False
@@ -213,28 +239,53 @@ class Application:
                 with contextlib.suppress(BaseException):
                     await task
 
-    async def switch(self, cfg: AppConfig, specs: Mapping[str, InverterSpec]) -> None:
-        """Replace the running generation by one for ``cfg`` (``SwitchError`` after restoring the
-        previous generation where possible). The selection manager's lock is held by the caller."""
+    async def switch(
+        self,
+        cfg: AppConfig,
+        specs: Mapping[str, InverterSpec],
+        *,
+        restore: SpecsUndo | None = None,
+        fallback: bool = True,
+    ) -> SpecsUndo:
+        """Replace the running generation by one for ``cfg`` and return what takes the selection
+        state back (the caller holds the selection manager's lock).
+
+        A proposed generation (``restore`` is None) stays unaccepted until ``accept_generation()``.
+        ``restore`` is the roll-back of such a proposal: the selection state is put back exactly
+        and the generation is the accepted one. If the new generation cannot be started, the
+        previous one is rebuilt when ``fallback`` is set; ``SwitchError`` says whether that worked.
+        Without a fallback (or when it fails too) nothing is left running."""
         previous_cfg = self.cfg
-        previous_specs = self.manager.specs
         await self.stop_generation()
-        undo = self.manager.set_specs(specs)
+        if restore is not None:
+            self.manager.restore_specs(restore)
+            undo = restore
+        else:
+            undo = self.manager.set_specs(specs)
         try:
+            self.proposing = restore is None
             self.install(cfg)
             await self.start_generation()
         except Exception:
-            log.exception("new plant could not be started; restoring the previous one")
+            log.exception("new plant could not be started")
+            self.proposing = False
             self.manager.restore_specs(undo)
             try:
                 await self.stop_generation()
-                self.manager.set_specs(previous_specs)
+            except Exception:
+                log.exception("the new generation did not stop cleanly")
+            if not fallback:
+                raise SwitchError(restored=False) from None
+            try:
                 self.install(previous_cfg)
                 await self.start_generation()
             except Exception:
                 log.exception("the previous plant could not be restored")
+                with contextlib.suppress(Exception):
+                    await self.stop_generation()
                 raise SwitchError(restored=False) from None
             raise SwitchError(restored=True) from None
+        return undo
 
     def forget_binding(self, inverter_id: str) -> bool:
         assert self.runtime is not None
@@ -271,6 +322,7 @@ async def serve(cfg: AppConfig, stop: asyncio.Event) -> None:
     )
     for problem in manager.store.problems:
         log.error("selection store: %s (%s) %s", problem.code, problem.subject, problem.detail)
+    manager.prune_locked()  # stale records of removed inverters must not outlive a restart
     application = Application(effective, instance_id, mqtt, manager, relay)
     log.info(
         "deye_monitor %s ready: %d endpoint(s), %d inverter(s), instance %s, mqtt %s, "

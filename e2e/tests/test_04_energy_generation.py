@@ -25,7 +25,11 @@ ROW_DEADLINE = 600  # a 5-minute window plus the compile and commit delay, with 
 
 def series_of(unique_id: str, inverter: str) -> str | None:
     prefix = f"deye_{INSTANCE}_{inverter}_{KEY}_"
-    return unique_id[len(prefix):] if unique_id.startswith(prefix) and SERIES.match(unique_id[len(prefix):]) else None
+    return (
+        unique_id[len(prefix) :]
+        if unique_id.startswith(prefix) and SERIES.match(unique_id[len(prefix) :])
+        else None
+    )
 
 
 async def energy_series(ha, inverter="deye_tcp") -> set[str]:
@@ -59,7 +63,7 @@ def recorded_states(ha, entity: str) -> set[float]:
     for (value,) in rows:
         try:
             out.add(float(value))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
     return out
 
@@ -68,7 +72,7 @@ async def state_is(ha, eid: str, expected: float) -> bool:
     st = (await ha.states()).get(eid)
     try:
         return bool(st) and abs(float(st["state"]) - expected) < 0.001
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
 
 
@@ -79,7 +83,9 @@ async def row_with_state(ha, eid: str, expected: float) -> dict:
                 return row
         return None
 
-    return await until(find, f"a short-term statistics row of {eid} with state {expected}", ROW_DEADLINE, 5)
+    return await until(
+        find, f"a short-term statistics row of {eid} with state {expected}", ROW_DEADLINE, 5
+    )
 
 
 def check_sum(row: dict, expected: float) -> None:
@@ -136,7 +142,9 @@ async def test_resolution_change_creates_a_new_series_with_separate_recorder_sta
     new1 = await row_with_state(ha, new_eid, 40100.0)
     assert abs((new1["sum"] - new0["sum"]) - 100.0) < 0.01, (new0, new1)
     states = await ha.states()
-    assert old_eid not in states or states[old_eid]["state"] in ("unknown", "unavailable"), "the old series is no longer updated"
+    assert old_eid not in states or states[old_eid]["state"] in ("unknown", "unavailable"), (
+        "the old series is no longer updated"
+    )
     assert not any(e.endswith("_2") for e in states if KEY in e)
 
     # -- separation: ids, values, sums ----------------------------------------------------------
@@ -144,8 +152,12 @@ async def test_resolution_change_creates_a_new_series_with_separate_recorder_sta
     assert old_eid in ids and new_eid in ids
     assert not [i for i in ids if re.search(rf"{KEY}_({old_series}|{new_name})_\d+$", i)]
     old_after = await stats(ha, old_eid)
-    assert json.dumps(old_after[: len(old_rows)], sort_keys=True) == snapshot_old, "history of the old series changed"
-    assert all(r["state"] < 6000 and r["sum"] < 100 for r in old_after), "new-scale data entered the old series"
+    assert json.dumps(old_after[: len(old_rows)], sort_keys=True) == snapshot_old, (
+        "history of the old series changed"
+    )
+    assert all(r["state"] < 6000 and r["sum"] < 100 for r in old_after), (
+        "new-scale data entered the old series"
+    )
     new_rows = await stats(ha, new_eid)
     assert all(r["state"] >= 30000 for r in new_rows), new_rows  # always the 1 kWh scale
     new_base = new_rows[0]["state"] - new_rows[0]["sum"]

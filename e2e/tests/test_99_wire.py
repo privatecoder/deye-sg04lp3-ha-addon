@@ -20,7 +20,11 @@ async def test_every_byte_sent_to_any_fake_is_a_valid_fc03_read(running):
     summary = {}
     for name, fake in running.fakes.items():
         wire = fake.wire
-        assert len(wire.reads) > 50, (name, len(wire.reads), "a read-only run must show real traffic")
+        assert len(wire.reads) > 50, (
+            name,
+            len(wire.reads),
+            "a read-only run must show real traffic",
+        )
         assert {r.unit for r in wire.reads} == {1}
         assert all(1 <= r.count <= 60 for r in wire.reads), name  # configured max_read_registers
         assert all(r.start + r.count <= 1200 for r in wire.reads), name

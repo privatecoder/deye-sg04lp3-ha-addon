@@ -9,7 +9,14 @@ from conftest import INSTANCE, SERIALS
 from harness.stack import MessageLog
 from tests.helpers import INV, inverter_states, ours, until
 
-BASIC = ["serial_number", "operating_state", "fault_word_1", "fault_word_2", "fault_word_3", "fault_word_4"]
+BASIC = [
+    "serial_number",
+    "operating_state",
+    "fault_word_1",
+    "fault_word_2",
+    "fault_word_3",
+    "fault_word_4",
+]
 
 
 def allowed_blocks() -> set[tuple[int, int]]:
@@ -21,7 +28,11 @@ def allowed_blocks() -> set[tuple[int, int]]:
     from deye_monitor.profiles.schema import load_profile
 
     plan = build_read_plan(
-        load_profile("sg04lp3_lv_v105_8"), frozenset(BOOTSTRAP_KEYS), Features(), max_read_registers=60, energy_auto=True
+        load_profile("sg04lp3_lv_v105_8"),
+        frozenset(BOOTSTRAP_KEYS),
+        Features(),
+        max_read_registers=60,
+        energy_auto=True,
     )
     return {(b.start, b.count) for b in plan.blocks} | {(3, 5), (3, 6)}
 
@@ -51,7 +62,9 @@ async def test_first_start_reads_only_the_basics_until_the_selection_is_saved(st
             assert blocks and blocks <= allowed, (name, sorted(blocks - allowed))
         # no inverter entity exists, only the diagnostics of the app device
         entries = await ours(ha, INSTANCE)
-        assert entries and all(u.startswith(f"deye_{INSTANCE}_app_") for u in entries), sorted(entries)[:5]
+        assert entries and all(u.startswith(f"deye_{INSTANCE}_app_") for u in entries), sorted(
+            entries
+        )[:5]
         groups = {m[1].rsplit("/", 1)[-1] for m in log.messages}
         assert not groups & {"battery", "ac", "pv", "energy"}, groups  # no measurement group yet
 
@@ -64,12 +77,16 @@ async def test_first_start_reads_only_the_basics_until_the_selection_is_saved(st
 
         async def basics_present():
             states = await ha.states()
-            return all(inverter_states(states, INSTANCE, i).get("serial_number") == SERIALS[i] for i in INV)
+            return all(
+                inverter_states(states, INSTANCE, i).get("serial_number") == SERIALS[i] for i in INV
+            )
 
         await until(basics_present, "the six basic sensors appear after the save", 60, 1)
         got = inverter_states(await ha.states(), INSTANCE, "deye_tcp")
         assert set(got) == set(BASIC), sorted(got)
-        assert not log.json_values("battery_soc"), "a template value was published before the template was chosen"
+        assert not log.json_values("battery_soc"), (
+            "a template value was published before the template was chosen"
+        )
         assert all(m >= 0 for m in saved.values())
 
         # back to the full template for the remaining scenarios

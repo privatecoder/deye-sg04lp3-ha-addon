@@ -63,15 +63,47 @@ def identity_store(path: Any) -> JsonStore:
 class IdentityBook:
     """Bindings per logical inverter id, persisted in ``/data/identity.json``."""
 
-    def __init__(self, store: JsonStore, expected: Mapping[str, str | None]) -> None:
+    def __init__(
+        self, store: JsonStore, expected: Mapping[str, str | None], *, provisional: bool = False
+    ) -> None:
+        """``provisional``: the book belongs to a generation that is not accepted yet. Every change
+        (a new ``expected_serial``, a first-seen binding) stays in memory; ``accept()`` writes it
+        once the plant is durable. A process that dies before that leaves the file untouched, and
+        the next start derives the expected bindings again from the accepted plant."""
         self._store = store
         self._expected = {k: v for k, v in expected.items() if v}
+        self._pending: dict[str, Any] | None = None
+        self._provisional = provisional
         self.problem: str | None = PROBLEM_CORRUPT if store.corrupt else None
         if self.problem is None:
             self._apply_expected()
 
+    @property
+    def _data(self) -> dict[str, Any]:
+        return self._pending if self._pending is not None else self._store.data
+
+    def _write(self, doc: dict[str, Any]) -> None:
+        if self._provisional:
+            self._pending = doc
+        else:
+            self._store.commit(doc)
+
+    def accept(self) -> None:
+        """The generation is accepted: write what was held back (an unwritable file is reported by
+        ``problem`` like everywhere else)."""
+        if not self._provisional:
+            return
+        self._provisional = False
+        pending, self._pending = self._pending, None
+        if pending is not None and self.problem is None:
+            try:
+                self._store.commit(pending)
+            except OSError:
+                self._pending = pending  # still what this generation uses
+                self.problem = PROBLEM_UNWRITABLE
+
     def _apply_expected(self) -> None:
-        doc = copy.deepcopy(self._store.data)
+        doc = copy.deepcopy(self._data)
         bindings: dict[str, dict[str, str]] = doc.setdefault("bindings", {})
         changed = False
         for inverter_id, serial in self._expected.items():
@@ -81,13 +113,13 @@ class IdentityBook:
                 changed = True
         if changed:
             try:
-                self._store.commit(doc)
+                self._write(doc)
             except OSError:
                 self.problem = PROBLEM_UNWRITABLE
 
     @property
     def _bindings(self) -> dict[str, dict[str, str]]:
-        return self._store.data.get("bindings", {})  # type: ignore[no-any-return]
+        return self._data.get("bindings", {})  # type: ignore[no-any-return]
 
     def bound(self, inverter_id: str) -> str | None:
         if self.problem == PROBLEM_CORRUPT:
@@ -102,14 +134,14 @@ class IdentityBook:
     def flush(self) -> None:
         if self.problem is None:
             try:
-                self._store.commit(copy.deepcopy(self._store.data))
+                self._write(copy.deepcopy(self._data))
             except OSError:
                 self.problem = PROBLEM_UNWRITABLE
 
     def _with(self, mutate: Any) -> None:
-        doc = copy.deepcopy(self._store.data)
+        doc = copy.deepcopy(self._data)
         mutate(doc.setdefault("bindings", {}))
-        self._store.commit(doc)  # raises OSError: the in-memory binding does not change then
+        self._write(doc)  # raises OSError: the in-memory binding does not change then
 
     def bind_first_seen(self, inverter_id: str, serial: str) -> None:
         if self.problem is not None:
@@ -148,7 +180,7 @@ class IdentityBook:
             self._apply_expected()
             return None
         if self.problem is not None:
-            self._store.commit(copy.deepcopy(self._store.data))  # raises while still unwritable
+            self._write(copy.deepcopy(self._data))  # raises while still unwritable
             self.problem = None
         if inverter_id in self._bindings:
             self._with(lambda b: b.pop(inverter_id, None))

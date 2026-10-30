@@ -14,7 +14,12 @@ from harness.fakes import FakeInverter, with_crc
 
 
 def mbap_read(tid: int, start: int, count: int) -> bytes:
-    return tid.to_bytes(2, "big") + b"\x00\x00\x00\x06\x01\x03" + start.to_bytes(2, "big") + count.to_bytes(2, "big")
+    return (
+        tid.to_bytes(2, "big")
+        + b"\x00\x00\x00\x06\x01\x03"
+        + start.to_bytes(2, "big")
+        + count.to_bytes(2, "big")
+    )
 
 
 async def test_the_wire_acceptance_rejects_an_unparsed_tail():
@@ -116,3 +121,52 @@ async def test_exit_stack_cleanup_runs_after_a_failing_assertion():
             ex.callback(stopped.append, "app")
             raise AssertionError("a wire violation")
     assert stopped == ["app", "fake"] and fake._slave is None
+
+
+async def test_the_plant_setup_fixture_rejects_an_unparsed_tail_when_it_stops(monkeypatch):
+    """The module fixture of the plant setup case ends with the final wire acceptance: a fake that
+    ends with bytes that belong to no frame makes it fail, and the app and the fake are cleaned up
+    anyway."""
+    from types import SimpleNamespace
+
+    from harness.fakes import Wire
+    from tests import test_10_plant_setup as target
+
+    observed = {"app_cleaned": False, "fake_stopped": False}
+
+    class Fake:
+        def __init__(self, *args, **kwargs):
+            self.wire = Wire("mbap")
+            self.wire.raw.extend(b"\x00\xff\x00")
+            self.wire.pending_bytes = 3
+            self.wire.violations.append("mbap: truncated frame at close 00ff00")
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            observed["fake_stopped"] = True
+
+    class App:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        async def wait_api(self, *args):
+            pass
+
+        def cleanup(self):
+            observed["app_cleaned"] = True
+
+    monkeypatch.setattr(target, "FakeInverter", Fake)
+    monkeypatch.setattr(target, "ProcessApp", App)
+    gen = target.instance_p.__wrapped__(SimpleNamespace(broker=SimpleNamespace(port=1883)))
+    try:
+        await anext(gen)
+        with pytest.raises(AssertionError):
+            await anext(gen)
+    finally:
+        await gen.aclose()
+    assert observed == {"app_cleaned": True, "fake_stopped": True}

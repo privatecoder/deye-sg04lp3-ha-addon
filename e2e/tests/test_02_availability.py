@@ -67,7 +67,9 @@ async def test_a_failing_group_is_unknown_never_zero_never_unavailable(running):
         got = await inv_state(ha, "deye_tcp")
         return all(got[k] == "unknown" for k in pv)
 
-    await until(unknown, "PV entities are 'unknown' (not unavailable) while their group fails", 60, 1)
+    await until(
+        unknown, "PV entities are 'unknown' (not unavailable) while their group fails", 60, 1
+    )
     for _ in range(12):  # it stays that way: no 0, no unavailable, other groups untouched
         got = await inv_state(ha, "deye_tcp")
         assert all(got[k] == "unknown" for k in pv), {k: got[k] for k in pv}
@@ -180,7 +182,9 @@ async def test_groups_expire_independently_after_three_intervals(running):
 
         await until(fast_expired, "the fast group expires", 40, 0.5)
         got = await inv_state(ha, "deye_v5")
-        assert got["pv_energy_total_g0"] not in ("unavailable", "unknown"), got["pv_energy_total_g0"]
+        assert got["pv_energy_total_g0"] not in ("unavailable", "unknown"), got[
+            "pv_energy_total_g0"
+        ]
     finally:
         app.proc.send_signal(signal.SIGCONT)
 
@@ -223,6 +227,11 @@ async def test_orderly_stop_publishes_offline_and_restart_recovers(running):
 async def test_broker_restart_without_persistence_rediscovers_and_recovers(running):
     ha = running.ha
     await running.broker.restart()
-    await until(lambda: all_have_data(ha), "after a broker restart the app reconnects and publishes again", 180, 2)
+    await until(
+        lambda: all_have_data(ha),
+        "after a broker restart the app reconnects and publishes again",
+        180,
+        2,
+    )
     docs = await running.broker.retained("homeassistant/device/#")
     assert any(INSTANCE in t for t in docs), "discovery is retained again after the broker restart"

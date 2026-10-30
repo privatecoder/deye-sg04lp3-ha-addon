@@ -1148,15 +1148,19 @@ class WebApi:
         if self._test_lock.locked():
             raise ChangeError("test_running", 409)
         async with self._test_lock:
-            runtime = self.runtime
-            try:
-                result = await probe.run_test(
+
+            def start() -> Awaitable[dict[str, Any]]:
+                runtime = self.runtime  # read inside the generation lease of the plant service
+                return probe.run_test(
                     runtime,
                     endpoint,
                     unit,
                     bound_serial=lambda: runtime.book.bound(inverter_id) if inverter_id else None,
                     expected_serial=expected_serial,
                 )
+
+            try:
+                result = await self._plant_service().probe(start)
             except probe.EndpointInUse:
                 raise ChangeError("endpoint_in_use_by_other_transport", 409) from None
         return json_response(result)

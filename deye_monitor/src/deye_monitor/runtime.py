@@ -127,6 +127,7 @@ class Runtime:
         restart_min_s: float = 5.0,
         restart_max_s: float = 300.0,
         restart_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        provisional: bool = False,
     ) -> None:
         self.cfg = cfg
         self._restart_min_s = restart_min_s
@@ -137,7 +138,9 @@ class Runtime:
         self.connector_factory = connector_factory
         base = data_dir(directory)
         self.book = IdentityBook(
-            identity_store(base / "identity.json"), {i.id: i.expected_serial for i in cfg.inverters}
+            identity_store(base / "identity.json"),
+            {i.id: i.expected_serial for i in cfg.inverters},
+            provisional=provisional,
         )
         self._capabilities = JsonStore(base / "capabilities.json")
         self._energy = JsonStore(base / "energy.json", validate=valid_energy_document)

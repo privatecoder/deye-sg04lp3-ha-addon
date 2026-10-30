@@ -59,10 +59,11 @@ export function wizardView() {
     const next = h('button', { class: 'btn primary', type: 'button', id: 'wiz-next', disabled: !canEdit() }, t('wiz.save_continue'));
     next.addEventListener('click', async () => {
       if (pick && pick.value) { wiz.endpointId = pick.value; go(2); return; }
+      const cont = (id) => { wiz.endpointId = id; go(2); };
       busy(next, true);
-      const id = await saveEndpoint(form, { editing: false, message });
+      const id = await saveEndpoint(form, { editing: false, message, onLoaded: cont });
       busy(next, false);
-      if (id) { wiz.endpointId = id; go(2); }
+      if (id) cont(id);
     });
     const el = h('section', { class: 'card step', 'aria-labelledby': 'wiz-h' },
       h('h2', { id: 'wiz-h' }, t('wiz.step_of', { n: 1 }), ' · ', t('wiz.step1')),
@@ -83,10 +84,11 @@ export function wizardView() {
     });
     const next = h('button', { class: 'btn primary', type: 'button', id: 'wiz-next', disabled: !canEdit() }, t('wiz.save_continue'));
     next.addEventListener('click', async () => {
+      const cont = (id) => { wiz.inverterId = id; go(3); };
       busy(next, true);
-      const id = await saveInverter(form, { editing: Boolean(existing), message });
+      const id = await saveInverter(form, { editing: Boolean(existing), message, onLoaded: cont });
       busy(next, false);
-      if (id) { wiz.inverterId = id; go(3); }
+      if (id) cont(id);
     });
     return h('section', { class: 'card step', 'aria-labelledby': 'wiz-h' },
       h('h2', { id: 'wiz-h' }, t('wiz.step_of', { n: 2 }), ' · ', t('wiz.step2')),

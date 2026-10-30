@@ -96,7 +96,10 @@ def temporary_target(runtime: Runtime, ep: EndpointConfig) -> Target:
         runtime._rand,
         default_identity_check,
     )
-    scheduler = BusScheduler(gap_s=ep.request_gap_ms / 1000, max_queue=ep.queue_size)
+    # an explicitly shared bus is one bus, whatever the name of the target: the same scheduler
+    scheduler = runtime.schedulers.get(ep.bus) or BusScheduler(
+        gap_s=ep.request_gap_ms / 1000, max_queue=ep.queue_size
+    )
     return Target(transport, scheduler, True)
 
 

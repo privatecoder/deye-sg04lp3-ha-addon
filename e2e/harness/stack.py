@@ -28,8 +28,14 @@ class Broker:
     def __init__(self, net: str, *, persistence: bool = False) -> None:
         self.persistence = persistence
         self.dir = Path(tempfile.mkdtemp(prefix="deye-e2e-mosq-"))
-        lines = ["listener 1883", "allow_anonymous true"] + [f"log_type {t}" for t in ("error", "warning", "notice", "subscribe", "unsubscribe")]
-        lines += ["persistence true", "persistence_location /mosquitto/data/"] if persistence else ["persistence false"]
+        lines = ["listener 1883", "allow_anonymous true"] + [
+            f"log_type {t}" for t in ("error", "warning", "notice", "subscribe", "unsubscribe")
+        ]
+        lines += (
+            ["persistence true", "persistence_location /mosquitto/data/"]
+            if persistence
+            else ["persistence false"]
+        )
         (self.dir / "mosquitto.conf").write_text("\n".join(lines) + "\n")
         (self.dir / "data").mkdir()
         (self.dir / "data").chmod(0o777)
@@ -39,8 +45,10 @@ class Broker:
             docker.MOSQUITTO,
             net,
             args=[
-                "-v", f"{self.dir / 'mosquitto.conf'}:/mosquitto/config/mosquitto.conf:ro",
-                "-v", f"{self.dir / 'data'}:/mosquitto/data",
+                "-v",
+                f"{self.dir / 'mosquitto.conf'}:/mosquitto/config/mosquitto.conf:ro",
+                "-v",
+                f"{self.dir / 'data'}:/mosquitto/data",
             ],
             published={1883: docker.free_port()},
         )
@@ -57,9 +65,11 @@ class Broker:
         end = loop.time() + deadline_s
         while loop.time() < end:
             try:
-                async with aiomqtt.Client("127.0.0.1", self.port, identifier=f"probe-{uuid.uuid4().hex[:6]}", timeout=3):
+                async with aiomqtt.Client(
+                    "127.0.0.1", self.port, identifier=f"probe-{uuid.uuid4().hex[:6]}", timeout=3
+                ):
                     return  # CONNACK received
-            except (aiomqtt.MqttError, OSError):
+            except aiomqtt.MqttError, OSError:
                 await asyncio.sleep(0.5)
         raise TimeoutError("broker did not accept a connection\n" + self.container.logs(20))
 
@@ -69,7 +79,9 @@ class Broker:
         await self.wait_ready()
 
     def client(self, name: str | None = None) -> aiomqtt.Client:
-        return aiomqtt.Client("127.0.0.1", self.port, identifier=name or f"e2e-{uuid.uuid4().hex[:8]}")
+        return aiomqtt.Client(
+            "127.0.0.1", self.port, identifier=name or f"e2e-{uuid.uuid4().hex[:8]}"
+        )
 
     async def retained(self, filt: str, settle_s: float = 1.5) -> dict[str, bytes]:
         """Everything retained under ``filt`` (a second client, so the app is not involved)."""
@@ -137,12 +149,16 @@ class App:
 
         store = PlantStore(self.dir)
         inverters = tuple(
-            InverterConfig.model_validate({**i.model_dump(mode="json", exclude_none=True), **changes})
+            InverterConfig.model_validate(
+                {**i.model_dump(mode="json", exclude_none=True), **changes}
+            )
             if i.id == inverter_id
             else i
             for i in store.plant.inverters
         )
-        store.commit(PlantConfig(endpoints=store.plant.endpoints, inverters=inverters), store.revision + 1)
+        store.commit(
+            PlantConfig(endpoints=store.plant.endpoints, inverters=inverters), store.revision + 1
+        )
 
     # to be provided by the variants
     def start(self) -> None: ...
@@ -175,9 +191,14 @@ class App:
         end = loop.time() + deadline_s
         while loop.time() < end:
             try:
-                async with aiohttp.ClientSession(headers=self.api_headers) as s, s.get(
-                    self._url("api/session"), headers=USER_HEADERS, timeout=aiohttp.ClientTimeout(total=3)
-                ) as r:
+                async with (
+                    aiohttp.ClientSession(headers=self.api_headers) as s,
+                    s.get(
+                        self._url("api/session"),
+                        headers=USER_HEADERS,
+                        timeout=aiohttp.ClientTimeout(total=3),
+                    ) as r,
+                ):
                     if r.status == 200:
                         return
             except aiohttp.ClientError, TimeoutError:
@@ -185,7 +206,9 @@ class App:
             await asyncio.sleep(0.5)
         raise TimeoutError(f"{self.name}: ingress API not ready\n{self.logs()[-1500:]}")
 
-    async def api(self, method: str, path: str, body: Any = None, *, revision: int | None = None) -> tuple[int, Any]:
+    async def api(
+        self, method: str, path: str, body: Any = None, *, revision: int | None = None
+    ) -> tuple[int, Any]:
         async with aiohttp.ClientSession(headers={**self.api_headers, **USER_HEADERS}) as s:
             async with s.get(self._url("api/session")) as r:
                 session = await r.json()
@@ -219,7 +242,9 @@ class App:
         return int(d["action_counter"])
 
     async def sensors(self, inverter: str, **edit: Any) -> tuple[int, Any]:
-        return await self.api("POST", f"api/inverters/{inverter}/sensors", edit, revision=await self.revision())
+        return await self.api(
+            "POST", f"api/inverters/{inverter}/sensors", edit, revision=await self.revision()
+        )
 
     async def inverters(self) -> dict[str, Any]:
         s, d = await self.api("GET", "api/inverters")
@@ -294,7 +319,9 @@ class ProcessApp(App):
             await asyncio.sleep(1)
             self.proc.kill()
             self.proc.wait(10)
-            raise TimeoutError(f"{self.name}: no orderly stop within {deadline_s}s\n{self.logs()[-2500:]}")
+            raise TimeoutError(
+                f"{self.name}: no orderly stop within {deadline_s}s\n{self.logs()[-2500:]}"
+            )
 
     def cleanup(self) -> None:
         if self.running():
@@ -312,9 +339,7 @@ class ImageApp(App):
         self.net = net
         self.image = image
         self.cname = f"deye-e2e-app-{name}-{uuid.uuid4().hex[:6]}"
-        self.container = docker.Container(
-            self.cname, image, net, args=["-v", f"{self.dir}:/data"]
-        )
+        self.container = docker.Container(self.cname, image, net, args=["-v", f"{self.dir}:/data"])
         self.proxy = docker.Container(
             f"deye-e2e-proxy-{name}-{uuid.uuid4().hex[:6]}",
             docker.PROXY,
@@ -356,9 +381,21 @@ class ImageApp(App):
     def probe_from_foreign_peer(self) -> str:
         """An HTTP request from any other address than the Supervisor's must be refused."""
         out = docker.run(
-            "run", "--rm", "--label", docker.LABEL, "--network", self.net, docker.PROXY,
-            "wget", "-S", "-q", "-O", "-", f"http://{self.cname}:8099/api/session",
-            check=False, timeout=60,
+            "run",
+            "--rm",
+            "--label",
+            docker.LABEL,
+            "--network",
+            self.net,
+            docker.PROXY,
+            "wget",
+            "-S",
+            "-q",
+            "-O",
+            "-",
+            f"http://{self.cname}:8099/api/session",
+            check=False,
+            timeout=60,
         )
         return out.stderr + out.stdout
 
@@ -393,7 +430,7 @@ class MessageLog:
             self._task.cancel()
             try:
                 await self._task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError, Exception:
                 pass
             self._task = None
 

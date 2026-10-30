@@ -96,6 +96,9 @@ class Record:
     chosen: bool = True
 
 
+SpecsUndo = tuple[dict[str, InverterSpec], dict[str, Record], bool]
+
+
 @dataclass(frozen=True, slots=True)
 class InverterSelection:
     features: Features
@@ -428,9 +431,7 @@ class SelectionStore:
     def status(self) -> LoadStatus:
         return self._status
 
-    def set_specs(
-        self, specs: Mapping[str, InverterSpec]
-    ) -> tuple[dict[str, InverterSpec], dict[str, Record], bool]:
+    def set_specs(self, specs: Mapping[str, InverterSpec]) -> SpecsUndo:
         """The plant changed: records of removed inverters are dropped (in memory; ``pruned``
         asks the manager to persist that), new inverters start without a choice. Returns what is
         needed to take it back."""
@@ -443,7 +444,7 @@ class SelectionStore:
             self.records.setdefault(inverter_id, Record(chosen=not self.require_choice))
         return undo
 
-    def restore_specs(self, undo: tuple[dict[str, InverterSpec], dict[str, Record], bool]) -> None:
+    def restore_specs(self, undo: SpecsUndo) -> None:
         self.specs, self.records, self.pruned = undo[0], dict(undo[1]), undo[2]
 
     def _remove_stale_temp_files(self, directory: Path) -> None:
@@ -494,6 +495,9 @@ class SelectionStore:
             spec = self.specs.get(inverter_id)
             if spec is None:
                 self.problems.append(Problem("unknown_inverter", inverter_id[:64]))
+                self.pruned = (
+                    True  # the stale record is still on disk: removed before the next change
+                )
                 continue
             self.records[inverter_id] = _migrate_record(
                 spec, body["inverters"][inverter_id], self.problems
@@ -645,23 +649,28 @@ class SelectionManager:
         """Held by plant changes: a selection edit cannot interleave with a rebuild."""
         return self._lock
 
-    def set_specs(
-        self, specs: Mapping[str, InverterSpec]
-    ) -> tuple[dict[str, InverterSpec], dict[str, Record], bool]:
+    def set_specs(self, specs: Mapping[str, InverterSpec]) -> SpecsUndo:
         return self.store.set_specs(specs)
 
-    def restore_specs(self, undo: tuple[dict[str, InverterSpec], dict[str, Record], bool]) -> None:
+    def restore_specs(self, undo: SpecsUndo) -> None:
         self.store.restore_specs(undo)
 
-    async def persist_specs_locked(self) -> None:
-        """Persist the removal of inverter records (caller holds ``lock``). A failure is logged:
-        the stale records are reported and dropped at the next accepted change."""
+    def prune_locked(self) -> bool:
+        """Make the removal of inverter records durable (caller holds ``lock``). ``False`` when the
+        store cannot be written: a stale record of a removed id must never meet a new inverter of
+        the same id, so the plant is not changed while it is still on disk."""
         if not self.store.pruned:
-            return
+            return True
         try:
             self.store.commit(dict(self.store.records), self.store.revision + 1)
         except OSError:
             log.error("selection records of removed inverters could not be persisted yet")
+            return False
+        return True
+
+    async def persist_specs_locked(self) -> None:
+        """Best-effort prune after an accepted plant change (see ``prune_locked``)."""
+        self.prune_locked()
 
     def attach(self, applier: Applier) -> None:
         self._applier = applier

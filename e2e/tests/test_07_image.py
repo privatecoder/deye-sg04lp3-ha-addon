@@ -37,7 +37,16 @@ def build_image() -> dict[str, str]:
     platform_arg = __import__("os").environ.get("E2E_IMAGE_PLATFORM")
     wanted = (platform_arg or "").split("/")[-1] or platform.machine().replace("x86_64", "amd64")
     build_arch = ARCH_LABEL.get(wanted, "amd64")
-    cmd = ["docker", "build", "-t", tag, "--label", docker.RUN_LABEL, "--build-arg", f"BUILD_ARCH={build_arch}"]
+    cmd = [
+        "docker",
+        "build",
+        "-t",
+        tag,
+        "--label",
+        docker.RUN_LABEL,
+        "--build-arg",
+        f"BUILD_ARCH={build_arch}",
+    ]
     if platform_arg:
         cmd += ["--platform", platform_arg]
     proc = subprocess.run([*cmd, str(APP_DIR)], capture_output=True, text=True, timeout=1500)
@@ -45,8 +54,17 @@ def build_image() -> dict[str, str]:
     inspect = json.loads(docker.run("image", "inspect", tag).stdout)[0]
     labels = inspect["Config"]["Labels"]
     arch = inspect["Architecture"]
-    assert labels.get("io.hass.arch") == ARCH_LABEL[arch], (labels.get("io.hass.arch"), arch)  # label = reality
-    return {"tag": tag, "id": inspect["Id"], "architecture": arch, "os": inspect["Os"], "labels": labels}
+    assert labels.get("io.hass.arch") == ARCH_LABEL[arch], (
+        labels.get("io.hass.arch"),
+        arch,
+    )  # label = reality
+    return {
+        "tag": tag,
+        "id": inspect["Id"],
+        "architecture": arch,
+        "os": inspect["Os"],
+        "labels": labels,
+    }
 
 
 def fake_addresses() -> tuple[str, str]:
@@ -65,10 +83,19 @@ async def image_app(running):
         net.create(wait_s=1200)  # waits for a party that holds the Supervisor subnet
         ex.callback(net.remove)
         docker.run("network", "connect", net.name, running.broker.name)
-        ex.callback(lambda: docker.run("network", "disconnect", "-f", net.name, running.broker.name, check=False))
+        ex.callback(
+            lambda: docker.run(
+                "network", "disconnect", "-f", net.name, running.broker.name, check=False
+            )
+        )
         image = build_image()
         ex.callback(lambda: docker.run("rmi", "-f", image["tag"], check=False))
-        record_versions({"app_image": {k: image[k] for k in ("id", "architecture", "os")} | {"labels": image["labels"]}})
+        record_versions(
+            {
+                "app_image": {k: image[k] for k in ("id", "architecture", "os")}
+                | {"labels": image["labels"]}
+            }
+        )
         bind, seen = fake_addresses()
         fakes = {
             "i_tcp": FakeInverter("i_tcp", "mbap", regs=registers(SN["i_tcp"], soc=61)),
@@ -79,16 +106,43 @@ async def image_app(running):
             ex.push_async_callback(f.stop)
             await f.start(bind)
         endpoints = [
-            {"id": "g_tcp", "transport": "modbus_tcp", "host": seen, "port": fakes["i_tcp"].port, "timeout_s": 2.0, "request_gap_ms": 20},
-            {"id": "g_rtu", "transport": "rtu_over_tcp", "host": seen, "port": fakes["i_rtu"].port, "timeout_s": 2.0, "request_gap_ms": 20},
-            {"id": "g_v5", "transport": "solarman_v5_tcp", "host": seen, "port": fakes["i_v5"].port, "logger_serial": LOGGER_SERIAL, "timeout_s": 2.0, "request_gap_ms": 20},
+            {
+                "id": "g_tcp",
+                "transport": "modbus_tcp",
+                "host": seen,
+                "port": fakes["i_tcp"].port,
+                "timeout_s": 2.0,
+                "request_gap_ms": 20,
+            },
+            {
+                "id": "g_rtu",
+                "transport": "rtu_over_tcp",
+                "host": seen,
+                "port": fakes["i_rtu"].port,
+                "timeout_s": 2.0,
+                "request_gap_ms": 20,
+            },
+            {
+                "id": "g_v5",
+                "transport": "solarman_v5_tcp",
+                "host": seen,
+                "port": fakes["i_v5"].port,
+                "logger_serial": LOGGER_SERIAL,
+                "timeout_s": 2.0,
+                "request_gap_ms": 20,
+            },
         ]
         inverters = [
             {"id": i, "name": i, "endpoint": e, "unit_id": 1, "poll_fast_s": 2, "poll_energy_s": 10}
             for i, e in (("i_tcp", "g_tcp"), ("i_rtu", "g_rtu"), ("i_v5", "g_v5"))
         ]
         # the broker is reached by its name on the private network, like the Supervisor's service
-        app = ImageApp("img", options(running.broker.name, 1883, endpoints, inverters, instance_id=IMG), net.name, image["tag"])
+        app = ImageApp(
+            "img",
+            options(running.broker.name, 1883, endpoints, inverters, instance_id=IMG),
+            net.name,
+            image["tag"],
+        )
         ex.callback(app.cleanup)
         app.image_arch = image["architecture"]  # type: ignore[attr-defined]
         app.image_tag = image["tag"]  # type: ignore[attr-defined]
@@ -104,12 +158,21 @@ async def test_image_runs_and_publishes_to_home_assistant(running, image_app):
 
     async def data():
         states = await running.ha.states()
-        return all(inverter_states(states, IMG, i).get("battery_soc") == str(v) for i, v in (("i_tcp", 61), ("i_rtu", 62), ("i_v5", 63)))
+        return all(
+            inverter_states(states, IMG, i).get("battery_soc") == str(v)
+            for i, v in (("i_tcp", 61), ("i_rtu", 62), ("i_v5", 63))
+        )
 
-    await until(data, "the image delivers data of all three network transports to Home Assistant", 150, 2)
+    await until(
+        data, "the image delivers data of all three network transports to Home Assistant", 150, 2
+    )
     entries = await ours(running.ha, IMG)
-    assert entries and all(e["entity_id"].startswith(("sensor.", "binary_sensor.")) for e in entries.values())
-    labels = json.loads(docker.run("image", "inspect", app.image_tag, "--format", "{{json .Config.Labels}}").stdout)
+    assert entries and all(
+        e["entity_id"].startswith(("sensor.", "binary_sensor.")) for e in entries.values()
+    )
+    labels = json.loads(
+        docker.run("image", "inspect", app.image_tag, "--format", "{{json .Config.Labels}}").stdout
+    )
     assert "io.hass.type" in labels and "org.opencontainers.image.title" in labels
     assert labels["io.hass.arch"] == ARCH_LABEL[app.image_arch]
 
@@ -138,7 +201,9 @@ async def test_selection_change_and_persistence_across_a_container_kill(running,
         mine = [s["state"] for e, s in (await ha.states()).items() if f"deye_{IMG}_" in e]
         return mine and all(v == "unavailable" for v in mine)
 
-    await until(unavailable, "SIGKILL of the container: the will makes everything unavailable", 60, 1)
+    await until(
+        unavailable, "SIGKILL of the container: the will makes everything unavailable", 60, 1
+    )
     app.start()
     await app.wait_api(90)
 
@@ -146,6 +211,8 @@ async def test_selection_change_and_persistence_across_a_container_kill(running,
         got = inverter_states(await ha.states(), IMG, "i_tcp")
         return got.get("battery_soc") == "61" and "pv2_power" not in got
 
-    await until(back, "after the restart the data returns and the persisted deselection holds", 150, 2)
+    await until(
+        back, "after the restart the data returns and the persisted deselection holds", 150, 2
+    )
     assert any((Path(app.dir) / n).exists() for n in ("selection.a.json", "selection.b.json"))  # noqa: ASYNC240
     assert (Path(app.dir) / "identity.json").exists()  # noqa: ASYNC240

@@ -158,7 +158,14 @@ class Wire:
         inner = self._rtu(f[26:34])
         if inner is None:
             return None
-        return Read("v5", inner.unit, inner.start, inner.count, seq=int.from_bytes(f[5:7], "little"), serial=serial)
+        return Read(
+            "v5",
+            inner.unit,
+            inner.start,
+            inner.count,
+            seq=int.from_bytes(f[5:7], "little"),
+            serial=serial,
+        )
 
 
 @dataclass
@@ -187,8 +194,12 @@ class FakeInverter:
     unit: int = 1
     regs: dict[int, int] = field(default_factory=dict)
     logger_serial: int = LOGGER_SERIAL
-    fail_ranges: list[tuple[int, int]] = field(default_factory=list)  # reads touching these -> exception
-    silent_ranges: list[tuple[int, int]] = field(default_factory=list)  # reads touching these -> no answer
+    fail_ranges: list[tuple[int, int]] = field(
+        default_factory=list
+    )  # reads touching these -> exception
+    silent_ranges: list[tuple[int, int]] = field(
+        default_factory=list
+    )  # reads touching these -> no answer
     gates: list[Gate] = field(default_factory=list)
     wire: Wire = field(init=False)
     port: int = 0
@@ -220,11 +231,18 @@ class FakeInverter:
             pdu = bytes([0x83, 0x02])
         else:
             words = [
-                (overrides or {}).get(a, self.regs.get(a, 0)) & 0xFFFF for a in range(read.start, end)
+                (overrides or {}).get(a, self.regs.get(a, 0)) & 0xFFFF
+                for a in range(read.start, end)
             ]
             pdu = bytes([3, 2 * len(words)]) + b"".join(w.to_bytes(2, "big") for w in words)
         if read.kind == "mbap":
-            return read.tid.to_bytes(2, "big") + b"\x00\x00" + (len(pdu) + 1).to_bytes(2, "big") + bytes([read.unit]) + pdu
+            return (
+                read.tid.to_bytes(2, "big")
+                + b"\x00\x00"
+                + (len(pdu) + 1).to_bytes(2, "big")
+                + bytes([read.unit])
+                + pdu
+            )
         rtu = with_crc(bytes([read.unit]) + pdu)
         if read.kind in ("rtu", "serial"):
             return rtu
@@ -273,7 +291,7 @@ class FakeInverter:
                     if reply is not None:
                         writer.write(reply)
                         await writer.drain()
-        except (ConnectionError, asyncio.IncompleteReadError):
+        except ConnectionError, asyncio.IncompleteReadError:
             pass
         finally:
             self.wire.stream_closed(buf)
