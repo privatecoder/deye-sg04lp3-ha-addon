@@ -57,11 +57,11 @@ def test_manifest_basics() -> None:
     assert MANIFEST["init"] is False
     assert MANIFEST["stage"] == "experimental"
     assert "startup" not in MANIFEST  # default "application" (linter: no default keys)
-    assert MANIFEST["boot"] == "auto"
+    assert MANIFEST.get("boot", "auto") == "auto"
     assert MANIFEST["services"] == ["mqtt:want"]
     assert MANIFEST["uart"] is True
     assert MANIFEST["ingress"] is True
-    assert MANIFEST["ingress_port"] == 8099
+    assert MANIFEST.get("ingress_port", 8099) == 8099
     assert MANIFEST.get("panel_admin", True) is True  # default true, admin-only panel
     assert not [k for k in _FORBIDDEN if k in MANIFEST]
     # /ssl read-only is the only mapped directory: it is needed for the optional TLS files of an
