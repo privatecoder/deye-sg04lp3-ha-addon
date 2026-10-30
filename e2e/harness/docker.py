@@ -292,7 +292,13 @@ def ensure_images() -> dict[str, str]:
         (HOME_ASSISTANT, HOME_ASSISTANT_DIGEST),
         (PROXY, PROXY_DIGEST),
     ):
-        if run("image", "inspect", image, check=False).returncode != 0:
+        missing = run("image", "inspect", image, check=False).returncode != 0
+        if digest is not None and (missing or image_digest(image) != digest):
+            # Pull the pinned digest, not the tag: upstream may move a tag to a rebuilt image.
+            pinned = f"{image.rsplit(':', 1)[0]}@{digest}"
+            run("pull", pinned, timeout=1500)
+            run("tag", pinned, image)
+        elif missing:
             run("pull", image, timeout=1500)
         actual = image_digest(image)
         if digest is not None and actual != digest:
