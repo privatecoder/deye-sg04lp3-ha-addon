@@ -67,11 +67,17 @@ def build_image() -> dict[str, str]:
     }
 
 
-def fake_addresses() -> tuple[str, str]:
+def fake_addresses(net: docker.Net) -> tuple[str, str]:
     """(bind address on the host, address of the host as seen from a container)."""
     if platform.system() == "Darwin":  # Docker Desktop: the VM reaches the host's loopback
         return "127.0.0.1", "host.docker.internal"
-    return "172.30.32.1", "172.30.32.1"  # Linux: the bridge gateway is a host address
+    # Linux: the gateway of the run's network is the host as seen from the container. It is read
+    # from Docker, and the fakes listen on all addresses because the bridge address may not be
+    # configured on the host at bind time (it is not on the hosted runners).
+    gateway = docker.run(
+        "network", "inspect", net.name, "--format", "{{(index .IPAM.Config 0).Gateway}}"
+    ).stdout.strip()
+    return "0.0.0.0", gateway or "172.30.32.1"  # noqa: S104 - test fakes on a CI/dev host
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +102,7 @@ async def image_app(running):
                 | {"labels": image["labels"]}
             }
         )
-        bind, seen = fake_addresses()
+        bind, seen = fake_addresses(net)
         fakes = {
             "i_tcp": FakeInverter("i_tcp", "mbap", regs=registers(SN["i_tcp"], soc=61)),
             "i_rtu": FakeInverter("i_rtu", "rtu", regs=registers(SN["i_rtu"], soc=62)),
