@@ -375,7 +375,9 @@ from the empty overview; the page **Set up plant** (top navigation) edits everyt
   nothing to MQTT and does not touch `identity.json` (an `expected_serial` is bound after saving).
   If the previous plant cannot be started again either, nothing keeps running, the interface says
   so and further changes are blocked until the app is restarted (it then starts from the saved
-  plant). A running connection check is cancelled by a plant change.
+  plant). In that state every changing call is refused (`plant_recovery_failed`); the views stay
+  readable and show the inverters as stopped. A running connection check is cancelled by a plant
+  change.
   Removed inverters are taken out of the discovery through the existing cleanup ledger.
 
 ### Using the web interface

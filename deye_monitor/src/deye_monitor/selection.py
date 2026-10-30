@@ -668,9 +668,9 @@ class SelectionManager:
             return False
         return True
 
-    async def persist_specs_locked(self) -> None:
+    async def persist_specs_locked(self) -> bool:
         """Best-effort prune after an accepted plant change (see ``prune_locked``)."""
-        self.prune_locked()
+        return self.prune_locked()
 
     def attach(self, applier: Applier) -> None:
         self._applier = applier

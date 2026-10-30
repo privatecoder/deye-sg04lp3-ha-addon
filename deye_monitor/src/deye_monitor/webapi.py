@@ -463,6 +463,10 @@ class WebApi:
         given = request.headers.get("X-CSRF-Token", "")
         if not given or not hmac.compare_digest(given.encode(), self._csrf(user).encode()):
             raise ChangeError("csrf_invalid", 403)
+        if self._in_recovery():
+            # the generation the web interface still points at was discarded: nothing may change
+            # until the app is restarted (reading stays available)
+            raise ChangeError("plant_recovery_failed", 409)
         if request.content_type != "application/json":
             raise ChangeError("json_required", 415)
         try:
@@ -479,6 +483,9 @@ class WebApi:
                 raise ChangeError("invalid_request", field="If-Match")
             expected = int(match.group(1))
         return user, body, expected
+
+    def _in_recovery(self) -> bool:
+        return self.plant is not None and self.plant.recovery_failed
 
     def _inverter_of(self, request: web.Request) -> str:
         inverter_id = request.match_info["inverter"]
@@ -520,7 +527,13 @@ class WebApi:
                 "writes_enabled": False,
                 "plant_revision": self.plant.revision if self.plant else None,
                 "setup_needed": not self.manager.specs,
-                "plant_notices": list(self.plant.notices) if self.plant else [],
+                "plant_notices": (list(self.plant.notices) if self.plant else [])
+                + (
+                    [{"code": "selection_prune_pending", "differs": False}]
+                    if store.pruned and not self._in_recovery()
+                    else []
+                ),
+                "recovery_failed": self._in_recovery(),
             }
         )
 
@@ -536,7 +549,50 @@ class WebApi:
             {"hardware": {n: h.model_dump(mode="json") for n, h in sorted(hardware.items())}}
         )
 
+    def _recovery_view(self, inverter_id: str) -> dict[str, Any]:
+        """An inverter of the ACCEPTED plant while no generation of it runs: metadata from the plant
+        and the selection, an explicit stopped status."""
+        assert self.plant is not None
+        spec = self.manager.specs[inverter_id]
+        cfg = next(i for i in self.plant.plant.inverters if i.id == inverter_id)
+        sel = self.manager.selection(inverter_id)
+        return {
+            "id": inverter_id,
+            "name": cfg.name,
+            "profile": spec.profile.profile,
+            "hardware": spec.hardware.name,
+            "connection": {
+                "endpoint": cfg.endpoint,
+                "transport": self.plant.plant.endpoint(cfg.endpoint).transport.value,
+                "serial_pinned": cfg.expected_serial is not None,
+            },
+            "status": {
+                "state": "blocked",
+                "reason": "plant_recovery_failed",
+                "active_path": "primary",
+                "endpoint": cfg.endpoint,
+                "serial": None,
+                "bound": False,
+                "binding_source": None,
+                "serial_matches": None,
+                "identity": {},
+                "capability_conflicts": [],
+                "energy": {},
+                "hints": [],
+                "error_counters": {},
+                "last_success_wall": None,
+                "bus_utilisation": None,
+                "suggested_features": {},
+                "suggestion_basis": {},
+                "selection_revision": self.manager.revision,
+                "awaiting_selection": False,
+            },
+            "selection": selection_view(sel, self.manager.plan(inverter_id, sel), None),
+        }
+
     def _inverter_view(self, inverter_id: str) -> dict[str, Any]:
+        if self._in_recovery():
+            return self._recovery_view(inverter_id)
         spec = self.manager.specs[inverter_id]
         runtime = self.runtime.inverters[inverter_id]
         bus_load = self.runtime.bus_utilisation().get(self.runtime._bus_of(inverter_id))
@@ -1111,10 +1167,7 @@ class WebApi:
             ep_id = data["endpoint_id"]
             if not isinstance(ep_id, str) or not _ID_RE.match(ep_id):
                 raise ChangeError("invalid_request", field="endpoint_id")
-            try:
-                endpoint = plant.endpoint(ep_id)
-            except KeyError:
-                raise ChangeError("unknown_endpoint", 404) from None
+            endpoint = None  # a saved connection is resolved inside the probe's generation lease
         else:
             spec = data["endpoint"]
             known = None
@@ -1151,9 +1204,15 @@ class WebApi:
 
             def start() -> Awaitable[dict[str, Any]]:
                 runtime = self.runtime  # read inside the generation lease of the plant service
+                target = endpoint
+                if target is None:  # the saved connection as it is in THIS generation
+                    try:
+                        target = self._plant_service().plant.endpoint(data["endpoint_id"])
+                    except KeyError:
+                        raise ChangeError("unknown_endpoint", 404) from None
                 return probe.run_test(
                     runtime,
-                    endpoint,
+                    target,
                     unit,
                     bound_serial=lambda: runtime.book.bound(inverter_id) if inverter_id else None,
                     expected_serial=expected_serial,

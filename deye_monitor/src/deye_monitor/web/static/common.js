@@ -25,6 +25,7 @@ const REASON_PATTERNS = [
   [/^energy_history_missing$/, 'energy_history_missing'],
   [/^energy_store_unwritable$/, 'energy_store_unwritable'],
   [/^selection_recovery_required$/, 'selection_recovery_required'],
+  [/^plant_recovery_failed$/, 'plant_recovery_failed'],
   [/failed cycles on the/, 'failed_cycles'],
 ];
 

@@ -136,6 +136,7 @@ function confirmInverterDelete(inv) {
         const done = (result) => {
           toast(t('inv.deleted'), 'ok');
           if ((result.notes || []).includes('binding_not_removed')) toast(t('inv.deleted_binding_failed'), 'error');
+          if ((result.notes || []).includes('prune_pending')) toast(t('inv.deleted_prune_pending'), 'error');
           close(true);
         };
         busy(go, true);

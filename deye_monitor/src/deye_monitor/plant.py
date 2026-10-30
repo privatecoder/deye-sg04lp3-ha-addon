@@ -372,5 +372,6 @@ class PlantService:
                         notes.append("binding_not_removed")
                 except OSError, ValueError:
                     notes.append("binding_not_removed")
-            await self.manager.persist_specs_locked()
+            if not await self.manager.persist_specs_locked():
+                notes.append("prune_pending")
             return PlantChange(revision, True, removed, notes)

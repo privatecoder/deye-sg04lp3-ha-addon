@@ -44,7 +44,8 @@ export function applyTheme() {
   else delete root.dataset.theme;
 }
 
-export const canEdit = () => Boolean(state.session && state.session.csrf);
+// no change while the plant is in recovery (the app has to be restarted first)
+export const canEdit = () => Boolean(state.session && state.session.csrf && !state.session.recovery_failed);
 
 export async function loadSession() {
   const session = await api('GET', 'api/session');
