@@ -10,12 +10,14 @@ revision in ``If-Match``. Nothing here can enable writes to a device. Responses 
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import ipaddress
 import json
 import logging
 import mimetypes
+import os
 import re
 import secrets
 from collections.abc import Awaitable, Callable, Collection, Mapping
@@ -24,10 +26,20 @@ from importlib import resources
 from typing import Any
 
 from aiohttp import web
+from pydantic import ValidationError
 
+from deye_monitor import probe
+from deye_monitor.config import (
+    EndpointConfig,
+    InverterConfig,
+    PlantConfig,
+    Transport,
+    plant_problems,
+)
 from deye_monitor.device import CONFLICT_POINTS, InverterRuntime
 from deye_monitor.mqtt import MqttPublisher
 from deye_monitor.observation import ObservationState
+from deye_monitor.plant import MAX_ENDPOINTS, MAX_INVERTERS, PlantService
 from deye_monitor.profiles.plan import ReadPlan
 from deye_monitor.profiles.schema import Entry, Profile
 from deye_monitor.runtime import Runtime
@@ -50,6 +62,32 @@ MAX_KEYS = 600
 _KEY_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _ID_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 _REVISION_RE = re.compile(r'^(?:W/)?"?([0-9]{1,12})"?$')
+_SERIAL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$")
+_ENDPOINT_FIELDS = (
+    "id",
+    "host",
+    "port",
+    "logger_serial",
+    "serial_device",
+    "baudrate",
+    "bus_id",
+    "timeout_s",
+    "rtu_late_window_s",
+    "max_read_registers",
+    "request_gap_ms",
+    "queue_size",
+)
+_INVERTER_FIELDS = (
+    "id",
+    "fallback_endpoint",
+    "fallback_unit_id",
+    "expected_serial",
+    "energy_resolution",
+    "poll_fast_s",
+    "poll_energy_s",
+    "poll_settings_s",
+    "poll_identity_s",
+)
 _STATIC_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -74,6 +112,9 @@ class WebSettings:
     port: int = 8099
     # Only for tests: the Supervisor peer is fixed in production.
     allowed_peers: frozenset[str] = field(default_factory=lambda: frozenset({SUPERVISOR_PEER}))
+    # The only directory serial devices of connections created in the web interface may come from
+    # (listed by name, never scanned or opened by the listing).
+    serial_dir: str = "/dev/serial/by-id"
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +169,26 @@ def _flag(body: Mapping[str, Any], name: str, default: bool = False) -> bool:
     if not isinstance(value, bool):
         raise ChangeError("invalid_request", field=name)
     return value
+
+
+def _field_error(field_name: str, kind: str) -> ChangeError:
+    return ChangeError(
+        "invalid_fields", 422, fields=[{"field": field_name, "type": kind, "msg": kind}]
+    )
+
+
+def _validation_error(exc: ValidationError) -> ChangeError:
+    """Field-level findings of a model: location, type and our own English message (the models
+    never put input values into their messages)."""
+    fields = [
+        {
+            "field": ".".join(str(p) for p in err["loc"]),
+            "type": err["type"],
+            "msg": err["msg"].removeprefix("Value error, ")[:200],
+        }
+        for err in exc.errors(include_input=False, include_url=False, include_context=False)
+    ]
+    return ChangeError("invalid_fields", 422, fields=fields[:20])
 
 
 def _inverter_id(value: Any) -> str:
@@ -268,10 +329,13 @@ class WebApi:
         publisher: MqttPublisher | None = None,
         settings: WebSettings | None = None,
         secret: bytes | None = None,
+        plant: PlantService | None = None,
     ) -> None:
         self.runtime = runtime
         self.publisher = publisher
         self.manager = manager
+        self.plant = plant
+        self._test_lock = asyncio.Lock()
         self.settings = settings or WebSettings()
         self._secret = secret or secrets.token_bytes(32)
         self._peers = frozenset(_normalise_ip(p) for p in self.settings.allowed_peers)
@@ -314,6 +378,16 @@ class WebApi:
         r.add_post("/api/transfer", self._transfer)
         r.add_post("/api/stores/reset", self._reset)
         r.add_post("/api/cleanup/purge", self._purge)
+        if self.plant is not None:
+            r.add_get("/api/plant", self._plant)
+            r.add_get("/api/plant/serial-devices", self._serial_devices)
+            r.add_post("/api/plant/endpoints", self._endpoint_create)
+            r.add_put("/api/plant/endpoints/{endpoint}", self._endpoint_update)
+            r.add_post("/api/plant/endpoints/{endpoint}/delete", self._endpoint_delete)
+            r.add_post("/api/plant/inverters", self._inverter_create)
+            r.add_put("/api/plant/inverters/{inverter}", self._inverter_update)
+            r.add_post("/api/plant/inverters/{inverter}/delete", self._inverter_delete)
+            r.add_post("/api/plant/test", self._plant_test)
         return app
 
     async def start(self) -> int:
@@ -441,8 +515,12 @@ class WebApi:
                 "languages": ["de", "en"],
                 "inverters": list(self.manager.specs),
                 "store": {"status": store.status.value, "source": store.source},
-                "problems": [p.as_dict() for p in store.problems],
+                "problems": [p.as_dict() for p in store.problems]
+                + ([p.as_dict() for p in self.plant.store.problems] if self.plant else []),
                 "writes_enabled": False,
+                "plant_revision": self.plant.revision if self.plant else None,
+                "setup_needed": not self.manager.specs,
+                "plant_notices": list(self.plant.notices) if self.plant else [],
             }
         )
 
@@ -481,6 +559,7 @@ class WebApi:
         return json_response(
             {
                 "revision": self.manager.revision,
+                "plant_revision": self.plant.revision if self.plant else None,
                 "now": self.runtime._wall(),  # server clock: the UI shows ages relative to it
                 "inverters": [self._inverter_view(i) for i in self.manager.specs],
             }
@@ -785,6 +864,302 @@ class WebApi:
                 "action_counter": self.action_counter,
             }
         )
+
+    # -- plant (connections and inverters) --------------------------------------------------
+
+    def _plant_service(self) -> PlantService:
+        assert self.plant is not None
+        return self.plant
+
+    def _plant_view(self) -> dict[str, Any]:
+        service = self._plant_service()
+        plant = service.plant
+        users: dict[str, list[dict[str, str]]] = {e.id: [] for e in plant.endpoints}
+        for inv in plant.inverters:
+            users.get(inv.endpoint, []).append({"inverter": inv.id, "role": "primary"})
+            if inv.fallback_endpoint:
+                users.get(inv.fallback_endpoint, []).append(
+                    {"inverter": inv.id, "role": "fallback"}
+                )
+        endpoints = []
+        for e in plant.endpoints:
+            data = e.model_dump(mode="json", exclude_none=True, exclude={"host_display"})
+            if e.host is not None:
+                data["host"] = e.host_display or e.host
+            endpoints.append({**data, "used_by": users[e.id]})
+        inverters = [
+            # neither is set in the web interface (the profile is fixed, writing does not exist)
+            i.model_dump(mode="json", exclude_none=True, exclude={"allow_writes", "profile"})
+            for i in plant.inverters
+        ]
+        return {
+            "revision": service.revision,
+            "endpoints": endpoints,
+            "inverters": inverters,
+            "notices": list(service.notices),
+            "limits": {"endpoints": MAX_ENDPOINTS, "inverters": MAX_INVERTERS},
+            "writes": "unavailable",
+        }
+
+    async def _plant(self, request: web.Request) -> web.Response:
+        return json_response(self._plant_view())
+
+    async def _serial_devices(self, request: web.Request) -> web.Response:
+        """Names below the serial directory, listed only: nothing is opened or probed."""
+        directory = self.settings.serial_dir
+        names: list[str] = []
+        try:
+            with os.scandir(directory) as entries:
+                names = sorted(e.name for e in entries if _SERIAL_NAME_RE.match(e.name))
+        except OSError:
+            names = []
+        return json_response(
+            {"directory": directory, "devices": [f"{directory}/{n}" for n in names[:64]]}
+        )
+
+    def _endpoint_input(
+        self, body: Any, *, endpoint_id: str | None, known: str | None
+    ) -> EndpointConfig:
+        data = _object(body, required=["transport"], optional=[*_ENDPOINT_FIELDS])
+        if endpoint_id is not None:
+            if data.get("id", endpoint_id) != endpoint_id:
+                raise ChangeError("id_immutable", 422)
+            data = {**data, "id": endpoint_id}
+        elif "id" not in data:
+            raise ChangeError("missing_field", fields=["id"])
+        if data.get("transport") == Transport.SERIAL_RTU.value:
+            device = data.get("serial_device")
+            if isinstance(device, str) and device != known:
+                prefix = self.settings.serial_dir.rstrip("/") + "/"
+                if not device.startswith(prefix) or not _SERIAL_NAME_RE.match(
+                    device[len(prefix) :]
+                ):
+                    raise _field_error("serial_device", "serial_device_not_allowed")
+        try:
+            return EndpointConfig.model_validate(data)
+        except ValidationError as exc:
+            raise _validation_error(exc) from None
+
+    def _inverter_input(self, body: Any, *, inverter_id: str | None) -> InverterConfig:
+        data = _object(body, required=["name", "endpoint", "unit_id"], optional=[*_INVERTER_FIELDS])
+        if inverter_id is not None:
+            if data.get("id", inverter_id) != inverter_id:
+                raise ChangeError("id_immutable", 422)
+            data = {**data, "id": inverter_id}
+        elif "id" not in data:
+            raise ChangeError("missing_field", fields=["id"])
+        try:
+            return InverterConfig.model_validate(data)
+        except ValidationError as exc:
+            raise _validation_error(exc) from None
+
+    def _plant_checked(
+        self, endpoints: list[EndpointConfig], inverters: list[InverterConfig]
+    ) -> PlantConfig:
+        if len(endpoints) > MAX_ENDPOINTS or len(inverters) > MAX_INVERTERS:
+            raise ChangeError("too_many", 422)
+        problems = plant_problems(endpoints, inverters)
+        if problems:
+            raise ChangeError(
+                "invalid_plant",
+                422,
+                problems=[{"code": p.code, "params": p.params} for p in problems[:10]],
+            )
+        return PlantConfig(endpoints=tuple(endpoints), inverters=tuple(inverters))
+
+    async def _plant_change(
+        self,
+        expected: int,
+        build: Callable[[PlantConfig], PlantConfig],
+        *,
+        forget: frozenset[str] = frozenset(),
+    ) -> web.Response:
+        service = self._plant_service()
+        result = await service.change(expected, build, forget_bindings=forget)
+        if result.changed:
+            self._actions += 1  # confirmations given for the old plant are void
+        return json_response(
+            {
+                "revision": result.revision,
+                "changed": result.changed,
+                "removed_inverters": list(result.removed_inverters),
+                "notes": result.notes,
+                "plant": self._plant_view(),
+            }
+        )
+
+    def _endpoint_of(self, request: web.Request) -> str:
+        endpoint_id = request.match_info["endpoint"]
+        if not _ID_RE.match(endpoint_id) or all(
+            e.id != endpoint_id for e in self._plant_service().plant.endpoints
+        ):
+            raise ChangeError("unknown_endpoint", 404)
+        return endpoint_id
+
+    async def _endpoint_create(self, request: web.Request) -> web.Response:
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        endpoint = self._endpoint_input(body, endpoint_id=None, known=None)
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            if any(e.id == endpoint.id for e in plant.endpoints):
+                raise ChangeError("id_taken", 409)
+            return self._plant_checked([*plant.endpoints, endpoint], list(plant.inverters))
+
+        return await self._plant_change(expected, build)
+
+    async def _endpoint_update(self, request: web.Request) -> web.Response:
+        endpoint_id = self._endpoint_of(request)
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        current = self._plant_service().plant.endpoint(endpoint_id)
+        endpoint = self._endpoint_input(body, endpoint_id=endpoint_id, known=current.serial_device)
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            return self._plant_checked(
+                [endpoint if e.id == endpoint_id else e for e in plant.endpoints],
+                list(plant.inverters),
+            )
+
+        return await self._plant_change(expected, build)
+
+    async def _endpoint_delete(self, request: web.Request) -> web.Response:
+        endpoint_id = self._endpoint_of(request)
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        data = _object(body, required=["confirm"])
+        if data["confirm"] is not True:
+            raise ChangeError("confirmation_required")
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            using = [
+                i.id for i in plant.inverters if endpoint_id in (i.endpoint, i.fallback_endpoint)
+            ]
+            if using:
+                raise ChangeError("endpoint_in_use", 409, inverters=using)
+            return self._plant_checked(
+                [e for e in plant.endpoints if e.id != endpoint_id], list(plant.inverters)
+            )
+
+        return await self._plant_change(expected, build)
+
+    async def _inverter_create(self, request: web.Request) -> web.Response:
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        inverter = self._inverter_input(body, inverter_id=None)
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            if any(i.id == inverter.id for i in plant.inverters):
+                raise ChangeError("id_taken", 409)
+            return self._plant_checked(list(plant.endpoints), [*plant.inverters, inverter])
+
+        return await self._plant_change(expected, build)
+
+    async def _inverter_update(self, request: web.Request) -> web.Response:
+        inverter_id = self._plant_inverter_of(request)
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        inverter = self._inverter_input(body, inverter_id=inverter_id)
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            return self._plant_checked(
+                list(plant.endpoints),
+                [inverter if i.id == inverter_id else i for i in plant.inverters],
+            )
+
+        return await self._plant_change(expected, build)
+
+    def _plant_inverter_of(self, request: web.Request) -> str:
+        inverter_id = request.match_info["inverter"]
+        if not _ID_RE.match(inverter_id) or all(
+            i.id != inverter_id for i in self._plant_service().plant.inverters
+        ):
+            raise ChangeError("unknown_inverter", 404)
+        return inverter_id
+
+    async def _inverter_delete(self, request: web.Request) -> web.Response:
+        inverter_id = self._plant_inverter_of(request)
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        data = _object(body, required=["confirm"], optional=["remove_binding"])
+        if data["confirm"] is not True:
+            raise ChangeError("confirmation_required")
+        forget = _flag(data, "remove_binding")
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            return self._plant_checked(
+                list(plant.endpoints), [i for i in plant.inverters if i.id != inverter_id]
+            )
+
+        return await self._plant_change(
+            expected, build, forget=frozenset({inverter_id}) if forget else frozenset()
+        )
+
+    async def _plant_test(self, request: web.Request) -> web.Response:
+        """Read-only identity read of one connection (``probe``); the form values need not be
+        saved. Changes nothing, so it needs no revision, but the same user and CSRF gate."""
+        _, body, _ = await self._mutation(request, revision=False)
+        data = _object(
+            body,
+            required=["unit_id"],
+            optional=["endpoint", "endpoint_id", "inverter", "expected_serial"],
+        )
+        if ("endpoint" in data) == ("endpoint_id" in data):
+            raise ChangeError("invalid_request", field="endpoint")
+        plant = self._plant_service().plant
+        if "endpoint_id" in data:
+            ep_id = data["endpoint_id"]
+            if not isinstance(ep_id, str) or not _ID_RE.match(ep_id):
+                raise ChangeError("invalid_request", field="endpoint_id")
+            try:
+                endpoint = plant.endpoint(ep_id)
+            except KeyError:
+                raise ChangeError("unknown_endpoint", 404) from None
+        else:
+            spec = data["endpoint"]
+            known = None
+            if isinstance(spec, dict) and isinstance(spec.get("id"), str):
+                known = next((e.serial_device for e in plant.endpoints if e.id == spec["id"]), None)
+            endpoint = self._endpoint_input(
+                {"id": "connection_test", **spec} if isinstance(spec, dict) else spec,
+                endpoint_id=None,
+                known=known,
+            )
+        unit = data["unit_id"]
+        if type(unit) is not int or not 1 <= unit <= 247:
+            raise ChangeError("invalid_request", field="unit_id")
+        inverter_id = data.get("inverter")
+        if inverter_id is not None:
+            inverter_id = _inverter_id(inverter_id)
+        expected_serial = data.get("expected_serial")
+        if expected_serial is not None:
+            try:
+                InverterConfig.model_validate(
+                    {
+                        "id": "x",
+                        "name": "x",
+                        "endpoint": "x",
+                        "unit_id": 1,
+                        "expected_serial": expected_serial,
+                    }
+                )
+            except ValidationError:
+                raise _field_error("expected_serial", "invalid_serial") from None
+        if self._test_lock.locked():
+            raise ChangeError("test_running", 409)
+        async with self._test_lock:
+            runtime = self.runtime
+            try:
+                result = await probe.run_test(
+                    runtime,
+                    endpoint,
+                    unit,
+                    bound_serial=lambda: runtime.book.bound(inverter_id) if inverter_id else None,
+                    expected_serial=expected_serial,
+                )
+            except probe.EndpointInUse:
+                raise ChangeError("endpoint_in_use_by_other_transport", 409) from None
+        return json_response(result)
 
 
 def _header(request: web.Request, name: str) -> str | None:

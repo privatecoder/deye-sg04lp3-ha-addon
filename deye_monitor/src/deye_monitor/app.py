@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 from deye_monitor import __version__
@@ -20,7 +21,7 @@ from deye_monitor.config import (
     resolve_instance_id,
     with_supervisor_mqtt,
 )
-from deye_monitor.device import RelaySink
+from deye_monitor.device import NullSink, RelaySink
 from deye_monitor.ha_discovery import Namespace
 from deye_monitor.mqtt import (
     ConnectionFactory,
@@ -30,10 +31,12 @@ from deye_monitor.mqtt import (
     aiomqtt_factory,
 )
 from deye_monitor.mqtt_discovery import valid_discovery_document
+from deye_monitor.plant import PlantService, PlantStore, SwitchError, options_notice
 from deye_monitor.profiles.plan import SelectionError
 from deye_monitor.runtime import Runtime
 from deye_monitor.selection import (
     InverterSelection,
+    InverterSpec,
     SelectionManager,
     SelectionStore,
     specs_from_config,
@@ -138,77 +141,169 @@ def _configure_logging(level: str) -> None:
     )
 
 
+class Application:
+    """The running generation: inverter runtime, MQTT publisher and their wiring. A plant change
+    stops the whole generation in order and starts a new one (``switch``); the web interface, the
+    selection manager and the sink relay live across generations."""
+
+    def __init__(
+        self,
+        options: AppConfig,
+        instance_id: str,
+        mqtt: MqttConfig,
+        manager: SelectionManager,
+        relay: RelaySink,
+    ) -> None:
+        self.options = options
+        self.instance_id = instance_id
+        self.mqtt = mqtt
+        self.manager = manager
+        self.relay = relay
+        self.cfg = options
+        self.web: WebApi | None = None
+        self.runtime: Runtime | None = None
+        self.publisher: MqttPublisher | None = None
+        self.publisher_task: asyncio.Task[None] | None = None
+        self.running = False
+
+    def install(self, cfg: AppConfig) -> Runtime:
+        """Build runtime and publisher for ``cfg`` (synchronous: nothing awaits in between, so the
+        web interface never sees a half-built generation)."""
+        initial = self.manager.initial()
+        runtime = Runtime(
+            cfg,
+            sink=self.relay,
+            features={i: f for i, (f, _, _) in initial.items()},
+            selections={i: (keys, rev) for i, (_, keys, rev) in initial.items()},
+        )
+        for inverter_id, inv in runtime.inverters.items():
+            inv.awaiting_selection = not self.manager.selection(inverter_id).chosen
+        publisher: MqttPublisher | None = None
+        if self.mqtt.host is None:
+            log.error("no MQTT broker configured and no MQTT service found: nothing is published")
+        else:
+            publisher = build_publisher(cfg, runtime, self.mqtt, self.instance_id)
+        self.relay.target = publisher if publisher is not None else NullSink()
+        self.manager.attach(LiveApplier(runtime, publisher))
+        self.cfg, self.runtime, self.publisher = cfg, runtime, publisher
+        if self.web is not None:
+            self.web.runtime, self.web.publisher = runtime, publisher
+        return runtime
+
+    async def start_generation(self) -> None:
+        assert self.runtime is not None
+        if self.publisher is not None:
+            self.publisher_task = asyncio.create_task(self.publisher.run(), name="mqtt-publisher")
+            self.publisher_task.add_done_callback(_log_publisher_end)
+        await self.runtime.start()
+        self.running = True
+
+    async def stop_generation(self) -> None:
+        self.running = False
+        if self.runtime is not None:
+            await self.runtime.stop()
+        publisher, task = self.publisher, self.publisher_task
+        self.publisher_task = None
+        if publisher is not None and task is not None:
+            publisher.request_stop()  # inverters and the app go offline, then DISCONNECT
+            try:
+                await asyncio.wait_for(task, publisher.stop_budget_s)
+            except TimeoutError, asyncio.CancelledError:
+                task.cancel()
+                with contextlib.suppress(BaseException):
+                    await task
+
+    async def switch(self, cfg: AppConfig, specs: Mapping[str, InverterSpec]) -> None:
+        """Replace the running generation by one for ``cfg`` (``SwitchError`` after restoring the
+        previous generation where possible). The selection manager's lock is held by the caller."""
+        previous_cfg = self.cfg
+        previous_specs = self.manager.specs
+        await self.stop_generation()
+        undo = self.manager.set_specs(specs)
+        try:
+            self.install(cfg)
+            await self.start_generation()
+        except Exception:
+            log.exception("new plant could not be started; restoring the previous one")
+            self.manager.restore_specs(undo)
+            try:
+                await self.stop_generation()
+                self.manager.set_specs(previous_specs)
+                self.install(previous_cfg)
+                await self.start_generation()
+            except Exception:
+                log.exception("the previous plant could not be restored")
+                raise SwitchError(restored=False) from None
+            raise SwitchError(restored=True) from None
+
+    def forget_binding(self, inverter_id: str) -> bool:
+        assert self.runtime is not None
+        self.runtime.book.reset(inverter_id)
+        return True
+
+
 async def serve(cfg: AppConfig, stop: asyncio.Event) -> None:
     """Run the device loops until ``stop`` is set, then shut down in order."""
     instance_id = resolve_instance_id(cfg)
     mqtt = with_supervisor_mqtt(cfg.mqtt, os.environ)
     devices = os.environ.get(NO_DEVICES_ENV) != "1"
+    directory = data_dir()
+    plant_store = PlantStore(directory)
+    migrated = plant_store.migrate_from_options(cfg)
+    if migrated:
+        log.warning(
+            "connections and inverters of the app options were taken over into the web interface; "
+            "please remove them from the app options"
+        )
+    notices = options_notice(plant_store, cfg, migrated=migrated)
+    if notices and not migrated:
+        log.warning(
+            "the app options still contain connections/inverters; the web interface is "
+            "authoritative%s",
+            " and its plant differs" if notices[0]["differs"] else "",
+        )
+    for problem in plant_store.problems:
+        log.error("plant store: %s (%s)", problem.code, problem.subject)
+    effective = cfg.with_plant(plant_store.plant)
     relay = RelaySink()
     manager = SelectionManager(
-        SelectionStore(data_dir(), specs_from_config(cfg), require_choice=True)
+        SelectionStore(directory, specs_from_config(effective), require_choice=True)
     )
     for problem in manager.store.problems:
         log.error("selection store: %s (%s) %s", problem.code, problem.subject, problem.detail)
-    initial = manager.initial()
-    runtime = (
-        Runtime(
-            cfg,
-            sink=relay,
-            features={i: f for i, (f, _, _) in initial.items()},
-            selections={i: (keys, rev) for i, (_, keys, rev) in initial.items()},
-        )
-        if devices
-        else None
-    )
-    publisher: MqttPublisher | None = None
-    publisher_task: asyncio.Task[None] | None = None
-    if runtime is not None:
-        for inverter_id, inv in runtime.inverters.items():
-            inv.awaiting_selection = not manager.selection(inverter_id).chosen
-        if mqtt.host is None:
-            log.error("no MQTT broker configured and no MQTT service found: nothing is published")
-        else:
-            publisher = build_publisher(cfg, runtime, mqtt, instance_id)
-            relay.target = publisher
+    application = Application(effective, instance_id, mqtt, manager, relay)
     log.info(
         "deye_monitor %s ready: %d endpoint(s), %d inverter(s), instance %s, mqtt %s, "
         "device loops %s",
         __version__,
-        len(cfg.endpoints),
-        len(cfg.inverters),
+        len(effective.endpoints),
+        len(effective.inverters),
         instance_id,
         f"{mqtt.host}:{mqtt.port}" if mqtt.host else "not configured",
         "started" if devices else "disabled",
     )
-    if publisher is not None:
-        publisher_task = asyncio.create_task(publisher.run(), name="mqtt-publisher")
-        publisher_task.add_done_callback(_log_publisher_end)
     web: WebApi | None = None
-    if runtime is not None:
-        manager.attach(LiveApplier(runtime, publisher))
-        await runtime.start()
-        web = WebApi(runtime, manager, publisher=publisher)
+    if devices:
+        runtime = application.install(effective)
+        service = PlantService(plant_store, cfg, manager, application, notices=notices)
+        web = WebApi(runtime, manager, publisher=application.publisher, plant=service)
+        application.web = web
+        await application.start_generation()
         try:
             await web.start()
         except OSError as exc:  # the status/selection UI is optional; monitoring continues
             log.error("ingress web server could not start (%s)", type(exc).__name__)
             web = None
+            application.web = None
     try:
         await stop.wait()
     finally:
         log.info("shutting down")
         if web is not None:
             await web.stop()
-        if runtime is not None:
-            await runtime.stop()
-        if publisher is not None and publisher_task is not None:
-            publisher.request_stop()  # inverters and the app go offline, then DISCONNECT
-            try:
-                await asyncio.wait_for(publisher_task, publisher.stop_budget_s)
-            except TimeoutError, asyncio.CancelledError:
-                publisher_task.cancel()
-                with contextlib.suppress(BaseException):
-                    await publisher_task
+        if devices:
+            async with manager.lock:  # a plant change in progress finishes first
+                await application.stop_generation()
 
 
 def _log_publisher_end(task: asyncio.Task[None]) -> None:

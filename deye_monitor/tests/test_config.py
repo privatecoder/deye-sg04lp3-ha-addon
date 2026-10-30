@@ -113,9 +113,9 @@ def test_n_inverters(n: int) -> None:
     assert len(parse_config(data).inverters) == n
 
 
-def test_at_least_one_inverter() -> None:
-    assert "inverters" in bad({"endpoints": [gw(1)], "inverters": []})
-    assert "inverters" in bad({"endpoints": [gw(1)]})
+def test_options_may_be_empty_the_plant_is_set_up_in_the_web_interface() -> None:
+    assert parse_config({"endpoints": [gw(1)], "inverters": []}).inverters == ()
+    assert parse_config({}).inverters == ()
 
 
 def test_shared_bus_different_units_ok_same_unit_error() -> None:

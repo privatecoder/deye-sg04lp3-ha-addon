@@ -3,9 +3,11 @@
 import { ApiError } from './api.js';
 import { t, errorText, localiseDocument } from './i18n.js';
 import { h, modal } from './ui.js';
-import { state, loadAll, loadInverters, setLanguage, setTheme, applyTheme } from './state.js';
+import { state, loadAll, loadInverters, setLanguage, setTheme, applyTheme, hasPlant } from './state.js';
 import { overviewView } from './overview.js';
 import { setupView } from './setup.js';
+import { plantView } from './plant.js';
+import { wizardView } from './wizard.js';
 
 const POLL_MS = 10000;
 const root = document.getElementById('app');
@@ -15,7 +17,10 @@ let connectionLost = false;
 
 function parseRoute(hash) {
   const m = /^#\/inv\/([a-z0-9_]{1,32})$/.exec(hash);
-  return m ? { name: 'setup', id: m[1] } : { name: 'overview' };
+  if (m) return { name: 'setup', id: m[1] };
+  if (hash === '#/plant' && hasPlant()) return { name: 'plant' };
+  if (hash === '#/start' && hasPlant()) return { name: 'wizard' };
+  return { name: 'overview' };
 }
 
 function header() {
@@ -24,6 +29,11 @@ function header() {
   const nextTheme = themes[(themes.indexOf(state.theme) + 1) % themes.length];
   return h('header', { class: 'app-header' },
     h('a', { class: 'brand', href: '#/' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }), h('span', {}, 'Deye Monitor')),
+    hasPlant()
+      ? h('nav', { class: 'app-nav', 'aria-label': t('nav.main') },
+          h('a', { href: '#/', 'aria-current': location.hash === '' || location.hash === '#/' ? 'page' : null }, t('nav.overview')),
+          h('a', { href: '#/plant', id: 'nav-plant', 'aria-current': location.hash === '#/plant' ? 'page' : null }, t('nav.plant')))
+      : null,
     h('div', { class: 'header-tools' },
       h('div', { class: 'segmented', role: 'group', 'aria-label': t('lang.label') }, langButton('de'), langButton('en')),
       h('button', { type: 'button', class: 'btn small', id: 'theme-toggle', 'aria-label': t('theme.switch', { next: t(`theme.${nextTheme}`) }), onClick: () => { setTheme(nextTheme); render(); } }, t(`theme.${state.theme}`))));
@@ -43,9 +53,10 @@ function showRoute() {
     mount({ el: h('section', { class: 'empty' }, h('h2', {}, t('route.unknown_title')), h('p', {}, t('route.unknown_text')), h('a', { class: 'btn', href: '#/' }, t('nav.overview'))) });
     return;
   }
-  const view = next.name === 'setup' ? setupView(next.id) : overviewView();
+  const views = { setup: () => setupView(next.id), plant: plantView, wizard: wizardView, overview: overviewView };
+  const view = views[next.name]();
   mount(view);
-  document.title = next.name === 'setup' ? `${state.inverters.find((i) => i.id === next.id).name} · Deye Monitor` : 'Deye Monitor';
+  document.title = next.name === 'setup' ? `${state.inverters.find((i) => i.id === next.id).name} · Deye Monitor` : next.name === 'plant' ? `${t('nav.plant')} · Deye Monitor` : next.name === 'wizard' ? `${t('wiz.title')} · Deye Monitor` : 'Deye Monitor';
   window.scrollTo(0, 0);
   const heading = document.querySelector('#view h1');
   if (heading) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); }
@@ -74,7 +85,7 @@ async function poll() {
   if (connectionLost) { connectionLost = false; document.getElementById('conn').hidden = true; }
   // A rendering failure is not a lost connection: report it as what it is.
   try {
-    if (current.onData) current.onData();
+    if (current.onData) await current.onData();
   } catch (error) {
     showFailure(error);
   }
@@ -94,7 +105,13 @@ async function onHashChange() {
     if (current.discardDraft) current.discardDraft();
     history.replaceState(null, '', target || '#/');
   }
+  refreshNav();
   showRoute();
+}
+
+function refreshNav() {
+  const old = document.querySelector('header.app-header');
+  if (old) old.replaceWith(header());
 }
 
 function showFailure(error) {
@@ -116,6 +133,10 @@ async function boot() {
   } catch (error) {
     showFailure(error);
     return;
+  }
+  // a plant without connections and inverters starts with the setup assistant
+  if (hasPlant() && state.session.setup_needed && state.plant && state.plant.endpoints.length === 0 && (location.hash === '' || location.hash === '#/')) {
+    history.replaceState(null, '', '#/start');
   }
   try {
     render();

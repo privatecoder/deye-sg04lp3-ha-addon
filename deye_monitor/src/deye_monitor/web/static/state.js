@@ -8,6 +8,7 @@ const storage = safeStorage();
 export const state = {
   session: null,
   catalog: null,
+  plant: null,
   inverters: [],
   revision: 0,
   actionCounter: 0,
@@ -67,14 +68,32 @@ export async function loadInverters() {
   const data = await api('GET', 'api/inverters');
   state.inverters = data.inverters;
   state.revision = data.revision;
+  state.plantRevision = data.plant_revision;
   state.serverNow = data.now;
   state.fetchedAt = Date.now();
   return data;
 }
 
+export async function loadPlant() {
+  state.plant = await api('GET', 'api/plant');
+  return state.plant;
+}
+
 export async function loadAll() {
   await Promise.all([loadSession(), loadCatalog()]);
   await loadInverters();
+  if (hasPlant()) await loadPlant();
+}
+
+// The plant (connections and inverters) can be edited in the web interface.
+export const hasPlant = () => Boolean(state.session && state.session.plant_revision !== null && state.session.plant_revision !== undefined);
+
+// After a plant change: everything the views show depends on it.
+export async function reloadAfterPlantChange() {
+  await loadAll();
+  for (const id of [...state.drafts.keys()]) {
+    if (!state.inverters.some((i) => i.id === id)) state.drafts.delete(id);
+  }
 }
 
 export const inverterById = (id) => state.inverters.find((i) => i.id === id) || null;

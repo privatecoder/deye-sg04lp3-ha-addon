@@ -129,6 +129,21 @@ class App:
     def write_options(self) -> None:
         (self.dir / "options.json").write_text(json.dumps(self.opts))
 
+    def edit_plant(self, inverter_id: str, **changes: Any) -> None:
+        """What the user would change in the web interface, done on disk while the app is
+        stopped (the plant store, not the options, is authoritative since T14)."""
+        from deye_monitor.config import InverterConfig, PlantConfig
+        from deye_monitor.plant import PlantStore
+
+        store = PlantStore(self.dir)
+        inverters = tuple(
+            InverterConfig.model_validate({**i.model_dump(mode="json", exclude_none=True), **changes})
+            if i.id == inverter_id
+            else i
+            for i in store.plant.inverters
+        )
+        store.commit(PlantConfig(endpoints=store.plant.endpoints, inverters=inverters), store.revision + 1)
+
     # to be provided by the variants
     def start(self) -> None: ...
     def kill(self) -> None: ...
@@ -193,6 +208,11 @@ class App:
     async def revision(self) -> int:
         s, d = await self.api("GET", "api/session")
         return int(d["revision"])
+
+    async def plant_call(self, method: str, path: str, body: Any = None) -> tuple[int, Any]:
+        """A change of the plant (connections, inverters) with the current plant revision."""
+        s, d = await self.api("GET", "api/session")
+        return await self.api(method, path, body, revision=int(d["plant_revision"]))
 
     async def action_counter(self) -> int:
         s, d = await self.api("GET", "api/session")

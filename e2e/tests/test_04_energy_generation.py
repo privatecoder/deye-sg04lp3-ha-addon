@@ -113,11 +113,8 @@ async def test_resolution_change_creates_a_new_series_with_separate_recorder_sta
     assert {3460.0, 3470.0} <= written_old and all(v in written_old for v in old_states)
 
     # -- the change: resolution override 1 (a new generation starts) ------------------------------
-    for inv in app.opts["inverters"]:
-        if inv["id"] == "deye_tcp":
-            inv["energy_resolution"] = "1"
     await app.terminate()
-    app.write_options()
+    app.edit_plant("deye_tcp", energy_resolution="1")
     app.start()
     await app.wait_api(60)
 

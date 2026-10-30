@@ -50,6 +50,44 @@ async def _step_running(p: Plant) -> None:
 
 
 @contextlib.asynccontextmanager
+async def ingress_proxy(app_port: int, *, user: bool = True) -> AsyncIterator[int]:
+    """The Supervisor's part of Ingress in front of a web app on ``app_port``; yields the port."""
+    session = aiohttp.ClientSession(auto_decompress=False)
+
+    async def forward(request: web.Request) -> web.Response:
+        tail = request.match_info["tail"]
+        headers = {k: v for k in _FORWARD if (v := request.headers.get(k)) is not None}
+        if user:
+            headers.update(USER_HEADERS)
+        headers["X-Ingress-Path"] = PREFIX
+        async with session.request(
+            request.method,
+            f"http://127.0.0.1:{app_port}/{tail}",
+            data=await request.read(),
+            headers=headers,
+        ) as upstream:
+            body = await upstream.read()
+            out = {
+                k: v
+                for k, v in upstream.headers.items()
+                if k in ("Content-Type", "Content-Security-Policy", "Cache-Control")
+            }
+            return web.Response(body=body, status=upstream.status, headers=out)
+
+    proxy = web.Application()
+    proxy.router.add_route("*", PREFIX + "/{tail:.*}", forward)
+    runner = web.AppRunner(proxy, access_log=None)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    try:
+        yield int(runner.addresses[0][1])
+    finally:
+        await runner.cleanup()
+        await session.close()
+
+
+@contextlib.asynccontextmanager
 async def ui_stack(
     tmp_path: Path, *, user: bool = True, running: bool = True, **plant_kw: Any
 ) -> AsyncIterator[UiStack]:
@@ -71,38 +109,8 @@ async def ui_stack(
             p.rig.runtime, p.manager, settings=WebSettings("127.0.0.1", 0, frozenset({"127.0.0.1"}))
         )
         app_port = await api.start()
-        session = aiohttp.ClientSession(auto_decompress=False)
-
-        async def forward(request: web.Request) -> web.Response:
-            tail = request.match_info["tail"]
-            headers = {k: v for k in _FORWARD if (v := request.headers.get(k)) is not None}
-            if user:
-                headers.update(USER_HEADERS)
-            headers["X-Ingress-Path"] = PREFIX
-            async with session.request(
-                request.method,
-                f"http://127.0.0.1:{app_port}/{tail}",
-                data=await request.read(),
-                headers=headers,
-            ) as upstream:
-                body = await upstream.read()
-                out = {
-                    k: v
-                    for k, v in upstream.headers.items()
-                    if k in ("Content-Type", "Content-Security-Policy", "Cache-Control")
-                }
-                return web.Response(body=body, status=upstream.status, headers=out)
-
-        proxy = web.Application()
-        proxy.router.add_route("*", PREFIX + "/{tail:.*}", forward)
-        runner = web.AppRunner(proxy, access_log=None)
-        await runner.setup()
-        site = web.TCPSite(runner, "127.0.0.1", 0)
-        await site.start()
-        proxy_port = int(runner.addresses[0][1])
         try:
-            yield UiStack(p, api, proxy_port, user)
+            async with ingress_proxy(app_port, user=user) as proxy_port:
+                yield UiStack(p, api, proxy_port, user)
         finally:
-            await runner.cleanup()
-            await session.close()
             await api.stop()

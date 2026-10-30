@@ -8,8 +8,9 @@
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
 > discovery state in `/data`. The values are published through MQTT Device Discovery, so
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
-> the app). The Ingress web interface (sidebar: Deye Monitor) chooses the sensors per inverter;
-> until a selection is saved the default selection of the register profile is published. The log line `deye_monitor 0.1.0 ready: ...`
+> the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
+> inverters (an assistant guides the first start) and chooses the sensors per inverter; an
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.1.0 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -115,9 +116,18 @@ affected (transaction id and sequence number); a Modbus TCP timeout always drops
 
 ## Configuration
 
-The configuration has two lists, `endpoints` and `inverters`, plus `mqtt`, `log_level` and
-`instance_id`. At least one inverter is required, so the defaults alone do not start the app; it logs
-what is missing and stops. Add the example below and adapt it.
+**Connections and inverters are set up in the web interface** (sidebar **Deye Monitor** → *Set up
+plant*, see “Setting up the plant”), not in the app options: a drop-down in the options form cannot
+offer the connections you created, so the web interface does it. The options form keeps only
+`mqtt` (including TLS), `log_level` and `instance_id`. The empty defaults start the app with an empty
+plant; the web interface then offers the setup assistant.
+
+`endpoints` and `inverters` remain **optional lists in the options for older installations** (and the
+examples in the runbook). If the options still contain them at the start and no plant has been
+saved in the web interface yet, the app takes them over **once** into the web interface and says so in
+the log and in the web interface (“please remove them from the app options”). From then on the web
+interface is authoritative: entries that remain in the options are reported as a hint, never
+applied silently. The tables below describe the fields (they are the same in the web interface).
 
 ### `endpoints`
 
@@ -195,9 +205,10 @@ can simply be left out.
 `a-z0-9`) is generated and stored in `/data/instance_id` when empty; set it only to keep entity
 identities when moving an installation.
 
-## Example: four inverters, each behind a gateway with a Solarman logger as fallback
+## Example (migration path): four inverters, each behind a gateway with a Solarman logger as fallback
 
-The addresses and serial numbers below are placeholders.
+This is what the old options look like and what the web interface stores. New installations create
+this plant with the assistant instead. The addresses and serial numbers below are placeholders.
 
 ```yaml
 endpoints:
@@ -256,7 +267,7 @@ mqtt:
 log_level: info
 ```
 
-## Minimal configuration
+## Minimal configuration (migration path)
 
 ```yaml
 endpoints:
@@ -322,6 +333,46 @@ The app has an Ingress panel (sidebar entry **Deye Monitor**, admin-only panel (
 Language follows the browser (switch with **DE / EN**), appearance follows the system (button
 “Theme” switches automatic / light / dark).
 
+### Setting up the plant
+
+**First start.** While the plant is empty the web interface opens the **setup assistant**: *create
+connection → create inverter → check connection → choose sensors* (the last step leads to the
+sensor selection, where “Basics only” is the careful start). It can be started again at any time
+from the empty overview; the page **Set up plant** (top navigation) edits everything later.
+
+* **Connections** (add / edit / delete). The type is chosen from four explained options:
+  **Gateway (Modbus TCP → RTU)** (`modbus_tcp`, port 502, the usual choice for an RS485 network
+  gateway), **Gateway transparent (RTU over TCP)** (`rtu_over_tcp`, for a gateway in transparent
+  mode; choose it when “Modbus TCP” does not answer), **WiFi logger (Solarman V5)**
+  (`solarman_v5_tcp`, port 8899, needs the serial number *of the stick, not of the inverter*) and
+  **USB-RS485 at the HA computer** (`serial_rtu`, the device is chosen from the entries found under
+  `/dev/serial/by-id`; the list is only read, nothing is opened until you save or check; 9600 baud).
+  Fields appear per type with sensible defaults. *Advanced*: timeout, late-answer window (RTU),
+  block size, pause between requests, queue size, bus identifier. A connection that an inverter
+  still uses cannot be deleted. Serial devices can only come from `/dev/serial/by-id`.
+* **Inverters** (add / edit / delete): name, identifier (proposed from the name, `a-z0-9_`,
+  **cannot be changed after creating** because Home Assistant recognises the entities by it),
+  **connection** and optional **fallback connection** as drop-downs of the connections you created,
+  Modbus address (default 1; fallback address defaults to the same), optional expected serial
+  number, energy resolution, polling intervals (advanced). Writing is not available: the page shows
+  “Writing: not available” and `allow_writes` cannot be set there. Deleting an inverter asks for
+  confirmation; its stored serial-number binding is only removed if you tick the extra box (its
+  entities in Home Assistant are cleaned up through the cleanup ledger, the history stays).
+* **Check connection** (button in the connection and inverter dialogs, on the inverter card and in
+  the assistant) is **read-only**: it reads exactly the identity registers of the profile (function
+  code 03, through the same guarded transport as the normal polling) and shows whether the device
+  answers, its serial number (compared with the expected and the bound one), MPPT/phase count and
+  rated power for plausibility, and findings against the hardware profile. For a connection that
+  is already part of the plant the request is queued on its bus scheduler between the polling
+  requests; a connection that is not saved yet gets a temporary transport that is closed
+  afterwards. Typical failures are explained (“Wrong transport? Check the gateway mode …”,
+  unreachable, no answer, logger refuses, no readable serial number). One check runs at a time.
+* **Changes apply immediately, without restarting the app.** The app stops the running polling and
+  MQTT session in order and starts them again for the new plant (a short pause; the inverters are
+  published `offline` in between and come back after identification). If the new plant cannot be
+  started, or cannot be saved, the previous plant is restored and the change is reported as failed.
+  Removed inverters are taken out of the discovery through the existing cleanup ledger.
+
 ### Using the web interface
 
 1. **Overview.** One card per inverter: state (online, offline, quarantined, blocked) with a
@@ -358,6 +409,14 @@ Without a Home Assistant user (not through Ingress) everything is read-only.
 
 ### Backend of the web interface
 
+- The plant is stored in the same two-slot way as the selection: `/data/plant.a.json` and
+  `/data/plant.b.json` (complete, checksummed, rising sequence number, atomic writes; the newest
+  valid slot wins; a damaged slot is ignored and reported, kept as `*.corrupt` when overwritten; if
+  no slot is valid the plant is empty and nothing runs until you set it up again). It has its own
+  revision (`If-Match` of every plant change). Routes: `GET api/plant`, `GET api/plant/serial-devices`,
+  `POST api/plant/endpoints`, `PUT api/plant/endpoints/<id>`, `POST api/plant/endpoints/<id>/delete`,
+  the same for `inverters`, and `POST api/plant/test` (read-only check). The same rules as for the
+  selection apply (Supervisor peer, user, CSRF, strict schema, no free registers, paths or frames).
 - The selection lives in two slots, `/data/selection.a.json` and `/data/selection.b.json`: each is a
   complete, checksummed document (per inverter the plant features and the deviations from the
   template, `added` / `removed`; effective selection = template(features) + added - removed) with

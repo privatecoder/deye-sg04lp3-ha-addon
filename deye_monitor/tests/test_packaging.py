@@ -211,14 +211,10 @@ def test_minimal_configuration_passes_supervisor_and_parser() -> None:
     assert cfg.mqtt.host is None
 
 
-def test_default_options_pass_supervisor_and_fail_only_on_missing_inverters() -> None:
+def test_default_options_pass_supervisor_and_describe_an_empty_plant() -> None:
     options = MANIFEST["options"]
-    validated = through_supervisor(options)
-    with pytest.raises(ConfigError) as exc:
-        parse_config(validated)
-    assert str(exc.value).splitlines() == [
-        "inverters: Tuple should have at least 1 item after validation, not 0"
-    ]
+    cfg = parse_config(through_supervisor(options))
+    assert cfg.endpoints == () and cfg.inverters == ()
 
 
 def test_nested_mapping_is_required_by_the_supervisor() -> None:
@@ -488,11 +484,18 @@ def test_process_starts_and_stops_on_sigterm(tmp_path: Path) -> None:
 
 
 def test_process_exits_2_on_invalid_config_without_leaking_secrets(tmp_path: Path) -> None:
-    proc = _spawn(tmp_path, {"inverters": [], "endpoints": [], "mqtt": {"password": "topsecret"}})
+    proc = _spawn(
+        tmp_path,
+        {
+            "inverters": [{"id": "a", "name": "A", "endpoint": "nope", "unit_id": 1}],
+            "endpoints": [],
+            "mqtt": {"password": "topsecret"},
+        },
+    )
     out, _ = proc.communicate(timeout=20)
     assert proc.returncode == 2
     assert "invalid configuration" in out
-    assert "inverters:" in out
+    assert "is not defined" in out
     assert "topsecret" not in out
 
 

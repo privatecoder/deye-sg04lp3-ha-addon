@@ -73,6 +73,41 @@ def transport_settings(ep: EndpointConfig) -> TransportSettings:
     )
 
 
+def make_transport(
+    ep: EndpointConfig,
+    connector: Connector,
+    clock: Callable[[], float],
+    rand: Callable[[], float],
+    identity_check: Callable[[list[int]], bool],
+) -> StreamTransport:
+    """The transport of one endpoint (the guard sits inside it, on the only sending path)."""
+    kw = {
+        "connector": connector,
+        "settings": transport_settings(ep),
+        "clock": clock,
+        "rand": rand,
+    }
+    transport: StreamTransport
+    if ep.transport is Transport.MODBUS_TCP:
+        transport = ModbusTcpTransport(identity_check=identity_check, **kw)  # type: ignore[arg-type]
+    elif ep.transport is Transport.RTU_OVER_TCP:
+        transport = RtuOverTcpTransport(identity_check=identity_check, **kw)  # type: ignore[arg-type]
+    elif ep.transport is Transport.SERIAL_RTU:
+        transport = SerialRtuTransport(
+            identity_check=identity_check,
+            baudrate=ep.baudrate or 9600,
+            **kw,  # type: ignore[arg-type]
+        )
+    else:
+        transport = SolarmanV5Transport(
+            identity_check=identity_check,
+            logger_serial=ep.logger_serial,
+            **kw,  # type: ignore[arg-type]
+        )
+    assert transport.framing in (Framing.RTU, Framing.MBAP, Framing.SOLARMAN_V5)
+    return transport
+
+
 class Runtime:
     """All inverter runtimes of one configuration. One ``BusScheduler`` per canonical bus."""
 
@@ -99,6 +134,7 @@ class Runtime:
         self._restart_sleep = restart_sleep
         self._rand = rand
         self._clock = clock
+        self.connector_factory = connector_factory
         base = data_dir(directory)
         self.book = IdentityBook(
             identity_store(base / "identity.json"), {i.id: i.expected_serial for i in cfg.inverters}
@@ -198,32 +234,7 @@ class Runtime:
         clock: Callable[[], float],
         rand: Callable[[], float],
     ) -> StreamTransport:
-        kw = {
-            "connector": connector,
-            "settings": transport_settings(ep),
-            "clock": clock,
-            "rand": rand,
-        }
-        check = self._identity_check(ep.id)
-        transport: StreamTransport
-        if ep.transport is Transport.MODBUS_TCP:
-            transport = ModbusTcpTransport(identity_check=check, **kw)  # type: ignore[arg-type]
-        elif ep.transport is Transport.RTU_OVER_TCP:
-            transport = RtuOverTcpTransport(identity_check=check, **kw)  # type: ignore[arg-type]
-        elif ep.transport is Transport.SERIAL_RTU:
-            transport = SerialRtuTransport(
-                identity_check=check,
-                baudrate=ep.baudrate or 9600,
-                **kw,  # type: ignore[arg-type]
-            )
-        else:
-            transport = SolarmanV5Transport(
-                identity_check=check,
-                logger_serial=ep.logger_serial,
-                **kw,  # type: ignore[arg-type]
-            )
-        assert transport.framing in (Framing.RTU, Framing.MBAP, Framing.SOLARMAN_V5)
-        return transport
+        return make_transport(ep, connector, clock, rand, self._identity_check(ep.id))
 
     def _identity_check(self, endpoint_id: str) -> Callable[[list[int]], bool]:
         """Resync probe validator: the answer must be the serial number bound to the inverter

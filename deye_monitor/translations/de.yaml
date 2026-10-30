@@ -1,8 +1,8 @@
 configuration:
   endpoints:
-    name: Verbindungen
-    description: Verbindungen zu Gateways, Loggern oder seriellen Adaptern. Es werden nur konfigurierte
-      Ziele kontaktiert, es wird nichts gescannt.
+    name: Verbindungen (nur Migration)
+    description: >-
+      Wird nur noch für ältere Installationen gelesen: Verbindungen werden jetzt in der Weboberfläche eingerichtet (Seitenleiste Deye Monitor → Anlage einrichten). Vorhandene Einträge werden beim Start einmalig dorthin übernommen; danach bitte hier entfernen.
     fields:
       id:
         name: ID
@@ -48,8 +48,9 @@ configuration:
         name: Warteschlangengröße
         description: Maximale Zahl laufender plus wartender Anfragen je Bus. Standard 32.
   inverters:
-    name: Wechselrichter
-    description: Die auszulesenden Wechselrichter (mindestens einer).
+    name: Wechselrichter (nur Migration)
+    description: >-
+      Wird nur noch für ältere Installationen gelesen: Wechselrichter werden jetzt in der Weboberfläche eingerichtet (Seitenleiste Deye Monitor → Anlage einrichten). Vorhandene Einträge werden beim Start einmalig dorthin übernommen; danach bitte hier entfernen.
     fields:
       id:
         name: ID

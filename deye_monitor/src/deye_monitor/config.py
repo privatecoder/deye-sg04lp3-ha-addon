@@ -12,7 +12,8 @@ import os
 import re
 import secrets
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -335,9 +336,104 @@ class MqttConfig(_Model):
         return self
 
 
-class AppConfig(_Model):
+@dataclass(frozen=True, slots=True)
+class PlantProblem:
+    """One domain problem of an endpoint/inverter set; ``code`` and ``params`` are stable keys for
+    the web interface, ``text`` is the English message used in logs and option errors."""
+
+    code: str
+    params: dict[str, Any]
+    text: str
+
+
+def plant_problems(
+    endpoints: Sequence[EndpointConfig], inverters: Sequence[InverterConfig]
+) -> list[PlantProblem]:
+    """Cross-checks of connections and inverters (SPEC §4, §8.1). Pure, no I/O."""
+    problems: list[PlantProblem] = []
+    _unique("endpoint", [e.id for e in endpoints], problems)
+    _unique("inverter", [i.id for i in inverters], problems)
+    if any(i.id == RESERVED_INVERTER_ID for i in inverters):
+        problems.append(
+            PlantProblem(
+                "reserved_inverter_id",
+                {"id": RESERVED_INVERTER_ID},
+                f"inverter id '{RESERVED_INVERTER_ID}' is reserved for the app device",
+            )
+        )
+
+    by_key: dict[str, str] = {}
+    for e in endpoints:
+        other = by_key.setdefault(e.canonical_key, e.id)
+        if other != e.id:
+            problems.append(
+                PlantProblem(
+                    "same_target",
+                    {"a": other, "b": e.id},
+                    f"endpoints '{other}' and '{e.id}' address the same target "
+                    f"({e.canonical_key}); define it once",
+                )
+            )
+
+    by_id = {e.id: e for e in endpoints}
+    owners: dict[tuple[str, int], str] = {}
+    for inv in inverters:
+        routes = [(inv.endpoint, inv.unit_id, "endpoint")]
+        if inv.fallback_endpoint is not None:
+            assert inv.fallback_unit_id is not None
+            routes.append((inv.fallback_endpoint, inv.fallback_unit_id, "fallback_endpoint"))
+        for ep_id, unit, label in routes:
+            endpoint = by_id.get(ep_id)
+            if endpoint is None:
+                problems.append(
+                    PlantProblem(
+                        "undefined_endpoint",
+                        {"inverter": inv.id, "field": label, "endpoint": ep_id},
+                        f"inverter '{inv.id}': {label} '{ep_id}' is not defined",
+                    )
+                )
+                continue
+            other = owners.setdefault((endpoint.bus, unit), inv.id)
+            if other != inv.id:
+                problems.append(
+                    PlantProblem(
+                        "unit_conflict",
+                        {"a": other, "b": inv.id, "unit": unit},
+                        f"inverters '{other}' and '{inv.id}' both use unit {unit} on the "
+                        f"same bus ({endpoint.bus})",
+                    )
+                )
+    return problems
+
+
+class PlantConfig(_Model):
+    """Connections and inverters: what the web interface edits and ``/data/plant.json`` stores.
+    May be empty (a fresh installation)."""
+
     endpoints: tuple[EndpointConfig, ...] = ()
-    inverters: Annotated[tuple[InverterConfig, ...], Field(min_length=1)]
+    inverters: tuple[InverterConfig, ...] = ()
+
+    @model_validator(mode="after")
+    def _domain(self) -> PlantConfig:
+        problems = plant_problems(self.endpoints, self.inverters)
+        if problems:
+            raise ValueError("; ".join(p.text for p in problems))
+        return self
+
+    def endpoint(self, endpoint_id: str) -> EndpointConfig:
+        for e in self.endpoints:
+            if e.id == endpoint_id:
+                return e
+        raise KeyError(endpoint_id)
+
+
+class AppConfig(_Model):
+    """The effective configuration: the app options (MQTT, log level, instance id) plus the plant.
+    Options may still carry ``endpoints``/``inverters`` (older installations, migration source);
+    ``with_plant`` replaces them by the plant store's content."""
+
+    endpoints: tuple[EndpointConfig, ...] = ()
+    inverters: tuple[InverterConfig, ...] = ()
     mqtt: MqttConfig = MqttConfig()
     log_level: Literal["debug", "info", "warning", "error"] = "info"
     instance_id: str | None = None
@@ -357,49 +453,32 @@ class AppConfig(_Model):
 
     @model_validator(mode="after")
     def _domain(self) -> AppConfig:
-        problems: list[str] = []
-        _unique("endpoint", [e.id for e in self.endpoints], problems)
-        _unique("inverter", [i.id for i in self.inverters], problems)
-        if any(i.id == RESERVED_INVERTER_ID for i in self.inverters):
-            problems.append(f"inverter id '{RESERVED_INVERTER_ID}' is reserved for the app device")
-
-        by_key: dict[str, str] = {}
-        for e in self.endpoints:
-            other = by_key.setdefault(e.canonical_key, e.id)
-            if other != e.id:
-                problems.append(
-                    f"endpoints '{other}' and '{e.id}' address the same target "
-                    f"({e.canonical_key}); define it once"
-                )
-
-        known = {e.id for e in self.endpoints}
-        owners: dict[tuple[str, int], str] = {}
-        for inv in self.inverters:
-            routes = [(inv.endpoint, inv.unit_id, "endpoint")]
-            if inv.fallback_endpoint is not None:
-                assert inv.fallback_unit_id is not None
-                routes.append((inv.fallback_endpoint, inv.fallback_unit_id, "fallback_endpoint"))
-            for ep_id, unit, label in routes:
-                if ep_id not in known:
-                    problems.append(f"inverter '{inv.id}': {label} '{ep_id}' is not defined")
-                    continue
-                bus = self.endpoint(ep_id).bus
-                other = owners.setdefault((bus, unit), inv.id)
-                if other != inv.id:
-                    problems.append(
-                        f"inverters '{other}' and '{inv.id}' both use unit {unit} on the "
-                        f"same bus ({bus})"
-                    )
+        problems = plant_problems(self.endpoints, self.inverters)
         if problems:
-            raise ValueError("; ".join(problems))
+            raise ValueError("; ".join(p.text for p in problems))
         return self
 
+    @property
+    def plant(self) -> PlantConfig:
+        return PlantConfig(endpoints=self.endpoints, inverters=self.inverters)
 
-def _unique(kind: str, ids: list[str], problems: list[str]) -> None:
+    def with_plant(self, plant: PlantConfig) -> AppConfig:
+        return AppConfig(
+            endpoints=plant.endpoints,
+            inverters=plant.inverters,
+            mqtt=self.mqtt,
+            log_level=self.log_level,
+            instance_id=self.instance_id,
+        )
+
+
+def _unique(kind: str, ids: list[str], problems: list[PlantProblem]) -> None:
     seen: set[str] = set()
     for i in ids:
         if i in seen:
-            problems.append(f"duplicate {kind} id '{i}'")
+            problems.append(
+                PlantProblem(f"duplicate_{kind}", {"id": i}, f"duplicate {kind} id '{i}'")
+            )
         seen.add(i)
 
 

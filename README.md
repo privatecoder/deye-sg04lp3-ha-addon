@@ -8,8 +8,8 @@ Home Assistant app (add-on) for Deye SUN-5/6/8/10/12K-SG04LP3 three-phase LV hyb
 
 1. In Home Assistant open **Settings → Apps** (formerly Add-ons) → **App store** → menu **⋮ → Repositories**.
 2. Add `https://github.com/privatecoder/deye-sg04lp3-ha-addon`.
-3. Install **Deye SG04LP3 Monitor**, configure endpoints and inverters (see the app's *Documentation* tab), start it.
-4. Open the app's web UI from the sidebar and choose sensors per inverter. Until you save a selection, an inverter is only identified (serial number, status) — no measurement groups are read.
+3. Install **Deye SG04LP3 Monitor** and start it (the app options only hold MQTT, log level and instance id; see the app's *Documentation* tab).
+4. Open the app's web UI from the sidebar: the setup assistant creates the connection and the inverter, checks the connection read-only and leads to the sensor selection. Until you save a selection, an inverter is only identified (serial number, status) — no measurement groups are read.
 
 An MQTT broker is required (the Mosquitto app is used automatically if installed).
 

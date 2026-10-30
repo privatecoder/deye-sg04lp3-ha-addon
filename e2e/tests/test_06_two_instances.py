@@ -112,11 +112,8 @@ async def test_changes_at_instance_a_do_not_touch_instance_b(running, instance_b
         assert status == 200, body
         status, body = await app.sensors("deye_ser", features={"battery": False}, add=["battery_soc"])
         assert status == 200, body
-        for inv in app.opts["inverters"]:
-            if inv["id"] == "deye_rtu":
-                inv["energy_resolution"] = "1"
         await app.terminate()
-        app.write_options()
+        app.edit_plant("deye_rtu", energy_resolution="1")
         app.start()
         await app.wait_api(60)
 

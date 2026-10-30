@@ -175,3 +175,29 @@ def test_the_first_start_instructions_use_the_texts_of_the_interface() -> None:
         assert phrase in texts, phrase
     assert "Platzhalter" not in RUNBOOK  # the workaround of the first version is gone
     assert "127.0.0.1" not in RUNBOOK
+
+
+def test_the_runbook_sets_the_plant_up_in_the_web_interface() -> None:
+    """T14: connections and inverters are created in the web interface; the YAML examples are only
+    the migration path (appendix)."""
+    texts = (APP / "src" / "deye_monitor" / "web" / "static" / "i18n.js").read_text(
+        encoding="utf-8"
+    )
+    for phrase in (
+        "Anlage einrichten",
+        "Gateway (Modbus TCP → RTU)",
+        "Gateway transparent (RTU über TCP)",
+        "WiFi-Logger (Solarman V5)",
+        "Verbindung prüfen",
+        "Einrichtung starten",
+    ):
+        assert phrase in RUNBOOK, phrase
+        assert phrase in texts, phrase
+    assert "Schreiben: nicht verfügbar" in RUNBOOK  # shown as label "Schreiben" + "nicht verfügbar"
+    assert "'plant.inv.writes': 'Schreiben'" in texts
+    assert "'plant.writes_unavailable': 'nicht verfügbar'" in texts
+    appendix = RUNBOOK.index("## Anhang A")
+    assert all(RUNBOOK.index(block) > appendix for block in re.findall(r"```yaml\n", RUNBOOK))
+    assert "Migrationsweg" in RUNBOOK[appendix:]
+    assert "bei gestoppter App den Inverter in den Optionen" not in RUNBOOK
+    assert "plant.a.json" in RUNBOOK

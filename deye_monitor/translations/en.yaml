@@ -1,8 +1,8 @@
 configuration:
   endpoints:
-    name: Endpoints
-    description: Connections to gateways, loggers or serial adapters. Only configured targets are ever
-      contacted; nothing is scanned.
+    name: Endpoints (migration only)
+    description: >-
+      Only read for older installations: connections are now set up in the web interface (sidebar Deye Monitor → Set up plant). Existing entries are taken over there once at start; please remove them here afterwards.
     fields:
       id:
         name: ID
@@ -48,8 +48,9 @@ configuration:
         name: Queue size
         description: Maximum number of running plus waiting requests per bus. Default 32.
   inverters:
-    name: Inverters
-    description: The inverters to read (at least one).
+    name: Inverters (migration only)
+    description: >-
+      Only read for older installations: inverters are now set up in the web interface (sidebar Deye Monitor → Set up plant). Existing entries are taken over there once at start; please remove them here afterwards.
     fields:
       id:
         name: ID

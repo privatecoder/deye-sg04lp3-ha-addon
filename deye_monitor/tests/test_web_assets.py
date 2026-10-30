@@ -103,6 +103,47 @@ def test_dynamic_key_families_are_complete() -> None:
         f"transport.{t}" for t in ("modbus_tcp", "rtu_over_tcp", "serial_rtu", "solarman_v5_tcp")
     }
     expected |= {f"point.{p}" for p in profile_points()}
+    expected |= {
+        f"ep.t.{t}" for t in ("modbus_tcp", "rtu_over_tcp", "solarman_v5_tcp", "serial_rtu")
+    }
+    expected |= {
+        f"ep.t.{t}_when" for t in ("modbus_tcp", "rtu_over_tcp", "solarman_v5_tcp", "serial_rtu")
+    }
+    expected |= {
+        f"test.outcome.{o}"
+        for o in (
+            "ok",
+            "unreachable",
+            "timeout",
+            "device_refused",
+            "logger_error",
+            "bad_frame",
+            "bus_busy",
+            "transport_error",
+            "invalid_serial",
+            "internal_error",
+        )
+    }
+    expected |= {
+        f"test.hint.{o}"
+        for o in (
+            "unreachable",
+            "timeout",
+            "device_refused",
+            "logger_error",
+            "bad_frame",
+            "bus_busy",
+            "transport_error",
+            "invalid_serial",
+            "internal_error",
+        )
+    }
+    expected |= {
+        f"test.hint.timeout.{t}" for t in ("modbus_tcp", "rtu_over_tcp", "solarman_v5_tcp")
+    }
+    expected |= {"test.hint.unreachable.serial_rtu"}
+    expected |= {f"plant.notice.{c}" for c in ("plant_migrated", "plant_options_present")}
+    expected |= {"plant.notice.plant_options_differ"}
     expected |= {f"load.{x}" for x in ("low", "mid", "high", "over", "unknown")}
     expected |= {f"hint.conflict.{c}" for c in CONFLICT_POINTS}
     expected |= {
@@ -152,14 +193,20 @@ def test_every_api_error_and_store_problem_key_has_a_text() -> None:
     de = messages()["de"]
     error_keys: set[str] = set()
     problem_codes: set[str] = set()
+    plant_codes: set[str] = set()
     for path in SRC.glob("*.py"):
         source = path.read_text(encoding="utf-8")
         error_keys |= set(re.findall(r'ChangeError\(\s*"([a-z_]+)"', source))
-        problem_codes |= set(re.findall(r'Problem\(\s*"([a-z_]+)"', source))
+        error_keys |= set(re.findall(r'else "([a-z_]+)",\s*\n\s*500', source))
+        problem_codes |= set(re.findall(r'(?<![A-Za-z])Problem\(\s*"([a-z_]+)"', source))
+        plant_codes |= set(re.findall(r'PlantProblem\(\s*(?:f?)"([a-z_]+)"', source))
+    plant_codes |= {"duplicate_endpoint", "duplicate_inverter"}  # built from the kind name
     error_keys |= {"forbidden_peer", "internal_error", "network_error", "http_404", "http_405"}
     error_keys |= {"http_413", "http_415", "http_428"}
     assert sorted(k for k in error_keys if f"error.{k}" not in de) == []
     assert sorted(c for c in problem_codes if f"problem.{c}" not in de) == []
+    assert sorted(c for c in plant_codes if f"plantproblem.{c}" not in de) == []
+    assert "error.plant_recovery_failed" in de
 
 
 # -- source rules (CSP, no build chain, no CDN) ----------------------------------------------
@@ -252,3 +299,23 @@ def test_arc_extension_raw_values_are_not_extra_pv_channels() -> None:
         assert "kein Nachweis eines zusätzlichen PV-Eingangs" in de, key
         assert "extension/arc-diagnostic raw value" in en, key
         assert "PV-Kanals" not in de and "PV channel" not in en, key
+
+
+@pytest.mark.parametrize("path", JS_FILES, ids=lambda p: p.name)
+def test_javascript_sources_parse_as_modules(path: Path) -> None:
+    """A syntax error in one module blanks the whole page: catch it without a browser."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    done = subprocess.run(
+        [node, "--check", "--input-type=module"],
+        input=path.read_text(encoding="utf-8"),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr

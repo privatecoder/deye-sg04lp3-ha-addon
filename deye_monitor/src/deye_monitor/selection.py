@@ -415,6 +415,7 @@ class SelectionStore:
         ]
         self.problems: list[Problem] = []
         self.revision = 0
+        self.pruned = False  # records of removed inverters were dropped but not yet persisted
         # with ``require_choice`` an inverter without a saved record has not been chosen yet
         self.records: dict[str, Record] = {i: Record(chosen=not require_choice) for i in self.specs}
         self.source = "template"
@@ -426,6 +427,24 @@ class SelectionStore:
     @property
     def status(self) -> LoadStatus:
         return self._status
+
+    def set_specs(
+        self, specs: Mapping[str, InverterSpec]
+    ) -> tuple[dict[str, InverterSpec], dict[str, Record], bool]:
+        """The plant changed: records of removed inverters are dropped (in memory; ``pruned``
+        asks the manager to persist that), new inverters start without a choice. Returns what is
+        needed to take it back."""
+        undo = (self.specs, dict(self.records), self.pruned)
+        self.specs = dict(specs)
+        for inverter_id in [i for i in self.records if i not in self.specs]:
+            del self.records[inverter_id]
+            self.pruned = True
+        for inverter_id in self.specs:
+            self.records.setdefault(inverter_id, Record(chosen=not self.require_choice))
+        return undo
+
+    def restore_specs(self, undo: tuple[dict[str, InverterSpec], dict[str, Record], bool]) -> None:
+        self.specs, self.records, self.pruned = undo[0], dict(undo[1]), undo[2]
 
     def _remove_stale_temp_files(self, directory: Path) -> None:
         with contextlib.suppress(OSError):
@@ -595,6 +614,7 @@ class SelectionStore:
         self.revision = revision
         self.source = "file"
         self._status = LoadStatus.VALID
+        self.pruned = False
         self.problems = []  # reported once; the new document is clean
 
 
@@ -619,6 +639,29 @@ class SelectionManager:
         return self.store.specs
 
     recovery_required: frozenset[str] = frozenset()
+
+    @property
+    def lock(self) -> asyncio.Lock:
+        """Held by plant changes: a selection edit cannot interleave with a rebuild."""
+        return self._lock
+
+    def set_specs(
+        self, specs: Mapping[str, InverterSpec]
+    ) -> tuple[dict[str, InverterSpec], dict[str, Record], bool]:
+        return self.store.set_specs(specs)
+
+    def restore_specs(self, undo: tuple[dict[str, InverterSpec], dict[str, Record], bool]) -> None:
+        self.store.restore_specs(undo)
+
+    async def persist_specs_locked(self) -> None:
+        """Persist the removal of inverter records (caller holds ``lock``). A failure is logged:
+        the stale records are reported and dropped at the next accepted change."""
+        if not self.store.pruned:
+            return
+        try:
+            self.store.commit(dict(self.store.records), self.store.revision + 1)
+        except OSError:
+            log.error("selection records of removed inverters could not be persisted yet")
 
     def attach(self, applier: Applier) -> None:
         self._applier = applier

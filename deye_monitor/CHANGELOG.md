@@ -2,6 +2,13 @@
 
 ## 0.1.0
 
+- Plant setup in the web interface (T14): connections and inverters are created, edited and deleted
+  in the Ingress interface (setup assistant for the first start, read-only connection check,
+  transport chooser with explanations, serial device list, live adoption with rollback) and stored
+  in `/data/plant.{a,b}.json`; the app options keep only `mqtt`, `log_level` and `instance_id`.
+  `endpoints`/`inverters` in the options are taken over once (migration) and then only produce a
+  hint.
+
 - Initial packaging: configuration schema, translations (en, de), s6 service, container build.
 - Protocol layer (Modbus FC03, Solarman V5), read-only guard, transports and bus scheduler.
 - Device loop: identity binding and quarantine, polling groups, snapshots, fallback path,

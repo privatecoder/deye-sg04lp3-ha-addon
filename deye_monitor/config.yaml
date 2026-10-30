@@ -23,6 +23,8 @@ ingress_port: 8099
 panel_icon: mdi:solar-power-variant
 panel_title: "Deye Monitor"
 options:
+  # Connections and inverters are set up in the Ingress web interface. The two lists stay as optional
+  # options only for installations that still carry them (taken over once, see DOCS.md).
   endpoints: []
   inverters: []
   mqtt:

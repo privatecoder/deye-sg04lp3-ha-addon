@@ -2,10 +2,11 @@
 
 import { t, problemText } from './i18n.js';
 import { h } from './ui.js';
-import { state, canEdit, loadLevel } from './state.js';
+import { state, canEdit, loadLevel, hasPlant } from './state.js';
 import { stateChip, reasonText, roleText, ageText, absoluteTime, levelChip, loadProgress, hintsOf } from './common.js';
 import { openTransfer } from './transfer.js';
 import { maintenanceSection } from './maintenance.js';
+import { noticeBanners } from './plant.js';
 
 export function overviewView() {
   const root = h('div', { class: 'overview' });
@@ -72,9 +73,11 @@ export function overviewView() {
         h('strong', {}, t('overview.store_problems')),
         h('ul', {}, problems.map((p) => h('li', {}, problemText(p))))));
     }
+    if (hasPlant() && state.session.plant_notices) root.append(...noticeBanners(state.session.plant_notices));
     if (!canEdit()) root.append(h('p', { class: 'banner info' }, t('overview.readonly')));
     if (!state.inverters.length) {
-      root.append(h('section', { class: 'empty' }, h('h2', {}, t('overview.empty_title')), h('p', {}, t('overview.empty_text'))));
+      root.append(h('section', { class: 'empty' }, h('h1', {}, t('overview.empty_title')), h('p', {}, t('overview.empty_text')),
+        hasPlant() ? h('a', { class: 'btn primary', id: 'start-setup', href: '#/start' }, t('overview.empty_btn')) : null));
     } else {
       root.append(h('h1', {}, t('overview.title')),
         h('div', { class: 'cards' }, state.inverters.map(card)));
@@ -84,7 +87,7 @@ export function overviewView() {
 
   let signature = '';
   function onData() {
-    const next = JSON.stringify([state.inverters.map((i) => ({ ...i, status: { ...i.status, last_success_wall: null } })), state.session && state.session.problems, state.lang]);
+    const next = JSON.stringify([state.session && state.session.plant_notices, state.inverters.map((i) => ({ ...i, status: { ...i.status, last_success_wall: null } })), state.session && state.session.problems, state.lang]);
     if (next !== signature) {
       signature = next;
       // Keep an open "Maintenance" section open across re-renders.

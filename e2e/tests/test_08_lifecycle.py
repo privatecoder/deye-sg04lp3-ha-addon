@@ -121,11 +121,8 @@ async def test_failed_r65_confirmation_changes_no_generation(running, instance_c
 
 async def test_a_crash_right_after_the_generation_was_persisted_continues_the_same_generation(running, instance_c):
     app, fakes = instance_c
-    for inv in app.opts["inverters"]:
-        if inv["id"] == "c_gen":
-            inv["energy_resolution"] = "1"
     await app.terminate()
-    app.write_options()
+    app.edit_plant("c_gen", energy_resolution="1")
     await app.arm_barrier("energy_generation_persisted")
     app.start()
     await app.barrier_reached("energy_generation_persisted", 90)

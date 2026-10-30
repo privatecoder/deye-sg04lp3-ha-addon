@@ -71,7 +71,17 @@ mqtt:                             # leer → Supervisor-MQTT-Dienst (mqtt:want)
 log_level: info
 ```
 
-Fachliche Validierung: ≥1 Inverter; eindeutige IDs; Endpoint-Referenzen existieren; `unit_id` 1..247; Ports 1..65535; `logger_serial` nur und zwingend bei V5; `serial_device` nur und zwingend bei `serial_rtu`; auf demselben `bus_id` eindeutige `unit_id`; Fallback ≠ Primär.
+Fachliche Validierung: eindeutige IDs; Endpoint-Referenzen existieren; `unit_id` 1..247; Ports 1..65535; `logger_serial` nur und zwingend bei V5; `serial_device` nur und zwingend bei `serial_rtu`; auf demselben `bus_id` eindeutige `unit_id`; Fallback ≠ Primär.
+
+### 4.1 Nachtrag T14: Anlage in der Weboberfläche
+
+Verbindungen (`endpoints`) und Inverter (`inverters`) werden **ausschließlich in der Ingress-Weboberfläche** angelegt und bearbeitet (Bereich „Anlage einrichten“, Assistent beim ersten Start). Das HA-Optionsformular kann keine Auswahllisten bereits angelegter Verbindungen; die Optionen behalten nur `mqtt` (inkl. TLS), `log_level`, `instance_id`. Die Modelle und Validierungen aus §4 gelten unverändert (`EndpointConfig`, `InverterConfig`, Bus-Eindeutigkeit, Fallback, Grenzen); eine **leere Anlage ist gültig** (die Ein-Inverter-Pflicht aus §4 entfällt, der Assistent führt in die Einrichtung), `AppConfig` = Optionen + Anlage.
+
+* **Store.** `/data/plant.a.json` / `plant.b.json`: wie die Auswahl (§9.6) zwei vollständige Slots mit `seq` und SHA-256, atomar, neuester gültiger Slot gilt, beschädigter Slot wird ignoriert/gemeldet (Kopie `*.corrupt` beim Überschreiben); ist kein Slot gültig, ist die Anlage leer und es läuft nichts, bis der Nutzer neu einrichtet (fail closed, keine Migration aus den Optionen). Eigene Revision (`If-Match` jeder Anlagenänderung).
+* **Migration.** Enthalten die Optionen `endpoints`/`inverters` und existiert **keine** Anlagendatei, werden sie einmalig übernommen (Log + Hinweis in der Oberfläche: bitte aus den Optionen entfernen). Danach ist der Store maßgeblich; abweichende Options-Einträge erzeugen nur einen Hinweis, nie eine stille Überschreibung. Eine vom Nutzer geleerte Anlage wird nicht erneut migriert. Das Manifest behält `endpoints`/`inverters` als optionale Listen (Default leer).
+* **Oberfläche.** Verbindungen: Transport als erklärte Auswahl (`modbus_tcp` Port 502 = „Gateway (Modbus TCP → RTU)“; `rtu_over_tcp` = „Gateway transparent“; `solarman_v5_tcp` Port 8899 mit Logger-Seriennummer *des Sticks*; `serial_rtu` mit Dropdown aus `/dev/serial/by-id/*`, nur gelistet, Baudrate 9600), Felder je Transport, Erweitert-Bereich. Inverter: Verbindung und Ersatzverbindung als Dropdowns, Unit-ID (Default 1), erwartete SN, Energieauflösung, Intervalle; die ID ist nach dem Anlegen nicht änderbar. `allow_writes` ist in der Oberfläche und in der API nicht setzbar (Anzeige „Schreiben: nicht verfügbar“). Löschen einer Verbindung nur ohne nutzende Inverter; beim Löschen eines Inverters wird die Identitätsbindung nur nach ausdrücklicher Bestätigung entfernt.
+* **Verbindungstest (nur lesend).** Führt über den normalen geguardeten Transport genau die Identitätsblöcke des Profils aus (nur FC03, Deadline), über den Bus-Scheduler der laufenden Verbindung (gleiches Ziel in der laufenden Anlage) bzw. einen temporären, danach geschlossenen Transport. Ergebnis: erreichbar, Seriennummer (gegen erwartete und gebundene), Modell-/MPPT-Plausibilität, Konflikte, bei Fehlern typische Hinweise je Transport. Keine Änderung der Anlage, ein Test gleichzeitig; dasselbe Ziel mit anderer Anbindungsart wird abgewiesen (`endpoint_in_use_by_other_transport`).
+* **Live-Übernahme.** validieren → übernehmen (laufende Generation aus Inverter-Runtimes, Transports, Schedulern und MQTT-Publisher geordnet stoppen, neue aufbauen; Discovery-Bereinigung entfernter Inverter über den bestehenden Ledger; Auswahl-Records entfernter Inverter werden verworfen, neue Inverter beginnen mit `awaiting_selection`) → dauerhaft ablegen. Scheitert das Übernehmen oder Ablegen, wird die vorherige Generation wiederhergestellt (`adoption_failed` / `persist_failed`; nur wenn auch das misslingt `plant_recovery_failed`). Auswahländerungen laufen nie gleichzeitig (gemeinsame Sperre). Sicherheitsregeln wie §9.5: Supervisor-Peer, Benutzer, CSRF, `If-Match`, strikte Schemas, keine freien Register/Frames.
 
 ## 5. Registerprofil v1 (`sg04lp3_lv_v105_8`)
 
@@ -210,6 +220,10 @@ Je Signal: Anzahl Antworten, Nullanteil, Min/Max, Variabilität, Tageslichtsampl
 - **Erststart:** Karte und Einrichtung zeigen „Bitte Sensoren auswählen“ (Link zur Einrichtung); Schnellaktionen in Schritt 2: „Nur Basis“ (Seriennummer, Betriebszustand, Fehlerwörter 1–4) und „Alle abwählen“, jeweils als gewöhnliche Abweichungen von der Vorlage mit Vorschau und Speichern; „Vorlage unverändert übernehmen“ beendet den Zustand ohne Änderung.
 - Technik: `ingress: true`, interner Port, relative URLs, keine Host-Portfreigabe. Leichtgewichtiges Frontend ohne Build-Kette (Lit/Preact als Vendor-Dateien im Paket, keine CDN-Abrufe), Backend `aiohttp` im selben Prozess, JSON-API, HA-Optik inkl. Dark Mode, DE/EN, Tastaturbedienung.
 - **Sicherheit (DR2-08):** Verbindungen nur vom Supervisor-Peer `172.30.32.2`, sonst 403; `X-Remote-User-*`/Forwarded-Header nur nach dieser Peerprüfung auswerten; fehlende Benutzerangaben gelten nicht als Admin. `panel_admin: true`. Zustandsändernde Aufrufe nur per POST/PUT mit Revisionsnummer (`If-Match`-artig) und CSRF-Token; niemals per GET. Request-Schema nur bekannte Katalogkeys/Merkmale, keine freien Register/Pfade/Frames. Sensor-Häkchen können `allow_writes` nicht setzen. Neubindung invalidiert alte Snapshots, Capabilities und (später) Write-Permits.
+
+### 9.5a Nachtrag T14
+
+Die Ingress-UI enthält zusätzlich den Bereich „Anlage einrichten“ und den Einrichtungsassistenten (§4.1); die Navigation (Übersicht / Anlage einrichten) ist im Kopf der Seite.
 
 ### 9.6 Persistenz und atomarer Wechsel (DR2-07)
 
