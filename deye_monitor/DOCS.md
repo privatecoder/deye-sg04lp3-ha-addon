@@ -404,7 +404,9 @@ card (totals and the status of every member).
    **Set up sensors** (button on the card). *Step 1 – describe your plant:* grid connection
    (public grid, island, generator), battery (and BMS cable), GEN port, used PV inputs, parallel
    operation. Values the device reports itself are filled in and marked “read from the device –
-   please confirm”. The choice decides the default selection: “island” hides all grid values,
+   please confirm”. The BMS question defaults to “Yes, with communication” and is suggested
+   from the battery type (R98: lithium = yes, lead = no); parallel slaves keep their BMS values
+   inactive regardless. The choice decides the default selection: “island” hides all grid values,
    “no battery” all battery values. *Step 2 – choose sensors:* grouped by measuring point with a
    short description and unit; search, filter (all / selected / deviations); quick actions
    “Basics only” (serial number, operating state, fault words) and “Deselect all”, which are

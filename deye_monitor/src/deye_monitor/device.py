@@ -76,7 +76,13 @@ _PV_POINTS = frozenset({"pv"})
 # Internal reads for the plant-feature suggestion (SPEC §9.2: R111, R133, R189, R336). They are
 # part of the read plan but never of the published selection.
 BOOTSTRAP_KEYS = frozenset(
-    {"battery_operating_basis", "gen_port_usage", "gen_on_grid_input", "parallel_enable"}
+    {
+        "battery_operating_basis",
+        "battery_chemistry",
+        "gen_port_usage",
+        "gen_on_grid_input",
+        "parallel_enable",
+    }
 )
 SLAVE_TEMPERATURE_KEY = "battery_temperature"  # R586: valid on the parallel master only
 INACTIVE_SLAVE_TEMPERATURE = "parallel_slave_temperature"
@@ -1025,6 +1031,10 @@ class InverterRuntime:
                 if battery_basis == R111_NO_BATTERY
                 else f"R111={battery_basis} (an operating mode, not proof of a battery)"
             )
+        chemistry = read("battery_chemistry")  # R98: lithium banks talk to the BMS, lead does not
+        if chemistry in ("lead", "lithium"):
+            self.suggested_features["bms"] = chemistry == "lithium"
+            basis["bms"] = f"R98 battery type ({chemistry})"
         port = read("gen_port_usage")
         if isinstance(port, str) and not port.startswith("unknown"):
             self.suggested_features["gen_port_mode"] = port

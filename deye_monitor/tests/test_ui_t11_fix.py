@@ -298,6 +298,45 @@ async def test_unconfirmed_features_are_still_prefilled_and_saved_as_confirmed(
         await expect(battery.get_by_label("Nein, ohne Akku")).to_be_checked()
 
 
+def _one_inverter(r98: int | None) -> dict[str, Any]:
+    regs = {"r336": 0} | ({} if r98 is None else {"r98": r98})
+    return {
+        "endpoints": [ep("gw1", host="192.0.2.11")],
+        "inverters": [inverter("deye1", "gw1")],
+        "banks": {"gw1": device_regs(A, **regs)},
+    }
+
+
+async def test_bms_question_defaults_to_yes_without_a_device_hint(
+    browser: Browser, tmp_path: Any
+) -> None:
+    async with ui_stack(tmp_path, **_one_inverter(None)) as stack:
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        bms = s.page.locator('fieldset[data-feature="bms"]')
+        await expect(bms.get_by_label("Ja, mit Kommunikation")).to_be_checked()
+        await expect(bms.locator(".suggest .chip")).to_have_count(0)
+        await expect(row(s.page, "bms_soc").locator("input")).to_be_checked()
+
+
+async def test_bms_question_is_prefilled_from_the_battery_type(
+    browser: Browser, tmp_path: Any
+) -> None:
+    async with ui_stack(tmp_path, **_one_inverter(1)) as stack:  # R98 = 1: lithium
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        bms = s.page.locator('fieldset[data-feature="bms"]')
+        await expect(bms.get_by_label("Ja, mit Kommunikation")).to_be_checked()
+        await expect(bms.locator(".chip")).to_be_visible()
+    async with ui_stack(tmp_path / "lead", **_one_inverter(0)) as stack:  # R98 = 0: lead
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        bms = s.page.locator('fieldset[data-feature="bms"]')
+        await expect(bms.get_by_label("Nein, ohne Kommunikation")).to_be_checked()
+        await expect(bms.locator(".chip.prefilled")).to_be_visible()
+        await expect(row(s.page, "bms_soc").locator("input")).not_to_be_checked()
+
+
 async def test_four_island_devices_layout_and_selection(browser: Browser, tmp_path: Any) -> None:
     async with ui_stack(
         tmp_path,

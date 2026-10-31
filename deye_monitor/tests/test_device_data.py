@@ -137,6 +137,27 @@ async def test_bootstrap_reads_provide_suggested_features(tmp_path: Path) -> Non
         assert again["battery"] is True and again["grid_port_use"] == "utility"
 
 
+@pytest.mark.parametrize(("r98", "expected"), [(1, True), (0, False)])
+async def test_battery_type_suggests_the_bms_answer(
+    tmp_path: Path, r98: int, expected: bool
+) -> None:
+    regs = device_regs(SN, r98=r98)
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        suggestion = inv.diagnostics()["suggested_features"]
+        assert suggestion["bms"] is expected
+        assert "R98" in suggestion["_basis"]["bms"]
+
+
+async def test_unknown_battery_type_suggests_no_bms_answer(tmp_path: Path) -> None:
+    regs = device_regs(SN, r98=7)
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        assert "bms" not in inv.diagnostics()["suggested_features"]
+
+
 async def test_capability_conflict_is_reported_and_unlocks_nothing(tmp_path: Path) -> None:
     regs = device_regs(SN, r22=0x0503)  # the document example: five MPPT, not SG04
     async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:

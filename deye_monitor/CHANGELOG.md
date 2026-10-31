@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.11
+
+- **Setup wizard, BMS question**: "Does the battery talk to the inverter (BMS cable)?" now
+  defaults to "Yes, with communication" when a battery is present (it was "No", which deselected
+  all BMS sensors). The device setting R98 (battery type) is read as a suggestion like the other
+  plant answers: lithium suggests "yes", lead suggests "no" ("read from a device setting – please
+  confirm"). An unknown value suggests nothing. On parallel slaves the BMS sensors stay inactive
+  through the R336 rule, a "yes" does not bring them back.
+
 ## 0.2.10
 
 - **Fix**: with no inverters configured the plant page showed the text `null` below "Add

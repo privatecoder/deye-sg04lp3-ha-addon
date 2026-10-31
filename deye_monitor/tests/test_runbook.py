@@ -67,8 +67,8 @@ MORE = ["battery_voltage", "battery_soc", "inverter_frequency", "pv1_power", "pv
 
 def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None:
     blocks, template_size, r65, addresses = _plan_blocks(MINIMAL, tmp_path)
-    assert blocks == 11 and not r65
-    assert "**6 sensors, 11 polling blocks**" in RUNBOOK and "**11 read blocks**" in RUNBOOK
+    assert blocks == 12 and not r65
+    assert "**6 sensors, 12 polling blocks**" in RUNBOOK and "**12 read blocks**" in RUNBOOK
     # no energy, battery, AC or PV registers; the internal identity/status/settings reads only
     assert addresses == {
         0,
@@ -89,6 +89,7 @@ def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None
         21,
         22,
         24,
+        98,
         111,
         133,
         189,
@@ -99,8 +100,8 @@ def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None
         assert all(PROFILE.entry(k).selectable for k in chosen)
     (tmp_path / "more").mkdir()
     more_blocks, _, r65_more, _ = _plan_blocks(MINIMAL + MORE, tmp_path / "more")
-    assert more_blocks == 14 and not r65_more
-    assert "**11 sensors, 14 polling blocks**" in RUNBOOK
+    assert more_blocks == 15 and not r65_more
+    assert "**11 sensors, 15 polling blocks**" in RUNBOOK
     assert f"{template_size} sensors" in RUNBOOK
 
 

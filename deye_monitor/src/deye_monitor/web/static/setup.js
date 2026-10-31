@@ -12,7 +12,7 @@ import { openTransfer } from './transfer.js';
 const BASIC_KEYS = ['serial_number', 'operating_state', 'fault_word_1', 'fault_word_2', 'fault_word_3', 'fault_word_4'];
 const POINT_ORDER = ['grid_terminal', 'ups_load', 'inverter_output', 'battery', 'bms', 'pv', 'gen_port', 'parallel', 'tou', 'diagnostic'];
 const DEFAULT_FEATURES = {
-  utility_grid: true, grid_port_use: 'utility', battery: true, bms: false,
+  utility_grid: true, grid_port_use: 'utility', battery: true, bms: true,
   gen_port_mode: 'unused', mppt1_used: true, mppt2_used: true, parallel: false,
 };
 const GRID_CHOICES = {
@@ -273,6 +273,7 @@ export function setupView(invId) {
     const bms = radios({
       name: 'bms', legend: t('feat.bms.q'), help: t('feat.bms.help'), options: boolOptions('bms'),
       current: () => f().bms, choose: (v) => setFeature('bms', v), visible: () => f().battery,
+      suggest: () => suggestion(['bms'], (v) => f().bms === v),
     });
     const gen = radios({
       name: 'gen_port_mode', legend: t('feat.gen.q'), help: t('feat.gen.help'),
