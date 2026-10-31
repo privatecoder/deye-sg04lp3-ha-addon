@@ -468,8 +468,7 @@ class PlantConfig(_Model):
 
 class AppConfig(_Model):
     """The effective configuration: the app options (MQTT, log level, instance id) plus the plant.
-    Options may still carry ``endpoints``/``inverters`` (older installations, migration source);
-    ``with_plant`` replaces them by the plant store's content."""
+    The options hold no connections or inverters; ``with_plant`` fills them from the plant store."""
 
     endpoints: tuple[EndpointConfig, ...] = ()
     inverters: tuple[InverterConfig, ...] = ()

@@ -227,17 +227,19 @@ async def test_unselected_keys_are_never_published(tmp_path: Path) -> None:
         await settle(lambda: conn.on(state_topic("battery")))
         assert "battery_soc" not in conn.last(state_topic("battery")).json()
         doc = json.loads(conn.on(NS.discovery_topic(NS.inverter_device_id("deye1")))[-1].payload)
-        assert list(doc["components"]) == ["battery_voltage"]
+        assert [k for k in doc["components"] if not k.startswith("diag_")] == ["battery_voltage"]
 
 
-async def test_empty_selection_creates_no_inverter_entities_only_app_diagnostics(
+async def test_empty_selection_creates_only_the_inverter_diagnostics(
     tmp_path: Path,
 ) -> None:
     async with make(tmp_path, keys=()) as rig:
         conn = await rig.ready()
-        assert NS.discovery_topic(NS.inverter_device_id("deye1")) not in conn.topics()
+        doc = json.loads(conn.on(NS.discovery_topic(NS.inverter_device_id("deye1")))[-1].payload)
+        assert all(k.startswith("diag_") for k in doc["components"])  # no selected sensor
+        assert "diag_state" in doc["components"]
         app = json.loads(conn.on(NS.discovery_topic(NS.app_device_id))[-1].payload)
-        assert "inverter_deye1_state" in app["components"]
+        assert not [k for k in app["components"] if k.startswith("inverter_")]
         running(rig)  # nothing selected: online follows identity alone
         await settle(lambda: conn.last(NS.inverter_availability_topic("deye1")).text == "online")
 
@@ -533,12 +535,12 @@ async def test_app_diagnostics_heartbeat_and_inverter_state(tmp_path: Path) -> N
         conn = await rig.ready()
         await settle(lambda: len(conn.on(NS.app_state_topic)) >= 2)  # periodic, fresh object
         running(rig)
-        await settle(
-            lambda: conn.last(NS.app_state_topic).json()["inverter_deye1_state"] == "running"
-        )
+        topic = NS.inverter_diagnostics_topic("deye1")
+        await settle(lambda: conn.last(topic).json()["state"] == "running")
         body = conn.last(NS.app_state_topic).json()
         assert body["inverters_configured"] == 1 and "timestamp" in body
-        assert not conn.last(NS.app_state_topic).retain
+        assert not [k for k in body if k.startswith("inverter_deye1")]
+        assert not conn.last(NS.app_state_topic).retain and not conn.last(topic).retain
 
 
 async def test_serial_number_reaches_the_device_when_known(tmp_path: Path) -> None:

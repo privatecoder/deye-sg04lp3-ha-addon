@@ -19,6 +19,46 @@ The Modbus address depends on the connection type (field finding: four SG04LP3 i
   failure (unreachable, timeout, bad frame, logger error) is retried once after a short pause on a
   fresh test connection; a running connection in failure cooldown is waited for (up to 10 s)
   instead of failing immediately. The result shows the number of attempts.
+- **Overview hints** (live finding, master 1): "… and N more hints" is now a button that opens and
+  closes the rest (keyboard operable, state kept while the page is open). Order: warnings, then
+  information, then observations. "Hardware data not reported" and "unknown battery input code"
+  are one hint, with the raw words (`R22=0xFFFF, R24=5`).
+- **No false "only 0" hints.** The zero heuristic is now opt-in per profile entry
+  (`observe_zero`, default by category): only physical measurements that should not be 0 in
+  operation are watched (voltages, frequency, SOC, temperatures, PV by daylight only, and the
+  explicit `load_power_total`). Alarm/fault/status words, bit fields, enums, raw words, binary
+  sensors, "today" counters, gen-port values, settings and placeholders are never reported.
+- **Transfer dialog:** the preview loads when the dialog opens and whenever targets or options
+  change; "Transfer" is usable at once (the separate "Preview" button is gone). The stale-revision
+  protection is unchanged. The preview names keys that stay in the target's selection but are
+  inactive there (parallel slave).
+- **Parallel slaves** (identified by the device-reported R336 role only: parallel on and not
+  master): the battery temperature (R586, valid on the master only) and, when the BMS block
+  R210-R219 reads entirely 0, the BMS entries are inactive: not polled, no entity, greyed in the
+  selection with the reason. Re-checked at every identity pass, so a role change takes effect.
+  Independent inverters, cascades and masters keep everything. The saved selection is untouched.
+- **Role display:** "Master" / "Slave" only (the phase stays in the diagnostics).
+- **One place for the Modbus address.** A Solarman V5 route has no address field ("Address: 1,
+  fixed for Solarman loggers"; an override sits under Advanced), the fallback prefill on a logger
+  is 1. The connection check does not look like a stored setting: with inverters on the connection
+  each is tested with its own address, otherwise the field is "Address to test (not saved)"; a
+  logger needs none.
+- **No migration paths** (development only): removed the `endpoints`/`inverters` app options (and
+  their translations, import code, notices, docs and the YAML runbook appendix), the import of the
+  first selection-file format and of `selection.json`/`.prev`/`.recovery.json`, and the default
+  for selection records without the `chosen` flag or without `confirmed`. Options hold MQTT, log
+  level and instance id. Stored state of older versions may need to be reset.
+- **Per-inverter diagnostics moved to the inverter's own device** (no name prefix: "Bound serial
+  number", "Connection path", "State", …; own availability, so they stay visible while the
+  inverter is offline). The app device keeps app version, inverters configured/online and MQTT
+  reconnects. The old app-device entities are removed by the normal discovery cleanup.
+- Removed the diagnostic "parallel role (R336)" (duplicated the inverter's own parallel entities).
+- R65 diagnostics ("Energy resolution raw word", "last reading") exist only while R65 is read and
+  reported (not with a user-chosen energy resolution).
+- **Firmware like the Deye cloud:** `MCU1: 1001-C070 / MCU2: 2005-1175-1807` (MCU1 = R17-R18,
+  MCU2 = R14-R15-R16; R16 is read with the identity block). The single-word entities are unchanged.
+- The HA device model is "Deye SG04LP3 three-phase low-voltage hybrid inverter"; no register
+  numbers in entity names ("(R133)" etc. removed from the profile names, also the R65 diagnostics).
 
 ## 0.2.5
 

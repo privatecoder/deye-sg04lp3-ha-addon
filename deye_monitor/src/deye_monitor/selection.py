@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import copy
 import hashlib
 import json
 import logging
-import os
 import shutil
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
@@ -269,19 +267,7 @@ def apply_edit(spec: InverterSpec, current: Record, edit: Edit) -> Record:
 # -- persistence ------------------------------------------------------------------------------
 
 
-RECOVERY_NAME = "selection.recovery.json"
 RECOVERY_REQUIRED = "selection_recovery_required"
-
-
-def _valid_marker(body: dict[str, Any]) -> bool:
-    if body.get("state") == "done":
-        return True
-    return (
-        body.get("state") == "pending"
-        and isinstance(body.get("attempted"), int)
-        and isinstance(body.get("accepted"), dict)
-        and _valid_body(body["accepted"])
-    )
 
 
 def _valid_body(body: dict[str, Any]) -> bool:
@@ -329,10 +315,6 @@ def _migrate_record(spec: InverterSpec, raw: Mapping[str, Any], problems: list[P
                     problems.append(Problem("unknown_feature", f"{spec.id}.{str(name)[:64]}"))
         else:
             problems.append(Problem("invalid_features", spec.id))
-    else:
-        # a record from before the confirmations: every non-default value was set on purpose
-        default = Features().model_dump()
-        confirmed = {n for n, v in feats.items() if default.get(n) != v}
     selectable = {e.key for e in spec.profile.entries if e.selectable}
     sets: dict[str, set[str]] = {}
     for name in ("added", "removed"):
@@ -353,13 +335,12 @@ def _migrate_record(spec: InverterSpec, raw: Mapping[str, Any], problems: list[P
         sets["added"] -= both
     for extra in sorted(set(raw) - {"features", "added", "removed", "confirmed", "chosen"}):
         problems.append(Problem("unknown_field", f"{spec.id}.{str(extra)[:64]}"))
-    raw_chosen = raw.get("chosen", True)  # a record from before the flag was saved by the user
     return Record(
         Features(**feats),
         frozenset(sets["added"]),
         frozenset(sets["removed"]),
         frozenset(confirmed),
-        raw_chosen if isinstance(raw_chosen, bool) else True,
+        raw.get("chosen") is True,
     )
 
 
@@ -385,10 +366,7 @@ def _valid_slot(doc: dict[str, Any]) -> bool:
         return False
     if not (isinstance(body, dict) and _valid_body(body)):
         return False
-    if doc.get("format") == SLOT_FORMAT:
-        return bool(doc.get("checksum") == _checksum(seq, body))
-    # a slot of the first format (checksum over the body only) is readable and rewritten at load
-    return "format" not in doc and bool(doc.get("checksum") == _digest(body))
+    return doc.get("format") == SLOT_FORMAT and bool(doc.get("checksum") == _checksum(seq, body))
 
 
 class SelectionStore:
@@ -397,9 +375,7 @@ class SelectionStore:
     rename + fsync); the newest slot that is complete and valid is the accepted state, always. A
     write goes to the slot that does NOT hold it, so the accepted state is never touched by a
     failing write. Damaged or incomplete slots are ignored and reported, never used.
-
-    Older installations (``selection.json`` + ``.prev`` + ``.recovery.json``) are migrated into
-    slot A at the first start; the old files are renamed ``*.migrated`` (idempotent)."""
+    """
 
     def __init__(
         self,
@@ -478,16 +454,12 @@ class SelectionStore:
             self._seq = int(self._slots[newest].data["seq"])
             body, self.source = self._slots[newest].data["body"], "file"
             self._status = LoadStatus.VALID
-            if "format" not in self._slots[newest].data:
-                self._upgrade_slot_format(newest)
             if corrupt:
                 self.source = "recovered_previous"
                 self.problems.append(Problem("selection_store_recovered_previous", FILE_NAME))
         elif corrupt:
             self._status = LoadStatus.CORRUPT
             self.problems.append(Problem("selection_store_template_used", FILE_NAME))
-        else:
-            body = self._migrate_legacy()
         if body is None:
             return
         self.revision = int(body["revision"])
@@ -510,79 +482,6 @@ class SelectionStore:
                 self.records[inverter_id] = Record(
                     record.features, confirmed=record.confirmed, chosen=record.chosen
                 )
-
-    def _upgrade_slot_format(self, index: int) -> None:
-        """Slots of the first format are rewritten with the checksum over seq and body (best
-        effort: the old slot stays valid and readable until it succeeds)."""
-        body = self._slots[index].data["body"]
-        try:
-            self._write_slot(self._target_slot(), body)
-        except OSError:
-            log.error("selection slot could not be upgraded to the current format yet")
-
-    def _migrate_legacy(self) -> dict[str, Any] | None:
-        """``selection.json`` (+ ``.prev``, ``.recovery.json``) of the earlier schema: the same
-        rules as before decide which document counts; it is written into slot A and the old files
-        are renamed. Without any old file this is a fresh installation."""
-        names = (FILE_NAME, FILE_NAME + ".prev", RECOVERY_NAME)
-        if not any((self.directory / n).exists() for n in names):
-            return None
-        main = JsonStore(
-            self.directory / FILE_NAME, schema_version=SCHEMA_VERSION, validate=_valid_body
-        )
-        prev = JsonStore(
-            self.directory / (FILE_NAME + ".prev"),
-            schema_version=SCHEMA_VERSION,
-            validate=_valid_body,
-        )
-        marker = JsonStore(
-            self.directory / RECOVERY_NAME, schema_version=SCHEMA_VERSION, validate=_valid_marker
-        )
-        body: dict[str, Any] | None = None
-        if marker.status is LoadStatus.VALID and marker.data.get("state") == "pending":
-            body = copy.deepcopy(marker.data["accepted"])  # the accepted state of a cut transaction
-            self.problems.append(Problem("selection_recovered_interrupted_change", FILE_NAME))
-        elif marker.status is LoadStatus.CORRUPT:
-            # an unreadable marker cannot prove that the main file was accepted (a first save may
-            # have been cut): only a valid previous document is known to be accepted, otherwise
-            # nothing is, the old files are kept untouched and the template (or, where a choice
-            # is required, the first-start state) applies until the user decides
-            self.problems.append(Problem("selection_recovery_marker_corrupt", RECOVERY_NAME))
-            if prev.status is LoadStatus.VALID:
-                body = prev.data
-            else:
-                self.problems.append(Problem("selection_store_template_used", FILE_NAME))
-                self.source = "template"
-                self._status = LoadStatus.CORRUPT
-                return None
-        elif main.status is LoadStatus.VALID:
-            body = main.data
-        elif main.status is LoadStatus.CORRUPT:
-            self.problems.append(Problem("selection_store_corrupt", FILE_NAME, main.problem or ""))
-            if prev.status is LoadStatus.VALID:
-                body = prev.data
-                self.problems.append(Problem("selection_store_recovered_previous", FILE_NAME))
-            else:
-                self.problems.append(Problem("selection_store_template_used", FILE_NAME))
-        elif prev.status is LoadStatus.VALID:
-            body = prev.data
-            self.problems.append(Problem("selection_store_interrupted_commit", FILE_NAME))
-        self.source = "migrated" if body is not None else "template"
-        self._status = LoadStatus.VALID if body is not None else LoadStatus.CORRUPT
-        if body is None:
-            return None
-        self._seq = 0
-        try:
-            self._write_slot(0, body)
-        except OSError:
-            log.error("selection could not be migrated to the new schema yet; retrying next start")
-            return body
-        for name in names:
-            with contextlib.suppress(OSError):
-                path = self.directory / name
-                if path.exists():
-                    os.replace(path, path.with_name(path.name + ".migrated"))
-        return body
 
     # -- write -----------------------------------------------------------------------------
 

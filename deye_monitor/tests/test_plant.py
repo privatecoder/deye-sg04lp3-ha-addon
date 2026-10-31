@@ -14,7 +14,7 @@ import pytest
 from deye_monitor import probe
 from deye_monitor.config import PlantConfig, parse_config, plant_problems
 from deye_monitor.device import InverterState
-from deye_monitor.plant import PlantStore, SwitchError, options_notice
+from deye_monitor.plant import PlantStore, SwitchError
 from deye_monitor.store import LoadStatus
 from tests.fakes.servers import SERIAL, Behavior, FakePty, Kind
 from tests.plant_helpers import A, B, PlantRig, plant_rig, serial_symlink
@@ -60,7 +60,7 @@ async def create_inv(
 
 def test_a_fresh_directory_is_a_first_installation(tmp_path: Path) -> None:
     store = PlantStore(tmp_path)
-    assert store.status is LoadStatus.MISSING and not store.exists
+    assert store.status is LoadStatus.MISSING
     assert store.plant == PlantConfig() and store.revision == 0 and store.problems == []
 
 
@@ -93,10 +93,9 @@ def test_all_slots_damaged_fails_closed_and_keeps_a_copy(tmp_path: Path) -> None
     store.commit(plant_of([GW], [INV]), 1)
     (tmp_path / "plant.a.json").write_text("garbage")
     again = PlantStore(tmp_path)
-    assert again.status is LoadStatus.CORRUPT and again.exists
+    assert again.status is LoadStatus.CORRUPT
     assert again.plant == PlantConfig() and again.revision == 0
     assert {p.code for p in again.problems} == {"plant_store_corrupt", "plant_store_empty_used"}
-    assert not again.migrate_from_options(parse_config({"endpoints": [GW], "inverters": [INV]}))
     again.commit(plant_of([GW], []), 1)  # an explicit new setup repairs the slot ...
     assert (tmp_path / "plant.a.json.corrupt").read_text() == "garbage"  # ... and keeps the copy
 
@@ -136,44 +135,6 @@ def test_a_failing_write_leaves_the_accepted_state_untouched(
     assert store.revision == 1 and len(store.plant.inverters) == 1
     assert PlantStore(tmp_path).revision == 1
     assert not list(tmp_path.glob(".plant.*"))  # no temporary leftovers
-
-
-# -- migration -----------------------------------------------------------------------------------
-
-
-def test_options_are_taken_over_once_and_never_again(tmp_path: Path) -> None:
-    options = parse_config({"endpoints": [GW], "inverters": [INV]})
-    store = PlantStore(tmp_path)
-    assert store.migrate_from_options(options)
-    assert store.revision == 1 and store.plant == options.plant
-    assert options_notice(store, options, migrated=True) == [
-        {"code": "plant_migrated", "differs": False}
-    ]
-    second = PlantStore(tmp_path)  # the next start: the store is authoritative
-    assert not second.migrate_from_options(options)
-    assert options_notice(second, options, migrated=False) == [
-        {"code": "plant_options_present", "differs": False}
-    ]
-    edited = parse_config({"endpoints": [{**GW, "port": 1502}], "inverters": [INV]})
-    assert options_notice(second, edited, migrated=False)[0]["differs"] is True
-    assert second.plant.endpoints[0].port == 502  # never overridden silently
-    assert options_notice(second, parse_config({}), migrated=False) == []
-
-
-def test_an_emptied_plant_is_not_migrated_again(tmp_path: Path) -> None:
-    options = parse_config({"endpoints": [GW], "inverters": [INV]})
-    store = PlantStore(tmp_path)
-    store.migrate_from_options(options)
-    store.commit(PlantConfig(), 2)  # the user deleted everything in the web interface
-    again = PlantStore(tmp_path)
-    assert not again.migrate_from_options(options)
-    assert again.plant == PlantConfig()
-
-
-def test_empty_options_migrate_nothing(tmp_path: Path) -> None:
-    store = PlantStore(tmp_path)
-    assert not store.migrate_from_options(parse_config({}))
-    assert not store.exists
 
 
 def test_plant_problems_have_stable_codes() -> None:
@@ -595,24 +556,6 @@ async def test_the_selection_revision_and_the_plant_revision_are_separate(
         assert (status, err(body)) == (409, "stale_revision")
 
 
-async def test_options_with_connections_are_migrated_on_start(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    options = {"endpoints": [GW], "inverters": [INV]}
-    async with plant_rig(tmp_path, monkeypatch, options=options) as rig:
-        assert rig.migrated and rig.service.revision == 1
-        _, session = await rig.call("GET", "/api/session")
-        assert session["plant_notices"] == [{"code": "plant_migrated", "differs": False}]
-        _, view = await rig.call("GET", "/api/plant")
-        assert [e["id"] for e in view["endpoints"]] == ["gw1"]
-        assert view["endpoints"][0]["used_by"] == [{"inverter": "deye1", "role": "primary"}]
-        assert view["notices"][0]["code"] == "plant_migrated"
-    async with plant_rig(tmp_path, monkeypatch, options=options) as rig:
-        assert not rig.migrated
-        _, session = await rig.call("GET", "/api/session")
-        assert session["plant_notices"][0]["code"] == "plant_options_present"
-
-
 # -- connection test -----------------------------------------------------------------------------
 
 
@@ -822,7 +765,7 @@ def test_switch_error_tells_whether_the_previous_plant_runs() -> None:
     assert SwitchError(restored=True).restored and not SwitchError(restored=False).restored
 
 
-async def test_serve_takes_the_options_over_once_and_warns_afterwards(
+async def test_serve_takes_nothing_over_from_the_options(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     from deye_monitor import app as app_module
@@ -851,13 +794,9 @@ async def test_serve_takes_the_options_over_once_and_warns_afterwards(
 
     caplog.set_level("INFO")
     await run_once()
-    assert PlantStore(tmp_path).plant == cfg.plant
-    assert "taken over into the web interface" in caplog.text
-    caplog.clear()
-    await run_once()
-    assert "still contain connections/inverters" in caplog.text
-    assert "taken over" not in caplog.text
-    assert PlantStore(tmp_path).revision == 1  # the second start did not touch the store
+    store = PlantStore(tmp_path)
+    assert store.plant == PlantConfig() and store.revision == 0  # nothing was imported
+    assert "taken over" not in caplog.text and "still contain" not in caplog.text
 
 
 async def test_a_dropped_first_exchange_on_a_fresh_test_connection_is_retried(

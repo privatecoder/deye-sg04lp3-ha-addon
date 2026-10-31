@@ -89,60 +89,6 @@ async def test_successful_recovery_commit_keeps_a_copy_of_the_damaged_file(tmp_p
 
 
 # -- migration of the earlier schema (selection.json + .prev + .recovery.json) -------------------
-
-
-def legacy(tmp_path: Path, name: str, body: dict[str, Any] | str) -> None:
-    text = body if isinstance(body, str) else json.dumps({"schema_version": 1, "data": body})
-    (tmp_path / name).write_text(text)
-
-
-def legacy_doc(revision: int, removed: list[str]) -> dict[str, Any]:
-    return {
-        "revision": revision,
-        "inverters": {"deye1": {"features": {}, "added": [], "removed": removed}},
-    }
-
-
-def test_legacy_files_are_migrated_idempotently(tmp_path: Path) -> None:
-    legacy(tmp_path, "selection.json", legacy_doc(2, ["battery_soc"]))
-    legacy(tmp_path, "selection.json.prev", legacy_doc(1, []))
-    m = manager_at(tmp_path)
-    assert m.revision == 2 and m.store.source == "migrated"
-    assert "battery_soc" not in m.selection("deye1").effective
-    assert (tmp_path / "selection.json.migrated").exists()
-    assert not (tmp_path / "selection.json").exists()
-    again = manager_at(tmp_path)
-    assert again.revision == 2 and again.store.source == "file" and again.store.problems == []
-
-
-def test_legacy_main_missing_with_prev_is_recognised(tmp_path: Path) -> None:
-    legacy(tmp_path, "selection.json.prev", legacy_doc(1, ["battery_soc"]))
-    m = manager_at(tmp_path)
-    assert m.revision == 1
-    assert [p.code for p in m.store.problems] == ["selection_store_interrupted_commit"]
-
-
-def test_legacy_pending_marker_wins_over_the_unaccepted_main_file(tmp_path: Path) -> None:
-    legacy(tmp_path, "selection.json", legacy_doc(1, ["battery_soc"]))  # not accepted
-    legacy(
-        tmp_path,
-        "selection.recovery.json",
-        {"state": "pending", "attempted": 1, "accepted": legacy_doc(0, [])},
-    )
-    m = manager_at(tmp_path)
-    assert m.revision == 0 and "battery_soc" in m.selection("deye1").effective
-    assert "selection_recovered_interrupted_change" in [p.code for p in m.store.problems]
-
-
-def test_legacy_corrupt_marker_never_releases_the_unaccepted_main_file(tmp_path: Path) -> None:
-    legacy(tmp_path, "selection.json", legacy_doc(1, ["battery_soc"]))
-    legacy(tmp_path, "selection.json.prev", legacy_doc(0, []))
-    legacy(tmp_path, "selection.recovery.json", "{damaged")
-    m = manager_at(tmp_path)
-    assert m.revision == 0 and "battery_soc" in m.selection("deye1").effective
-    assert "selection_recovery_marker_corrupt" in [p.code for p in m.store.problems]
-
-
 # -- R6-02 -----------------------------------------------------------------------------------
 
 
@@ -302,10 +248,11 @@ async def test_explicit_missing_binding_is_not_filled_from_seen_serial(tmp_path:
         diagnostics_of=lambda _: {"bound_serial": None},
     ) as r:
         conn = await r.ready()
-        before = len(conn.on(NS.app_state_topic))
+        topic = NS.inverter_diagnostics_topic("deye1")
+        before = len(conn.on(topic))
         r.pub.on_diagnostics("deye1", {"bound_serial": None})
-        await settle(lambda: len(conn.on(NS.app_state_topic)) > before)
-        assert conn.last(NS.app_state_topic).json()["inverter_deye1_serial"] is None
+        await settle(lambda: len(conn.on(topic)) > before)
+        assert conn.last(topic).json()["serial"] is None
 
 
 # -- R6-06 -----------------------------------------------------------------------------------
@@ -524,13 +471,6 @@ async def test_a_refused_rebind_keeps_the_confirmation(tmp_path: Path) -> None:
 # -- N6-01..03 and the synchrony contract (follow-up of code review 6) ---------------------------
 
 
-def _legacy_body(tmp_path: Path, revision: int, remove: list[str]) -> dict[str, Any]:
-    m = manager_at(tmp_path)
-    body = m.store.document(m.store.records, revision)
-    body["inverters"]["deye1"]["removed"] = list(remove)
-    return body
-
-
 async def test_sequence_bit_corruption_is_not_silently_trusted(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
     await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
@@ -544,64 +484,11 @@ async def test_sequence_bit_corruption_is_not_silently_trusted(tmp_path: Path) -
     assert "selection_store_corrupt" in [p.code for p in again.store.problems]  # reported
 
 
-async def test_a_slot_written_in_the_first_format_is_read_and_upgraded(tmp_path: Path) -> None:
-    import hashlib
-
-    body = _legacy_body(tmp_path, 3, ["battery_soc"])
-    text = json.dumps(body, sort_keys=True, separators=(",", ":"))
-    old = {"seq": 5, "checksum": hashlib.sha256(text.encode()).hexdigest(), "body": body}
-    (tmp_path / "selection.a.json").write_text(json.dumps({"schema_version": 1, "data": old}))
-    m = manager_at(tmp_path)
-    assert m.revision == 3 and "battery_soc" not in m.selection("deye1").effective
-    assert m.store.problems == []
-    upgraded = [
-        json.loads(p.read_text())["data"]
-        for p in tmp_path.glob("selection.*.json")  # noqa: ASYNC240
-    ]
-    assert any(d.get("format") == 2 and d["seq"] == 6 for d in upgraded)
-    again = manager_at(tmp_path)
-    assert again.revision == 3 and again.store.problems == []
-
-
 async def test_conflicting_slots_prefer_the_higher_revision(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
     await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
     await m.change(1, {"deye1": Edit(remove=frozenset({"pv1_power"}))})
     assert manager_at(tmp_path).revision == 2
-
-
-@pytest.mark.parametrize("previous", ["missing", "corrupt", "valid"])
-def test_corrupt_legacy_marker_does_not_accept_an_unfinished_first_save(
-    tmp_path: Path, previous: str
-) -> None:
-    accepted = _legacy_body(tmp_path, 0, [])
-    proposed = _legacy_body(tmp_path, 1, ["battery_soc"])
-    legacy(tmp_path, "selection.json", proposed)
-    (tmp_path / "selection.recovery.json").write_text("{damaged")
-    if previous == "valid":
-        legacy(tmp_path, "selection.json.prev", accepted)
-    elif previous == "corrupt":
-        (tmp_path / "selection.json.prev").write_text("{damaged")
-    m = manager_at(tmp_path)
-    assert "battery_soc" in m.selection("deye1").effective  # never the unconfirmed proposal
-    assert m.revision == 0
-    codes = [p.code for p in m.store.problems]
-    assert "selection_recovery_marker_corrupt" in codes
-    if previous != "valid":
-        assert "selection_store_template_used" in codes
-        assert (tmp_path / "selection.json").exists()  # the old data is kept until a decision
-    again = manager_at(tmp_path)  # idempotent
-    assert again.revision == 0 and "battery_soc" in again.selection("deye1").effective
-
-
-def test_the_first_start_without_a_reliable_legacy_state_awaits_the_user(tmp_path: Path) -> None:
-    from deye_monitor.selection import SelectionManager, SelectionStore
-    from tests.test_selection import specs
-
-    legacy(tmp_path, "selection.json", _legacy_body(tmp_path, 1, ["battery_soc"]))
-    (tmp_path / "selection.recovery.json").write_text("{damaged")
-    m = SelectionManager(SelectionStore(tmp_path, specs(), require_choice=True))
-    assert not m.selection("deye1").chosen and m.selection("deye1").active == frozenset()
 
 
 def test_adoption_and_the_durable_commit_stay_synchronous() -> None:

@@ -50,6 +50,8 @@ ENERGY_TOTAL_PAIRS = frozenset(
     {(516, 517), (518, 519), (522, 523), (524, 525), (527, 528), (534, 535)}
 )
 
+_ZERO_CATEGORIES = frozenset({"power", "grid", "pv", "battery"})
+_ZERO_CLASSES = frozenset({"voltage", "frequency", "battery", "temperature"})
 _KEY_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _FORBIDDEN_PAIRS = frozenset({(620, 709), (709, 620)})  # V105.8: standalone fields, never a pair
@@ -205,6 +207,9 @@ class Entry(_Model):
     confidence: str = Field(min_length=1)
     producer_evidence: tuple[ProducerEvidence, ...] = ()
     default_enabled: bool
+    # "Only zeros" is worth a hint for this entry: ``None`` follows the category default of
+    # ``observes_zero``; a profile sets it where the default is wrong for the entry.
+    observe_zero: bool | None = None
     internal: bool = False
     mandatory: bool = False
     notes: str | None = None
@@ -259,6 +264,27 @@ class Entry(_Model):
             and self.release == "unresolved"
             and not self.internal
         )
+
+    @property
+    def observes_zero(self) -> bool:
+        """0 is suspicious for this entry. Only physical measurements that are expected to be
+        non-zero in operation qualify (voltages, frequency, SOC, temperatures, PV with daylight);
+        alarm/fault/status words, bit fields, enums, raw words, counters, settings and the
+        gen port (an unused port reads 0) are healthy at 0 and default to no observation."""
+        if self.observe_zero is not None:
+            return self.observe_zero
+        if not self.is_numeric or self.platform != "sensor" or self.release == "unresolved":
+            return False
+        if self.category not in _ZERO_CATEGORIES or self.point == "gen_port":
+            return False
+        return self.device_class in _ZERO_CLASSES or (
+            self.point == "pv" and self.device_class in ("power", "current")
+        )
+
+    @property
+    def zero_needs_daylight(self) -> bool:
+        """PV values are 0 at night: only daylight samples count."""
+        return self.point == "pv"
 
     @property
     def selectable(self) -> bool:
@@ -351,6 +377,8 @@ class Entry(_Model):
             self.type == "bitfield" and self.mask is not None and self.mask & (self.mask - 1) == 0
         ):
             out.append("binary_sensor needs a bitfield with a single-bit mask")
+        if self.observe_zero and not self.is_numeric:
+            out.append("observe_zero applies to numeric entries")
         if self.scale_source is not None:
             out += self._energy_problems()
         return out

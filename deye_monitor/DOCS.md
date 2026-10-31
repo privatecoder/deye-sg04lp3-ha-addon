@@ -60,14 +60,25 @@ device loop and without the publisher.
   cannot be written), the app publishes `offline` for every inverter and for itself, each with its
   own time budget. If the app's `offline` cannot be delivered, the connection is cut without a
   DISCONNECT so that the broker publishes the will.
-* **Diagnostics.** The app device carries, per inverter, diagnostic sensors: state and reason,
-  connection path and endpoint, bound serial number, firmware words (R15/R17/R18, hex digits such as
-  `r15=1175 r17=1001 r18=C070`), parallel role (R336), R65 raw value and whether the last reading
-  worked (only while the device reports R65), effective energy resolution and its source (`user
-  choice` or `R65`), confirmation/blocking state, current energy series, number of capability conflicts (the
-  list is an attribute), bus utilisation, transport timeouts/frame errors/resyncs, cooldown and the
-  time of the last successful read. Unknown values are `unknown` (`null`); updates are throttled to
+* **Diagnostics.** The app device carries only app-wide entities: app version, inverters
+  configured and online, MQTT reconnects. Everything that belongs to one inverter is a diagnostic
+  sensor of that inverter's own device (no name prefix; available while the inverter is offline):
+  state and reason, connection path and endpoint, bound serial number, firmware like the Deye
+  cloud (`MCU1: 1001-C070 / MCU2: 2005-1175-1807`: MCU1 = communication/HMI board R17-R18, MCU2 =
+  control board R14-R15-R16), energy resolution raw word and last reading (only while R65 is read
+  and reported), effective energy resolution and its source (`user choice` or `R65`),
+  confirmation/blocking state, current energy series, number of capability conflicts (the list is
+  an attribute), bus utilisation, transport timeouts/frame errors/resyncs, cooldown and the time
+  of the last successful read. Unknown values are `unknown` (`null`); updates are throttled to
   one message per 0.5 s.
+* **Parallel slaves.** On a unit whose R336 says "parallel on, not master" the battery temperature
+  (valid on the master only) and, when the BMS block R210-R219 reads entirely 0, the BMS entries
+  are inactive: not polled, no entity, greyed in the selection with the reason; they become active
+  again by themselves if the unit becomes master or leaves parallel mode. Never applied to
+  independent inverters or cascades.
+* **"Only 0" hints.** Only physical measurements that should not be 0 in operation are watched
+  (`observe_zero` in the profile; default by category). Alarm/fault words, flags, enums, counters
+  and similar are healthy at 0 and never reported.
 * **Fields the device does not report.** Profile entries that declare a not-reported value (R0,
   R22, R24, R65: `0xFFFF`, R65 also `0`, R24 any undefined code) are checked once at the identity
   read and again after a change of serial number, firmware (R15/R17/R18) or profile revision.
@@ -134,12 +145,7 @@ offer the connections you created, so the web interface does it. The options for
 `mqtt` (including TLS), `log_level` and `instance_id`. The empty defaults start the app with an empty
 plant; the web interface then offers the setup assistant.
 
-`endpoints` and `inverters` remain **optional lists in the options for older installations** (and the
-examples in the runbook). If the options still contain them at the start and no plant has been
-saved in the web interface yet, the app takes them over **once** into the web interface and says so in
-the log and in the web interface (“please remove them from the app options”). From then on the web
-interface is authoritative: entries that remain in the options are reported as a hint, never
-applied silently. The tables below describe the fields (they are the same in the web interface).
+The tables below describe the connection and inverter fields as the web interface offers them.
 
 ### `endpoints`
 
@@ -233,83 +239,6 @@ can simply be left out.
 `log_level` is `debug`, `info` (default), `warning` or `error`. `instance_id` (4 to 16 characters of
 `a-z0-9`) is generated and stored in `/data/instance_id` when empty; set it only to keep entity
 identities when moving an installation.
-
-## Example (migration path): four inverters, each behind a gateway with a Solarman logger as fallback
-
-This is what the old options look like and what the web interface stores. New installations create
-this plant with the assistant instead. The addresses and serial numbers below are placeholders.
-
-```yaml
-endpoints:
-  - id: gw1
-    transport: modbus_tcp
-    host: 192.0.2.11
-  - id: gw2
-    transport: modbus_tcp
-    host: 192.0.2.12
-  - id: gw3
-    transport: modbus_tcp
-    host: 192.0.2.13
-  - id: gw4
-    transport: modbus_tcp
-    host: 192.0.2.14
-  - id: logger1
-    transport: solarman_v5_tcp
-    host: 192.0.2.21
-    logger_serial: 1700000001
-  - id: logger2
-    transport: solarman_v5_tcp
-    host: 192.0.2.22
-    logger_serial: 1700000002
-  - id: logger3
-    transport: solarman_v5_tcp
-    host: 192.0.2.23
-    logger_serial: 1700000003
-  - id: logger4
-    transport: solarman_v5_tcp
-    host: 192.0.2.24
-    logger_serial: 1700000004
-inverters:
-  - id: deye1
-    name: Deye 1
-    endpoint: gw1
-    unit_id: 1
-    fallback_endpoint: logger1
-  - id: deye2
-    name: Deye 2
-    endpoint: gw2
-    unit_id: 1
-    fallback_endpoint: logger2
-  - id: deye3
-    name: Deye 3
-    endpoint: gw3
-    unit_id: 1
-    fallback_endpoint: logger3
-  - id: deye4
-    name: Deye 4
-    endpoint: gw4
-    unit_id: 1
-    fallback_endpoint: logger4
-mqtt:
-  discovery_prefix: homeassistant
-  topic_prefix: deye_monitor
-log_level: info
-```
-
-## Minimal configuration (migration path)
-
-```yaml
-endpoints:
-  - id: gw1
-    transport: modbus_tcp
-    host: 192.0.2.11
-inverters:
-  - id: deye1
-    name: Deye 1
-    endpoint: gw1
-    unit_id: 1
-mqtt: {}
-```
 
 ## Diagnostics and self-healing
 
@@ -471,9 +400,7 @@ Without a Home Assistant user (not through Ingress) everything is read-only.
   previous state and the request fails. The newest complete, valid slot is always the accepted
   state; a damaged or truncated slot is ignored and reported (kept as `*.corrupt` when it is
   overwritten), never used. If an adopted change can neither be saved nor taken back, the affected
-  inverters are blocked (`selection_recovery_required`) until the app is restarted. Files of the
-  earlier schema (`selection.json`, `.prev`, `.recovery.json`) are migrated at the first start and
-  renamed `*.migrated`.
+  inverters are blocked (`selection_recovery_required`) until the app is restarted.
   Unknown or obsolete keys are reported and discarded.
 - The JSON API accepts connections from the Supervisor (`172.30.32.2`) only. Changes need a user
   (`X-Remote-User-Id`), the CSRF token from `GET api/session`, a JSON body with known keys only and

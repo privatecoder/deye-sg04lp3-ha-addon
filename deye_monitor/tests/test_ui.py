@@ -226,18 +226,98 @@ async def test_transfer_preview_and_execute(browser: Browser, tmp_path: Path) ->
         await page.get_by_role("button", name="Auf andere übertragen …").first.click()
         dialog = page.locator("dialog[open]")
         await expect(dialog).to_be_visible()
-        await dialog.get_by_role("button", name="Vorschau").click()
-        target = dialog.locator("section.target")
+        assert await dialog.get_by_role("button", name="Vorschau").count() == 0  # no extra gate
+        target = dialog.locator("section.target")  # the preview loads by itself
         await expect(target).to_have_count(1)
         await expect(target).to_contain_text("fallen weg")
         await shot(page, "transfer-light-de")
         before = stack.revision
-        await dialog.get_by_role("button", name="Übertragen", exact=True).click()
+        execute = dialog.get_by_role("button", name="Übertragen", exact=True)
+        await expect(execute).to_be_enabled()
+        await execute.click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         assert stack.revision == before + 1
         copied = stack.plant.manager.selection("deye2")
         assert copied.features.battery is False and "grid_voltage_a" in copied.removed
         await s.check()
+
+
+async def test_transfer_follows_its_options_with_a_fresh_preview(
+    browser: Browser, tmp_path: Path
+) -> None:
+    async with ui_stack(tmp_path, running=False) as stack:
+        s = await open_ui(browser, stack)
+        page = s.page
+        await page.get_by_role("button", name="Auf andere übertragen …").first.click()
+        dialog = page.locator("dialog[open]")
+        execute = dialog.get_by_role("button", name="Übertragen", exact=True)
+        await expect(dialog.locator("section.target")).to_have_count(1)
+        await expect(execute).to_be_enabled()
+        await dialog.get_by_role("checkbox").first.uncheck()  # the only target: nothing to send
+        await expect(execute).to_be_disabled()
+        await expect(dialog.locator(".banner.error")).to_be_visible()
+        await dialog.get_by_role("checkbox").first.check()
+        await expect(dialog.locator("section.target")).to_have_count(1)
+        await expect(execute).to_be_enabled()
+        await s.check()
+
+
+async def test_overview_hints_open_and_are_ordered_warnings_first(
+    browser: Browser, tmp_path: Path
+) -> None:
+    async with ui_stack(tmp_path) as stack:
+        context = await browser.new_context(locale="de-DE", viewport={"width": 1100, "height": 900})
+        page = await context.new_page()
+
+        async def crowded(route: Any) -> None:
+            response = await route.fetch()
+            data = await response.json()
+            status = data["inverters"][0]["status"]
+            status["hints"] = [
+                {
+                    "key": k,
+                    "state": "zero_only_inconclusive",
+                    "responses": 88,
+                    "daylight_samples": 0,
+                }
+                for k in (
+                    "battery_voltage",
+                    "grid_voltage_a",
+                    "grid_frequency",
+                    "pv1_voltage",
+                    "pv2_voltage",
+                    "load_voltage_a",
+                )
+            ]
+            status["capability_conflicts"] = [{"code": "device_type", "detail": "R0 says 0x1234"}]
+            status["identity"] = {
+                **status["identity"],
+                "capabilities_unreported": ["mppt_phases"],
+                "capabilities_unknown": {"battery_input_code": 5},
+                "capability_words": {"22": 0xFFFF, "24": 5},
+            }
+            await route.fulfill(response=response, json=data)
+
+        await page.route("**/api/inverters", crowded)
+        await page.goto(stack.url)
+        card = page.locator("article.inverter").first
+        items = card.locator("ul.hints li")
+        await expect(items).to_have_count(4)
+        await expect(items.nth(0)).to_have_class(re.compile("conflict"))  # warnings first
+        await expect(items.nth(1)).to_contain_text("R22=0xFFFF, R24=5")  # one merged info hint
+        assert await card.get_by_text("Unbekannter Batterieeingangs-Code").count() == 0
+        toggle = card.get_by_role("button", name="4 weitere Hinweise anzeigen")
+        await expect(toggle).to_have_attribute("aria-expanded", "false")
+        await toggle.focus()
+        await page.keyboard.press("Enter")  # keyboard operable
+        await expect(items).to_have_count(8)
+        await expect(
+            card.get_by_role("button", name="Weniger Hinweise anzeigen")
+        ).to_have_attribute("aria-expanded", "true")
+        await expect(items.nth(7)).to_contain_text("nur 0 geliefert")  # observations come last
+        await page.keyboard.press("Enter")
+        await expect(items).to_have_count(4)
+        await context.close()
 
 
 async def test_language_switch_and_persistence(browser: Browser, tmp_path: Path) -> None:

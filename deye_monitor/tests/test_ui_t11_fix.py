@@ -117,19 +117,18 @@ async def test_transfer_edit_invalidates_an_inflight_preview(
     async with four_devices(tmp_path, running=False) as stack:
         await stack.plant.manager.change(0, {"deye1": Edit(features={"battery": False})})
         s = await open_ui(browser, stack)
-        dialog = await open_transfer(s)
-        target4 = dialog.locator("fieldset label.option").filter(has_text="deye4").locator("input")
-        await target4.uncheck()
         gate = Gate()
         await s.page.route("**/api/transfer/preview", gate.handler)
-        await dialog.get_by_role("button", name="Vorschau", exact=True).click()
+        dialog = await open_transfer(s)  # the preview of all three targets starts by itself
         await gate.first()
-        await target4.check()  # the shown preview must never cover this
+        target4 = dialog.locator("fieldset label.option").filter(has_text="deye4").locator("input")
+        await target4.uncheck()  # the answer in flight must never cover this
         gate.release.set()
-        await s.page.wait_for_timeout(300)
         execute = dialog.get_by_role("button", name="Übertragen", exact=True)
-        await expect(execute).to_be_disabled()
-        await expect(dialog.locator("section.target")).to_have_count(0)
+        await expect(dialog.locator("section.target")).to_have_count(2)  # the newer preview
+        await expect(execute).to_be_enabled()
+        await execute.click()
+        await expect(s.page.locator(".toast.ok")).to_be_visible()
         assert stack.plant.manager.selection("deye4").features.battery is True
 
 
@@ -142,7 +141,6 @@ async def test_transfer_executes_exactly_the_previewed_payload(
         dialog = await open_transfer(s)
         target4 = dialog.locator("fieldset label.option").filter(has_text="deye4").locator("input")
         await target4.uncheck()
-        await dialog.get_by_role("button", name="Vorschau", exact=True).click()
         await expect(dialog.locator("section.target")).to_have_count(2)
         execute = dialog.get_by_role("button", name="Übertragen", exact=True)
         await expect(execute).to_be_enabled()
@@ -152,7 +150,6 @@ async def test_transfer_executes_exactly_the_previewed_payload(
         await gate.first()
         # while the call runs, nothing in the dialog can be changed any more
         await expect(target4).to_be_disabled()
-        await expect(dialog.get_by_role("button", name="Vorschau", exact=True)).to_be_disabled()
         gate.release.set()
         await expect(s.page.locator(".toast.ok")).to_be_visible()
         assert stack.plant.manager.selection("deye2").features.battery is False
@@ -165,10 +162,9 @@ async def test_older_preview_answer_never_replaces_a_newer_one(
 ) -> None:
     async with four_devices(tmp_path, running=False) as stack:
         s = await open_ui(browser, stack)
-        dialog = await open_transfer(s)
         gate = Gate()
         await s.page.route("**/api/transfer/preview", gate.handler)
-        await dialog.get_by_role("button", name="Vorschau", exact=True).click()
+        dialog = await open_transfer(s)
         await gate.first()
         await (
             dialog.locator("fieldset label.option")
@@ -176,13 +172,11 @@ async def test_older_preview_answer_never_replaces_a_newer_one(
             .locator("input")
             .uncheck()
         )
+        await expect(dialog.get_by_role("button", name="Übertragen", exact=True)).to_be_disabled()
         gate.release.set()
         await s.page.wait_for_timeout(300)
-        await expect(dialog.locator("section.target")).to_have_count(0)
-        await expect(dialog.get_by_role("button", name="Übertragen", exact=True)).to_be_disabled()
-        await s.page.unroute("**/api/transfer/preview")
-        await dialog.get_by_role("button", name="Vorschau", exact=True).click()
-        await expect(dialog.locator("section.target")).to_have_count(2)
+        await expect(dialog.locator("section.target")).to_have_count(2)  # never the older three
+        await expect(dialog.get_by_role("button", name="Übertragen", exact=True)).to_be_enabled()
 
 
 # -- R7-03 ----------------------------------------------------------------------------------

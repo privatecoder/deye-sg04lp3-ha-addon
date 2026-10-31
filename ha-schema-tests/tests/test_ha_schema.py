@@ -133,6 +133,7 @@ def test_templates_render_null_zero_value_and_guards() -> None:
         for key, comp in comps.items():
             tpl = comp["value_template"]
             base = key if not key.endswith(f"_{series}") else key[: -len(series) - 1]
+            base = base.removeprefix("diag_")  # the inverter's own diagnostics read the bare name
             if comp["platform"] == "binary_sensor":
                 for value, expected in [(True, "ON"), (False, "OFF"), (None, "None"),
                                         ("false", "None"), (0, "None")]:  # fmt: skip
@@ -229,24 +230,27 @@ def test_real_binary_sensor_handler() -> None:
     run_in_ha(check)
 
 
-def test_app_diagnostics_render_numbers_text_timestamps_and_conflict_attributes() -> None:
-    comps = load("discovery_app.json")["components"]
+def test_inverter_diagnostics_render_numbers_text_timestamps_and_conflict_attributes() -> None:
+    comps = load("discovery_inverter.json")["components"]
     payload = {
-        "inverter_deye1_r65_raw": 260,
-        "inverter_deye1_energy_resolution": 0.1,
-        "inverter_deye1_energy_series": "x7k2m9q4g0",
-        "inverter_deye1_capability_conflicts": 1,
-        "inverter_deye1_transport_timeouts": 3,
-        "inverter_deye1_last_success": "2023-11-14T22:13:20Z",
-        "inverter_deye1_capability_conflict_list": [{"code": "mppt_count", "detail": "R22 = 1"}],
-        "inverter_deye1_serial": None,
+        "r65_raw": 260,
+        "energy_resolution": 0.1,
+        "energy_series": "x7k2m9q4g0",
+        "capability_conflicts": 1,
+        "transport_timeouts": 3,
+        "last_success": "2023-11-14T22:13:20Z",
+        "capability_conflict_list": [{"code": "mppt_count", "detail": "R22 = 1"}],
+        "serial": None,
+        "state": "running",
+        "firmware": "MCU1: 1001-C070 / MCU2: 2005-1175-1807",
     }
 
     async def check(hass: HomeAssistant) -> None:
         for key, value in payload.items():
             if key.endswith("conflict_list"):
                 continue
-            comp = comps[key]
+            comp = comps[f"diag_{key}"]
+            assert comp["availability"] == [{"topic": load("discovery_inverter.json")["availability"][0]["topic"]}]
             obj = make_sensor(hass, comp)
             obj._update_state(message(payload))
             expected = None if value is None else str(value)
@@ -254,7 +258,7 @@ def test_app_diagnostics_render_numbers_text_timestamps_and_conflict_attributes(
                 assert obj.native_value is not None, key  # HA parses the ISO timestamp
             else:
                 assert obj.native_value == expected, key
-        conflicts = comps["inverter_deye1_capability_conflicts"]
+        conflicts = comps["diag_capability_conflicts"]
         tpl = Template(conflicts["json_attributes_template"], hass)
         rendered = json.loads(str(tpl.async_render_with_possible_json_value(json.dumps(payload))))
         assert rendered == {"conflicts": [{"code": "mppt_count", "detail": "R22 = 1"}]}
@@ -262,3 +266,8 @@ def test_app_diagnostics_render_numbers_text_timestamps_and_conflict_attributes(
         assert json.loads(str(empty)) == {"conflicts": None}
 
     run_in_ha(check)
+
+
+def test_the_app_device_has_only_the_app_wide_entities() -> None:
+    comps = load("discovery_app.json")["components"]
+    assert set(comps) == {"app_version", "mqtt_reconnects", "inverters_online", "inverters_configured"}

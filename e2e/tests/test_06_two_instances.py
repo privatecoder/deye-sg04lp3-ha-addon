@@ -105,7 +105,9 @@ async def inverter_snapshot(running):
         for e, s in states.items()
         if re.match(rf"^(sensor|binary_sensor)\.deye_{B}_b_(tcp|rtu)_", e)
     }
-    registry = sorted(u for u in await ours(running.ha, B) if "_app_" not in u)
+    registry = sorted(
+        u for u in await ours(running.ha, B) if "_app_" not in u and "_diag_" not in u
+    )
     docs = {t: p for t, p in (await running.broker.retained("homeassistant/#")).items() if B in t}
     return mine, registry, docs
 
@@ -117,17 +119,17 @@ async def test_island_inverter_and_configured_parallel_roles(running, instance_b
     )
     assert [u for u in entries if u.endswith("b_rtu_grid_voltage_a")]
     assert [u for u in entries if u.endswith("b_tcp_load_power_total")]
-    keys = ("parallel_enable", "parallel_master", "parallel_phase")
+    keys = ("parallel_enable", "parallel_master")
 
     async def roles():
         # a selection change makes the inverter identify again for a moment (entities unavailable)
         states = await running.ha.states()
         tcp, rtu = inverter_states(states, B, "b_tcp"), inverter_states(states, B, "b_rtu")
         got = (tuple(tcp.get(k) for k in keys), tuple(rtu.get(k) for k in keys))
-        return got == ((("on", "on", "B")), ("on", "off", "C")) or None
+        return got == (("on", "on"), ("on", "off")) or None
 
     await until(
-        roles, "the configured parallel roles are shown (master/phase B and slave/phase C)", 60, 1
+        roles, "the configured parallel roles are shown (master and slave)", 60, 1
     )
 
 

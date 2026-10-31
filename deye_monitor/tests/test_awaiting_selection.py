@@ -3,7 +3,6 @@ identity/status and bootstrap registers and publishes no sensor until the user c
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from deye_monitor.device import BOOTSTRAP_KEYS
@@ -54,21 +53,6 @@ async def test_any_change_and_the_plain_acceptance_choose_and_persist(tmp_path: 
     )
     again = manager_requiring_choice(tmp_path)
     assert again.selection("deye1").chosen and again.selection("deye2").chosen
-
-
-async def test_a_newly_added_inverter_awaits_while_existing_selections_stay(tmp_path: Path) -> None:
-    m = manager_requiring_choice(tmp_path)
-    await m.change(0, {"deye1": Edit(choose=True)})
-    # a store written before the flag existed and containing only deye1: deye1 counts as chosen
-    body = newest_body(tmp_path)
-    del body["inverters"]["deye2"]
-    del body["inverters"]["deye1"]["chosen"]
-    for slot in tmp_path.glob("selection.*.json"):  # noqa: ASYNC240
-        slot.unlink()
-    (tmp_path / "selection.json").write_text(json.dumps({"schema_version": 1, "data": body}))
-    legacy = manager_requiring_choice(tmp_path)
-    assert legacy.selection("deye1").chosen is True  # existing selections count as confirmed
-    assert legacy.selection("deye2").chosen is False  # the inverter without a record awaits
 
 
 async def test_runtime_reads_only_the_basics_until_the_choice_and_then_the_template(

@@ -32,6 +32,10 @@ class Observation:
     last_failed: bool = False
     placeholder: bool = False
     conflict: bool = False
+    # Only entries that should not read 0 in operation can be "zero only" (``Entry.observes_zero``);
+    # PV entries count their daylight samples only, 0 at night is normal.
+    watch_zero: bool = False
+    daylight_only: bool = False
     _distinct: set[float] = field(default_factory=set)
 
     @property
@@ -72,6 +76,11 @@ class Observation:
             return ObservationState.READ_FAILED
         if not self.responses:
             return ObservationState.NO_DATA
-        if self.zeros == self.responses and self.responses >= ZERO_ONLY_AFTER:
+        if self.watch_zero and self._zero_only():
             return ObservationState.ZERO_ONLY_INCONCLUSIVE
         return ObservationState.OBSERVED_ACTIVE
+
+    def _zero_only(self) -> bool:
+        if self.daylight_only:
+            return self.daylight_samples >= ZERO_ONLY_AFTER and self.daylight_nonzero == 0
+        return self.zeros == self.responses and self.responses >= ZERO_ONLY_AFTER

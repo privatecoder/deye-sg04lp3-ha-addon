@@ -4,7 +4,7 @@ import { t, errorText } from './i18n.js';
 import { h, busy } from './ui.js';
 import { state, canEdit, loadPlant } from './state.js';
 import {
-  endpointForm, inverterForm, testPanel, savedInverterChecks, loadSerialDevices, saveEndpoint, saveInverter,
+  endpointForm, inverterForm, testPanel, connectionTest, savedInverterChecks, loadSerialDevices, saveEndpoint, saveInverter,
   existingEndpointIds, existingInverterIds, transportLabel, endpointTarget,
 } from './plantforms.js';
 import { noticeBanners } from './plant.js';
@@ -45,16 +45,11 @@ export function wizardView() {
         existing.map((ep) => h('option', { value: ep.id, selected: ep.id === wiz.endpointId }, `${ep.id} · ${transportLabel(ep.transport)} · ${endpointTarget(ep)}`)));
       pick.addEventListener('change', () => { form.el.hidden = pick.value !== ''; panel.el.hidden = pick.value !== ''; });
     }
-    const unit = h('input', { type: 'text', inputmode: 'numeric', class: 'select unit-input', value: '1', 'aria-label': t('ep.test_unit') });
+    const test = connectionTest(form, []);
     const panel = testPanel({
       intro: h('div', {}, h('h3', {}, t('ep.test_title')), h('p', { class: 'help' }, t('ep.test_help'))),
-      extra: h('div', { class: 'field' }, h('label', {}, t('ep.test_unit')), unit),
-      build() {
-        if (!form.validate()) return null;
-        const id = Number(unit.value);
-        if (!Number.isInteger(id) || id < 1 || id > 247) return null;
-        return { endpoint: form.values(), unit_id: id };
-      },
+      extra: test.el,
+      build: test.build,
     });
     const next = h('button', { class: 'btn primary', type: 'button', id: 'wiz-next', disabled: !canEdit() }, t('wiz.save_continue'));
     next.addEventListener('click', async () => {

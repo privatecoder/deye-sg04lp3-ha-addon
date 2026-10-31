@@ -1,6 +1,6 @@
 # First live read test: Deye SG04LP3-EU in Home Assistant
 
-Runbook for four SUN-10K-SG04LP3-EU in island parallel operation, each with one RS485 LAN gateway **on the ModeBUS** and one WiFi logger. Reported firmware: HMI `1001-C070`, Main `2005-1175-1807`. This document prepares the test remotely; no plant connections were made while writing it. This version is based on the reviewer's runbook (Codex, 29.10.2026) and has been brought up to the **current app state** (web interface, two-slot selection, diagnostic entities, options schema). Since T14 you set up connections and inverters **in the web interface** (wizard "Set up plant"), no longer in the app options; the YAML examples remain only as a migration path in Appendix A and are checked by an app test against the Supervisor options schema and the app parser.
+Runbook for four SUN-10K-SG04LP3-EU in island parallel operation, each with one RS485 LAN gateway **on the ModeBUS** and one WiFi logger. Reported firmware: HMI `1001-C070`, Main `2005-1175-1807`. This document prepares the test remotely; no plant connections were made while writing it. This version is based on the reviewer's runbook (Codex, 29.10.2026) and has been brought up to the **current app state** (web interface, two-slot selection, diagnostic entities). You set up connections and inverters **in the web interface** (wizard "Set up plant"); the app options hold only MQTT and the log level.
 
 The app is **read-only**: it sends only FC03 read accesses to inverters (see section 9).
 
@@ -9,7 +9,7 @@ The app is **read-only**: it sends only FC03 read accesses to inverters (see sec
 - [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.6` alone does not identify a state: note the commit/digest in the result sheet (section 10).
 - [ ] The earlier re-verification findings N2-01 to N2-04 (energy namespace, isolated identity reset, restart after blocking, reconnect/confirmation states) were fixed in the fix rounds T7-Fix 2/3; the approval from the first item confirms that the approved version contains these rounds.
 - [x] **Before your first selection the app reads only identity and status.** An inverter without a saved selection shows "Please choose sensors" (section 3.1); normal reading begins only after saving via the web interface. There are no options such as `selected_keys` and no files in `/data` are changed by hand.
-- [x] Identity, active selection/read plan and connection errors can be inspected: web interface (overview, polling load per selection) and the diagnostic entities of the app device (section 7).
+- [x] Identity, active selection/read plan and connection errors can be inspected: web interface (overview, polling load per selection) and the diagnostic entities of the inverter devices (section 7).
 - [ ] You can reliably stop the app via HA and have an independent, already working plant monitoring. Critical consumers do not depend on new sensors for this test. In case of a fault a contact person on site is reachable; a manual restart from remote is not assumed.
 - [ ] The HA MQTT integration and broker are operational. Configuration and existing app data are backed up (HA backup including add-on/app data). On the first attempt do **not** add energy entities to the Energy Dashboard and no new entities to control automations.
 
@@ -68,18 +68,18 @@ Do not start an additional debug app or Modbus console in parallel. Local poller
 
 ### 3.1 First start: "Please choose sensors"
 
-As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 59 sensors and 30 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the app device. Selections already saved by an earlier version count as confirmed.
+As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 58 sensors and 29 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device. 
 
 1. Start the app (the app options stay empty except `instance_id`) and create the connection and inverter in the setup wizard of the web interface (stage 1, section 4).
 2. In the web interface (sidebar **Deye Monitor**) the inverter's card shows **"Please choose sensors"** after identification. Open **"Choose now"** there (or **Set up sensors**).
 3. Answer step 1 "Describe your plant" **truthfully** (island/grid, battery yes/no, BMS, GEN port, PV inputs, parallel operation). A note "The device setting reports …" is **no proof of the installation** and changes nothing by itself; your answers stay saved.
 4. Step 2 "Choose sensors": **"Basics only"** selects `serial_number` (serial number), `operating_state` (operating state) and `fault_word_1` to `fault_word_4` (fault words 1–4) and deselects everything else; **"Deselect all"** selects nothing. Both are ordinary deviations from the template (individually resettable, preserved across later changes to the plant description).
-5. The bar at the bottom shows the **polling load**, "What saving changes" the sensors that drop out. Expected for "Basics only": **6 sensors, 12 polling blocks**, load "low", no energy, no R65, no battery/AC/PV group.
+5. The bar at the bottom shows the **polling load**, "What saving changes" the sensors that drop out. Expected for "Basics only": **6 sensors, 11 polling blocks**, load "low", no energy, no R65, no battery/AC/PV group.
 6. **Save.** The selection counts as saved only once it is stored durably; after that the note "Please choose sensors" disappears and normal reading begins – with the small selection.
 
 If you want the template unchanged, use **"Accept the template unchanged"**; not recommended for this test.
 
-"Identity and status only" additionally comprises necessary **internal read** queries: R0, R3–7, R14–15, R17–18, R20–22, R24, R336 as well as R500 and R551–558. For the feature hints the app also reads R111, R133 and R189 (group "Settings", diagnostics only). These are no write accesses. With `max_read_registers=20` and without gap bridging this gives **12 read blocks** per complete plan (identity 7, status 2, settings 3), not 12 requests every 30 seconds: each group has its own interval; identification and recovery may trigger additional probes. R65 is not needed in this selection. In the state "Please choose sensors" the same mandatory and hint registers are read.
+"Identity and status only" additionally comprises necessary **internal read** queries: R0, R3–7, R14–18, R20–22, R24, R336 as well as R500 and R551–558. For the feature hints the app also reads R111, R133 and R189 (group "Settings", diagnostics only). These are no write accesses. With `max_read_registers=20` and without gap bridging this gives **11 read blocks** per complete plan (identity 6, status 2, settings 3), not 11 requests every 30 seconds: each group has its own interval; identification and recovery may trigger additional probes. R65 is not needed in this selection. In the state "Please choose sensors" the same mandatory and hint registers are read.
 
 ## 4. Stage 1 – one inverter, gateway only
 
@@ -95,7 +95,7 @@ Setup is done in the web interface (sidebar **Deye Monitor**): with an empty pla
 5. After saving the inverter, polling begins immediately. From now on keep logs, abort criteria and independent monitoring in view at the same time. The inverter first reads only identity and status (section 3.1); then save the minimal selection.
 6. Within the first minutes check identification, bound SN and fresh status data (section 7: state "Online", entity `…_serial` = `expected_serial`). `ready` in the log only confirms started loops, not successful device contact. On a wrong SN/quarantine ("Quarantined") stop immediately, check the assignment outside the app; **no identity reset** to bypass an error.
 7. Observe for 15 minutes. Expected: recurring successful FC03 cycles without a growing queue, repeated cooldowns or new faults. Power values unchanged for minutes are not a test failure with this selection: no power values are read yet.
-8. With a stable course, additionally enable `battery_voltage`, `battery_soc`, `inverter_frequency`, `pv1_power`, `pv2_power` in the web interface (search, tick the checkbox) and check the preview. Expected: **11 sensors, 15 polling blocks** (additionally battery 1, AC 1, PV 1), still without energy and R65. Save and observe for 15 minutes, preferably in daylight. No diagnostic release for PV3–PV10 or battery 2 (the expert raw values stay deselected).
+8. With a stable course, additionally enable `battery_voltage`, `battery_soc`, `inverter_frequency`, `pv1_power`, `pv2_power` in the web interface (search, tick the checkbox) and check the preview. Expected: **11 sensors, 14 polling blocks** (additionally battery 1, AC 1, PV 1), still without energy and R65. Save and observe for 15 minutes, preferably in daylight. No diagnostic release for PV3–PV10 or battery 2 (the expert raw values stay deselected).
 9. Select energy only afterwards and separately (energy counters via the web interface search "Energy"), check R65 and its resolution and wait for at least one energy cycle. Do not change the path together with the sensor selection: only one influencing factor per change. Afterwards stop the app and log the last approved state.
 
 `mqtt: {}` uses the already configured Supervisor MQTT service; it does not start a broker. Missing HA entities with a working connection are to be investigated separately, without forcing faster device polling. Use `info` at first; only if needed a limited debug window, and before passing on remove IPs/SNs/credentials from logs.
@@ -112,7 +112,7 @@ Compare dynamic values in time windows with timestamp, minimum/maximum and opera
 
 ## 6. Stage 3 – extend to four inverters
 
-For each further inverter first check its own gateway/logger assignment. Then enable the same small selection step by step for **two, three, four** inverters: each time add the connection and the inverter under **Set up plant** (changes apply immediately, the remaining inverters continue after a short restart of polling): the new inverter shows "Please choose sensors" and reads only identity and status until you have saved its selection (with "Basics only" or with "Transfer to others …" from an already set-up inverter; serial number binding, identity, energy history are never transferred in the process). After saving, observe for at least 15 minutes. Do not enable a device's full default selection unchecked merely by adding it. The target picture is four separate, confirmed Modbus TCP gateways (`gw1` … `gw4`, each port 502, timeout 5, block size 20, gap 250, queue 8) with one inverter each `deye1` … `deye4` (Modbus address 1, expected serial numbers `2401230001` … `2401230004`, intervals 30/300/600/3600 s); insert real values. As a migration path it is additionally given as YAML in Appendix A.
+For each further inverter first check its own gateway/logger assignment. Then enable the same small selection step by step for **two, three, four** inverters: each time add the connection and the inverter under **Set up plant** (changes apply immediately, the remaining inverters continue after a short restart of polling): the new inverter shows "Please choose sensors" and reads only identity and status until you have saved its selection (with "Basics only" or with "Transfer to others …" from an already set-up inverter; serial number binding, identity, energy history are never transferred in the process). After saving, observe for at least 15 minutes. Do not enable a device's full default selection unchecked merely by adding it. The target picture is four separate, confirmed Modbus TCP gateways (`gw1` … `gw4`, each port 502, timeout 5, block size 20, gap 250, queue 8) with one inverter each `deye1` … `deye4` (Modbus address 1, expected serial numbers `2401230001` … `2401230004`, intervals 30/300/600/3600 s); insert real values.
 
 With four devices observe for at least one hour including slow groups; the web interface shows the **total bus load** per selection. Afterwards agree on a longer observation across day/night change before shortening intervals or enabling further sensors. Do not form sums from SOC, shared battery SOC or possibly already aggregated parallel values. Equal values from several devices are not automatically independent measurements. Record the selection and measuring point of each sensor.
 
@@ -122,27 +122,31 @@ Set an optional **fallback connection** (in the inverter form, with its own Modb
 
 In HA: app log, the web interface and under **Developer tools → States** timestamps/units of the entities. Send no actions or MQTT messages to command topics (there are none).
 
-**Diagnostic entities of the app device** (`deye_<instance_id>_app`, here with `instance_id: deyetest1` and inverter `deye1`; all `entity_category: diagnostic`, each also for `deye2` … once configured):
+**Diagnostic entities** (`entity_category: diagnostic`). The app device `deye_<instance_id>_app` carries only what concerns the whole app:
 
 | Entity | Meaning / check point |
 | --- | --- |
 | `sensor.deye_deyetest1_app_app_version` | Version of the app; compare with the approved state. |
 | `sensor.deye_deyetest1_app_inverters_online` / `…_inverters_configured` | Number online / configured. |
 | `sensor.deye_deyetest1_app_mqtt_reconnects` | Reconnections to the broker; growing = broker/network problem. |
-| `sensor.deye_deyetest1_app_inverter_deye1_state` | `starting`, `identifying`, `running`, `quarantined`, `offline`, `blocked` (web interface: Starting, Identifying, Online, Quarantined, Offline, Blocked). Expected: `running`. |
-| `sensor.deye_deyetest1_app_inverter_deye1_reason` | Reason in text form (e.g. "no usable identity answer", "serial number differs"); read first in every state except `running`. |
-| `sensor.deye_deyetest1_app_inverter_deye1_path` | Active path (`primary`/`fallback`) and endpoint. |
-| `sensor.deye_deyetest1_app_inverter_deye1_serial` | Bound inverter SN = `expected_serial`, unique per device. |
-| `sensor.deye_deyetest1_app_inverter_deye1_firmware` | Firmware words R15/R17/R18 as hex digits, for example `r15=1175 r17=1001 r18=C070`. |
-| `sensor.deye_deyetest1_app_inverter_deye1_role` | Parallel role from R336 (display only). |
-| `sensor.deye_deyetest1_app_inverter_deye1_r65_raw` / `…_r65_status` | R65 raw value and whether the last reading worked. Only present while the device reports R65 (a device that reports `0xFFFF` has no such entities). |
-| `sensor.deye_deyetest1_app_inverter_deye1_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`R65` or `user choice`), confirmation/lock. |
-| `sensor.deye_deyetest1_app_inverter_deye1_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |
-| `sensor.deye_deyetest1_app_inverter_deye1_capability_conflicts` | Number of conflicts with the hardware profile; the list is in the attribute `conflicts`. |
-| `sensor.deye_deyetest1_app_inverter_deye1_bus_utilisation` | Utilisation of the app bus (estimate, 1.0 = full). |
-| `sensor.deye_deyetest1_app_inverter_deye1_transport_timeouts` / `…_transport_frame_errors` / `…_transport_resyncs` | Counters; an increase is an abort criterion (section 8). |
-| `sensor.deye_deyetest1_app_inverter_deye1_transport_cooldown` | Wait time after errors (backoff). |
-| `sensor.deye_deyetest1_app_inverter_deye1_last_success` | Time of the last successful query; should be at most a few intervals old. |
+
+Everything that belongs to one inverter sits on **that inverter's own device** (here `instance_id: deyetest1`, inverter `deye1`; the entity names carry no inverter prefix, the device does). They stay available while the inverter is offline:
+
+| Entity | Meaning / check point |
+| --- | --- |
+| `sensor.deye_deyetest1_deye1_diag_state` | `starting`, `identifying`, `running`, `quarantined`, `offline`, `blocked` (web interface: Starting, Identifying, Online, Quarantined, Offline, Blocked). Expected: `running`. |
+| `sensor.deye_deyetest1_deye1_diag_reason` | Reason in text form (e.g. "no usable identity answer", "serial number differs"); read first in every state except `running`. |
+| `sensor.deye_deyetest1_deye1_diag_path` | Active path (`primary`/`fallback`) and endpoint. |
+| `sensor.deye_deyetest1_deye1_diag_serial` | Bound inverter SN = `expected_serial`, unique per device. |
+| `sensor.deye_deyetest1_deye1_diag_firmware` | Firmware like the Deye cloud: `MCU1: 1001-C070 / MCU2: 2005-1175-1807` (MCU1 = communication/HMI board R17-R18, MCU2 = control board R14-R15-R16). |
+| `sensor.deye_deyetest1_deye1_diag_r65_raw` / `…_r65_status` | Energy resolution raw word and whether the last reading worked. Only present while R65 is read and reported (not with a user-chosen resolution, not on a device that reports `0xFFFF`). |
+| `sensor.deye_deyetest1_deye1_diag_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`R65` or `user choice`), confirmation/lock. |
+| `sensor.deye_deyetest1_deye1_diag_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |
+| `sensor.deye_deyetest1_deye1_diag_capability_conflicts` | Number of conflicts with the hardware profile; the list is in the attribute `conflicts`. |
+| `sensor.deye_deyetest1_deye1_diag_bus_utilisation` | Utilisation of the app bus (estimate, 1.0 = full). |
+| `sensor.deye_deyetest1_deye1_diag_transport_timeouts` / `…_transport_frame_errors` / `…_transport_resyncs` | Counters; an increase is an abort criterion (section 8). |
+| `sensor.deye_deyetest1_deye1_diag_transport_cooldown` | Wait time after errors (backoff). |
+| `sensor.deye_deyetest1_deye1_diag_last_success` | Time of the last successful query; should be at most a few intervals old. |
 
 **Inverter entities** (selected sensors only): `sensor.deye_deyetest1_deye1_<key>`, e.g. `…_serial_number`, `…_operating_state`, `…_fault_word_1` … `…_fault_word_4`, later `…_battery_voltage`, `…_battery_soc`, `…_inverter_frequency`, `…_pv1_power`, `…_pv2_power`. Energy counters carry the series in the name, e.g. `…_battery_energy_charge_total_g0`.
 
@@ -220,163 +224,4 @@ Per stage note: date/time, approved commit/image digest, HA/Supervisor version, 
 
 **Passed** means only: this specific version/read set worked over the observed time on the checked paths without new anomalies. It proves neither writability nor uninterrupted slave/master switchover, maximum poll rate or the equivalence of all CON sockets.
 
-Foundations in the repository: `docs/SPEC.md`, `deye_monitor/DOCS.md` (options, web interface, state files), `deye_monitor/config.yaml` (options schema), `e2e/` (end-to-end acceptance with a real Home Assistant and fake inverters; no real device).
-
-## Appendix A – Migration path via the app options (YAML)
-
-Older installations and these examples still carry connections and inverters in the **app options** (Settings → Apps → Deye Monitor → Configuration). On start the app takes them over **once** into the web interface, **only if no plant is saved there yet**; the interface points this out ("Connections and inverters were taken over from the app options into the web interface. Please remove them from the app options"). Afterwards only what is in the web interface applies; deviating entries in the options are only reported and never taken over. You set up new plants in the wizard.
-
-The following YAML examples are complete **Supervisor options**, not `config.yaml` app manifests. All IPs from `192.0.2.1/24`, serial numbers and names are invented examples: replace them with the values confirmed above. The sensor list is **not** in the YAML (the options schema has none); it lives in the web interface. The examples alone therefore limit no selection.
-
-Notes on the options: the schema requires at least 6 for `max_read_registers` (the RTU identity probe reads up to six registers), `mqtt: {}` must stay as a block, the intervals are flat `poll_*_s` options per inverter. `allow_writes` is a reserve without effect (leave it at `false`; `true` is only logged, there is no write layer). TLS options (`tls`, `tls_ca_file`, …) concern only an external broker and are not needed for the Supervisor service `mqtt: {}`.
-
-**Stage 1 – one inverter on the gateway** (only for a confirmed **Modbus TCP→RTU** gateway mode; for a transparent gateway use `transport: rtu_over_tcp`):
-
-```yaml
-instance_id: deyetest1
-endpoints:
-  - id: gw1
-    transport: modbus_tcp
-    host: 192.0.2.11
-    port: 502
-    timeout_s: 5
-    max_read_registers: 20
-    request_gap_ms: 250
-    queue_size: 8
-inverters:
-  - id: deye1
-    name: Deye 1
-    endpoint: gw1
-    unit_id: 1
-    expected_serial: "2401230001"
-    profile: sg04lp3_lv_v105_8
-    energy_resolution: "auto"
-    poll_fast_s: 30
-    poll_energy_s: 300
-    poll_settings_s: 600
-    poll_identity_s: 3600
-    allow_writes: false
-mqtt: {}
-log_level: info
-```
-
-**Stage 2 – the same inverter via the logger:**
-
-```yaml
-instance_id: deyetest1
-endpoints:
-  - id: log1
-    transport: solarman_v5_tcp
-    host: 192.0.2.21
-    port: 8899
-    logger_serial: 1700000001
-    timeout_s: 5
-    max_read_registers: 20
-    request_gap_ms: 250
-    queue_size: 8
-inverters:
-  - id: deye1
-    name: Deye 1
-    endpoint: log1
-    unit_id: 1
-    expected_serial: "2401230001"
-    profile: sg04lp3_lv_v105_8
-    energy_resolution: "auto"
-    poll_fast_s: 30
-    poll_energy_s: 300
-    poll_settings_s: 600
-    poll_identity_s: 3600
-    allow_writes: false
-mqtt: {}
-log_level: info
-```
-
-**Stage 3 – four separate gateways, each with unit ID 1:**
-
-```yaml
-instance_id: deyetest1
-endpoints:
-  - id: gw1
-    transport: modbus_tcp
-    host: 192.0.2.11
-    port: 502
-    timeout_s: 5
-    max_read_registers: 20
-    request_gap_ms: 250
-    queue_size: 8
-  - id: gw2
-    transport: modbus_tcp
-    host: 192.0.2.12
-    port: 502
-    timeout_s: 5
-    max_read_registers: 20
-    request_gap_ms: 250
-    queue_size: 8
-  - id: gw3
-    transport: modbus_tcp
-    host: 192.0.2.13
-    port: 502
-    timeout_s: 5
-    max_read_registers: 20
-    request_gap_ms: 250
-    queue_size: 8
-  - id: gw4
-    transport: modbus_tcp
-    host: 192.0.2.14
-    port: 502
-    timeout_s: 5
-    max_read_registers: 20
-    request_gap_ms: 250
-    queue_size: 8
-inverters:
-  - id: deye1
-    name: Deye 1
-    endpoint: gw1
-    unit_id: 1
-    expected_serial: "2401230001"
-    profile: sg04lp3_lv_v105_8
-    energy_resolution: "auto"
-    poll_fast_s: 30
-    poll_energy_s: 300
-    poll_settings_s: 600
-    poll_identity_s: 3600
-    allow_writes: false
-  - id: deye2
-    name: Deye 2
-    endpoint: gw2
-    unit_id: 1
-    expected_serial: "2401230002"
-    profile: sg04lp3_lv_v105_8
-    energy_resolution: "auto"
-    poll_fast_s: 30
-    poll_energy_s: 300
-    poll_settings_s: 600
-    poll_identity_s: 3600
-    allow_writes: false
-  - id: deye3
-    name: Deye 3
-    endpoint: gw3
-    unit_id: 1
-    expected_serial: "2401230003"
-    profile: sg04lp3_lv_v105_8
-    energy_resolution: "auto"
-    poll_fast_s: 30
-    poll_energy_s: 300
-    poll_settings_s: 600
-    poll_identity_s: 3600
-    allow_writes: false
-  - id: deye4
-    name: Deye 4
-    endpoint: gw4
-    unit_id: 1
-    expected_serial: "2401230004"
-    profile: sg04lp3_lv_v105_8
-    energy_resolution: "auto"
-    poll_fast_s: 30
-    poll_energy_s: 300
-    poll_settings_s: 600
-    poll_identity_s: 3600
-    allow_writes: false
-mqtt: {}
-log_level: info
-```
+Foundations in the repository: `docs/SPEC.md`, `deye_monitor/DOCS.md` (options, web interface, state files), `deye_monitor/config.yaml` (options: MQTT, log level), `e2e/` (end-to-end acceptance with a real Home Assistant and fake inverters; no real device).

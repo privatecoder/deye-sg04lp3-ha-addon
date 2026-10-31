@@ -23,6 +23,7 @@ from deye_monitor.ha_discovery import (
     encode,
     expire_after,
     inverter_component,
+    inverter_diagnostic_components,
     replay_document,
     state_payload,
     tombstone_document,
@@ -57,6 +58,7 @@ def comp(key: str, series: str = "g0") -> tuple[str, dict[str, Any]]:
 
 def inverter_doc(series: str = "g0", serial: str | None = "2401234567") -> dict[str, Any]:
     components = dict(comp(k, series) for k in SELECTION)
+    components |= inverter_diagnostic_components(NS, "deye1", STATES, show_r65=True)
     meta = DeviceMeta(NS.inverter_device_id("deye1"), "Deye 1", "inverter", "deye1", serial)
     return device_document(NS, meta, components)
 
@@ -77,7 +79,7 @@ def test_app_document_golden() -> None:
     meta = DeviceMeta(NS.app_device_id, "Deye Monitor", "app")
     golden(
         "discovery_app.json",
-        device_document(NS, meta, app_components(NS, {"deye1": "Deye 1"}, STATES)),
+        device_document(NS, meta, app_components(NS)),
     )
 
 
@@ -221,7 +223,10 @@ def _bad(mutate: Any) -> dict[str, Any]:
         lambda d: d["components"]["battery_soc"].update(unique_id=None),
         lambda d: d["components"]["battery_soc"].update(platform="switch"),
         lambda d: d["components"]["battery_soc"].update(platform="number"),
-        lambda d: d["components"]["battery_soc"].update(availability=[{"topic": "x"}]),
+        lambda d: d["components"]["battery_soc"].update(availability="x"),
+        lambda d: d["components"]["battery_soc"].update(
+            availability=[{"topic": "x", "payload_available": "y"}]
+        ),
         lambda d: d["components"]["battery_soc"].update(entity_category="config"),
         lambda d: d["components"]["alarm_fan"].update(unit_of_measurement="V"),
         lambda d: d["components"]["battery_soc"].update(payload_on="ON"),
@@ -280,7 +285,7 @@ def test_inverter_document_availability_is_app_and_inverter_with_mode_all() -> N
 
 def test_app_device_has_only_app_availability_and_no_via_device() -> None:
     meta = DeviceMeta(NS.app_device_id, "Deye Monitor", "app")
-    doc = device_document(NS, meta, app_components(NS, {}, STATES))
+    doc = device_document(NS, meta, app_components(NS))
     assert doc["availability"] == [{"topic": "deye/ab12cd34/status"}]
     assert "via_device" not in doc["device"]
     assert all(c["entity_category"] == "diagnostic" for c in doc["components"].values())
@@ -377,3 +382,17 @@ def test_state_payload_counts_replaced_values_and_ignores_unselected_keys() -> N
     )
     body = json.loads(raw)
     assert replaced == 1 and body["operating_state"] is None and "not_selected" not in body
+
+
+def test_a_diagnostic_keeps_its_own_availability_but_a_cleanup_replay_does_not() -> None:
+    comps = inverter_diagnostic_components(NS, "deye1", STATES, show_r65=False)
+    meta = DeviceMeta(NS.inverter_device_id("deye1"), "Deye 1", "inverter", "deye1", None)
+    state = comps["diag_state"]
+    assert state["availability"] == [{"topic": NS.app_status_topic}]  # not the inverter's topic
+    replay = replay_document(NS, meta, "diag_state", state)
+    assert "availability" not in replay["components"]["diag_state"]
+    assert NS.cleanup_topic in [a["topic"] for a in replay["availability"]]
+
+
+def test_the_device_model_says_deye() -> None:
+    assert inverter_doc()["device"]["model"].startswith("Deye SG04LP3 ")

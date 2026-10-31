@@ -15,7 +15,6 @@ from typing import Any, cast
 import pytest
 import voluptuous as vol
 import yaml
-from pydantic import BaseModel
 
 import deye_monitor
 from deye_monitor.config import (
@@ -116,28 +115,10 @@ def test_dockerfile_context_and_pins() -> None:
 
 # -- schema <-> config.py ---------------------------------------------------------------------
 
-
-def _schema_keys(node: Any) -> dict[str, Any]:
-    return cast(dict[str, Any], node[0] if isinstance(node, list) else node)
-
-
-MODEL_FIELDS: dict[str, type[BaseModel]] = {
-    "endpoints": EndpointConfig,
-    "inverters": InverterConfig,
-    "mqtt": MqttConfig,
-}
-
-
-# Fields derived by the models themselves; they are not user options.
-DERIVED_FIELDS = {"endpoints": {"host_display"}}
-
-
-def test_schema_keys_match_models() -> None:
-    assert set(SCHEMA) == set(AppConfig.model_fields)
-    for name in ("endpoints", "inverters"):
-        fields = set(MODEL_FIELDS[name].model_fields) - DERIVED_FIELDS.get(name, set())
-        assert set(_schema_keys(SCHEMA[name])) == fields, name
-    assert set(SCHEMA["mqtt"]) == set(MqttConfig.model_fields)
+# The options hold only MQTT, the log level and the instance id: connections and inverters are
+# set up in the web interface and stored in /data/plant.json.
+OPTIONS_ONLY = {"mqtt", "log_level", "instance_id"}
+MINIMAL: dict[str, Any] = {"mqtt": {}}
 
 
 def _walk(schema: dict[str, Any], model: Any, where: str) -> None:
@@ -150,26 +131,18 @@ def _walk(schema: dict[str, Any], model: Any, where: str) -> None:
         assert optional == (not field.is_required()), f"{where}.{key}: required/optional mismatch"
 
 
+def test_schema_has_only_the_app_options() -> None:
+    assert set(SCHEMA) == OPTIONS_ONLY
+    assert set(MANIFEST["options"]) == {"mqtt", "log_level"}
+    assert set(SCHEMA["mqtt"]) == set(MqttConfig.model_fields)
+    assert "endpoints" not in SCHEMA and "inverters" not in SCHEMA
+
+
 def test_schema_required_flags_match_models() -> None:
-    _walk(_schema_keys(SCHEMA["endpoints"]), EndpointConfig, "endpoints")
-    _walk(_schema_keys(SCHEMA["inverters"]), InverterConfig, "inverters")
     _walk(SCHEMA["mqtt"], MqttConfig, "mqtt")
     top = {k: v for k, v in SCHEMA.items() if isinstance(v, str)}
     assert set(top) == {"log_level", "instance_id"}
     _walk(top, AppConfig, "top")
-
-
-def _doc_examples() -> list[dict[str, Any]]:
-    docs = (APP / "DOCS.md").read_text()
-    blocks = re.findall(r"```yaml\n(.*?)```", docs, re.S)
-    return [cast(dict[str, Any], yaml.safe_load(b)) for b in blocks]
-
-
-def _example() -> dict[str, Any]:
-    """The documented four-inverter plant (first YAML block in DOCS.md)."""
-    examples = _doc_examples()
-    assert len(examples) == 2  # four-inverter plant + minimal configuration
-    return examples[0]
 
 
 def through_supervisor(options: dict[str, Any]) -> dict[str, Any]:
@@ -182,202 +155,70 @@ def accepted(options: dict[str, Any]) -> Any:
     return parse_config(through_supervisor(options))
 
 
-def test_documented_example_passes_supervisor_and_parser() -> None:
-    example = _example()
-    cfg = accepted(example)
-    assert len(cfg.endpoints) == 8
-    assert len(cfg.inverters) == 4
-    assert all(i.fallback_endpoint for i in cfg.inverters)
-    assert {i.unit_id for i in cfg.inverters} == {1}
-    assert parse_config(example) == cfg  # nothing is changed by the Supervisor coercion here
-
-
 def test_ci_fixture_passes_supervisor_and_parser() -> None:
     fixture = json.loads((ROOT / ".github" / "fixtures" / "options.json").read_text())
+    assert set(fixture) <= OPTIONS_ONLY
     cfg = accepted(fixture)
-    assert len(cfg.inverters) == 1
+    assert cfg.mqtt.host == "192.0.2.30"
 
 
 def test_minimal_configuration_passes_supervisor_and_parser() -> None:
-    minimal = {
-        "endpoints": [{"id": "gw1", "transport": "modbus_tcp", "host": "192.0.2.10"}],
-        "inverters": [{"id": "deye1", "name": "Deye 1", "endpoint": "gw1", "unit_id": 1}],
-        "mqtt": {},
-    }
-    assert _doc_examples()[1]["mqtt"] == {}  # the documented minimal example keeps the block
-    accepted(_doc_examples()[1])
-    cfg = accepted(minimal)
-    assert cfg.inverters[0].poll_fast_s == 10
-    assert cfg.mqtt.host is None
+    cfg = accepted(MINIMAL)
+    assert cfg.mqtt.host is None and cfg.endpoints == () and cfg.inverters == ()
 
 
 def test_default_options_pass_supervisor_and_describe_an_empty_plant() -> None:
-    options = MANIFEST["options"]
-    cfg = parse_config(through_supervisor(options))
+    cfg = parse_config(through_supervisor(MANIFEST["options"]))
     assert cfg.endpoints == () and cfg.inverters == ()
 
 
 def test_nested_mapping_is_required_by_the_supervisor() -> None:
-    """Only "?" strings are optional: a missing mapping is rejected, a leaf-optional one is not
-    created automatically. The decision (documented in DOCS): ``mqtt`` stays a required mapping
-    (``mqtt: {}`` is enough); ``poll`` was flattened into four optional options."""
-    example = _example()
-    without_mqtt = {k: v for k, v in example.items() if k != "mqtt"}
+    """Only "?" strings are optional: a missing mapping is rejected. ``mqtt`` stays a required
+    mapping (``mqtt: {}`` is enough)."""
     with pytest.raises(vol.Invalid, match="Missing option 'mqtt'"):
-        through_supervisor(without_mqtt)
-    parse_config(without_mqtt)  # the model alone is more lenient: documented difference
-    example["mqtt"] = {}
-    accepted(example)
-    # no remaining nested mapping inside list items (they would be required in every item)
-    for item in (SCHEMA["endpoints"][0], SCHEMA["inverters"][0]):
-        assert not [k for k, v in item.items() if isinstance(v, dict | list)]
+        through_supervisor({"log_level": "info"})
+    parse_config({"log_level": "info"})  # the model alone is more lenient: documented difference
+    accepted(MINIMAL)
 
 
-def test_poll_options_are_flat_and_optional() -> None:
-    example = _example()
-    base = accepted(example).inverters[0]
-    assert (base.poll_fast_s, base.poll_energy_s, base.poll_settings_s, base.poll_identity_s) == (
-        10,
-        60,
-        300,
-        3600,
-    )
-    for partial in (
-        {"poll_fast_s": 5},
-        {"poll_energy_s": 30, "poll_identity_s": 600},
-        {"poll_settings_s": 120},
-        {"poll_fast_s": 1, "poll_energy_s": 1, "poll_settings_s": 1, "poll_identity_s": 1},
-    ):
-        data = _example()
-        data["inverters"][0].update(partial)
-        inv = accepted(data).inverters[0]
-        for key, value in partial.items():
-            assert getattr(inv, key) == value
-        assert inv.poll.fast_s == inv.poll_fast_s
-    for bad in (
-        {"poll_fast_s": 0.5},
-        {"poll_energy_s": 0},
-        {"poll_settings_s": -1},
-        {"poll_identity_s": "x"},
-    ):
-        data = _example()
-        data["inverters"][0].update(bad)
-        with pytest.raises(vol.Invalid):
-            through_supervisor(data)
-        with pytest.raises(ConfigError):
-            parse_config(data)
-
-
-def test_old_nested_poll_is_dropped_by_the_supervisor() -> None:
-    data = _example()
-    data["inverters"][0]["poll"] = {"fast_s": 5}
+def test_connections_and_inverters_are_not_options_any_more() -> None:
     sup = SupervisorOptions(SCHEMA)
-    validated = sup.validate(data)
-    assert "poll" not in validated["inverters"][0]
-    assert "inverters.poll" in sup.ignored or "inverters" in " ".join(sup.ignored)
-    with pytest.raises(ConfigError):  # the model itself refuses the retired key
-        parse_config(data)
-
-
-def test_known_schema_differences_are_intentional() -> None:
-    """The schema is not a type-equality proof. Known differences (model vs Supervisor):
-    ``timeout_s`` minimum 0.1 vs > 0, ``mqtt`` required vs defaulted, coercion of strings."""
-    data = _example()
-    data["endpoints"][0]["timeout_s"] = 0.05
-    parse_config(data)
-    with pytest.raises(vol.Invalid):
-        through_supervisor(data)
-    data = _example()
-    data["endpoints"][0]["port"] = "502"  # coerced by the Supervisor, strict in the model
-    assert accepted(data).endpoints[0].port == 502
-    with pytest.raises(ConfigError):
-        parse_config(data)
+    validated = sup.validate({"mqtt": {}, "endpoints": [], "inverters": []})
+    assert "endpoints" not in validated and "inverters" not in validated
 
 
 @pytest.mark.parametrize(
-    ("path", "mutate"),
+    "bad",
     [
-        ("endpoints.port", lambda e, i: e[0].update(port=65535)),
-        ("endpoints.max_read_registers", lambda e, i: e[0].update(max_read_registers=100)),
-        ("endpoints.max_read_registers", lambda e, i: e[0].update(max_read_registers=6)),
-        ("endpoints.queue_size", lambda e, i: e[0].update(queue_size=1000)),
-        (
-            "endpoints.baudrate",
-            lambda e, i: e.append(
-                {
-                    "id": "s",
-                    "transport": "serial_rtu",
-                    "serial_device": "/dev/x",
-                    "baudrate": 4000000,
-                }
-            ),
-        ),
-        ("endpoints.logger_serial", lambda e, i: e[4].update(logger_serial=4294967295)),
-        ("endpoints.logger_serial", lambda e, i: e[4].update(logger_serial=1)),
-        ("inverters.unit_id", lambda e, i: i[0].update(unit_id=247)),
-        ("inverters.fallback_unit_id", lambda e, i: i[0].update(fallback_unit_id=247)),
-        (
-            "inverters.poll",
-            lambda e, i: i[0].update(
-                poll_fast_s=1, poll_energy_s=1, poll_settings_s=1, poll_identity_s=1
-            ),
-        ),
-        ("inverters.expected_serial", lambda e, i: i[0].update(expected_serial="2401234567")),
-        ("inverters.expected_serial", lambda e, i: i[0].update(expected_serial="A        Z")),
-        ("endpoints.rtu_late_window_s", lambda e, i: e[0].update(rtu_late_window_s=0.1)),
+        {"mqtt": {"port": 0}},
+        {"mqtt": {"port": 65536}},
+        {"log_level": "loud"},
+        {"instance_id": "ABC"},
     ],
 )
-def test_schema_boundary_values_accepted_by_supervisor_and_model(path: str, mutate: Any) -> None:
-    example = _example()
-    mutate(example["endpoints"], example["inverters"])
-    accepted(example)
-
-
-@pytest.mark.parametrize(
-    "mutate",
-    [
-        lambda e, i: e[0].update(port=0),
-        lambda e, i: e[0].update(port=65536),
-        lambda e, i: e[0].update(max_read_registers=101),
-        lambda e, i: e[0].update(max_read_registers=0),
-        lambda e, i: e[0].update(max_read_registers=5),
-        lambda e, i: e[4].update(logger_serial=0),
-        lambda e, i: e[4].update(logger_serial=4294967296),
-        lambda e, i: i[0].update(unit_id=0),
-        lambda e, i: i[0].update(unit_id=248),
-        lambda e, i: i[0].update(poll_fast_s=0.5),
-        lambda e, i: i[0].update(energy_resolution="2"),
-        lambda e, i: i[0].update(expected_serial="123"),
-    ],
-)
-def test_schema_and_model_reject_the_same_out_of_range_values(mutate: Any) -> None:
-    example = _example()
-    mutate(example["endpoints"], example["inverters"])
+def test_schema_and_model_reject_the_same_values(bad: dict[str, Any]) -> None:
     with pytest.raises(vol.Invalid):
-        through_supervisor(example)
+        through_supervisor({"mqtt": {}, **bad} | ({"mqtt": bad["mqtt"]} if "mqtt" in bad else {}))
     with pytest.raises(ConfigError):
-        parse_config(example)
+        parse_config({"mqtt": {}, **bad} | ({"mqtt": bad["mqtt"]} if "mqtt" in bad else {}))
 
 
-def test_energy_resolution_enum_matches_model() -> None:
-    values = re.fullmatch(r"list\((.*)\)\?", _schema_keys(SCHEMA["inverters"])["energy_resolution"])
-    assert values
-    assert values[1].split("|") == ["auto", "0.1", "1"]
-    for v in values[1].split("|"):
-        example = _example()
-        example["inverters"][0]["energy_resolution"] = v
-        parse_config(example)
-
-
-def test_transport_enum_matches_model() -> None:
-    values = re.fullmatch(r"list\((.*)\)", _schema_keys(SCHEMA["endpoints"])["transport"])
-    assert values
+def test_transport_values_are_documented() -> None:
     from deye_monitor.config import Transport
 
-    assert values[1].split("|") == [t.value for t in Transport]
+    docs = (APP / "DOCS.md").read_text()
+    for transport in Transport:
+        assert transport.value in docs
 
 
 # -- translations ------------------------------------------------------------------------------
+
+
+DERIVED_FIELDS = {"endpoints": {"host_display"}}  # derived by the model, not a user option
+
+
+def _schema_keys(node: Any) -> dict[str, Any]:
+    return cast(dict[str, Any], node[0] if isinstance(node, list) else node)
 
 
 def _translation_keys(schema: Any, tr: dict[str, Any], where: str) -> None:
@@ -406,7 +247,7 @@ def test_translations_cover_every_option(lang: str) -> None:
 
 def test_docs_mention_every_option() -> None:
     docs = (APP / "DOCS.md").read_text()
-    names = set(EndpointConfig.model_fields) | set(InverterConfig.model_fields)
+    names = set(EndpointConfig.model_fields) | set(InverterConfig.model_fields)  # web interface
     names |= set(MqttConfig.model_fields) | {"log_level", "instance_id"}
     names -= DERIVED_FIELDS["endpoints"]
     for name in sorted(names):
@@ -466,7 +307,7 @@ def _spawn(tmp_path: Path, options: dict[str, Any]) -> subprocess.Popen[str]:
 
 
 def test_process_starts_and_stops_on_sigterm(tmp_path: Path) -> None:
-    proc = _spawn(tmp_path, _example())
+    proc = _spawn(tmp_path, MINIMAL)
     assert proc.stdout is not None
     deadline = time.monotonic() + 20
     seen = ""
@@ -475,7 +316,7 @@ def test_process_starts_and_stops_on_sigterm(tmp_path: Path) -> None:
         seen += line
         if "ready:" in line or not line:
             break
-    assert "ready: 8 endpoint(s), 4 inverter(s)" in seen
+    assert "ready: 0 endpoint(s), 0 inverter(s)" in seen
     assert (tmp_path / "instance_id").is_file()
     proc.send_signal(signal.SIGTERM)
     rest, _ = proc.communicate(timeout=10)
@@ -484,18 +325,10 @@ def test_process_starts_and_stops_on_sigterm(tmp_path: Path) -> None:
 
 
 def test_process_exits_2_on_invalid_config_without_leaking_secrets(tmp_path: Path) -> None:
-    proc = _spawn(
-        tmp_path,
-        {
-            "inverters": [{"id": "a", "name": "A", "endpoint": "nope", "unit_id": 1}],
-            "endpoints": [],
-            "mqtt": {"password": "topsecret"},
-        },
-    )
+    proc = _spawn(tmp_path, {"mqtt": {"password": "topsecret", "port": "x"}})
     out, _ = proc.communicate(timeout=20)
     assert proc.returncode == 2
     assert "invalid configuration" in out
-    assert "is not defined" in out
     assert "topsecret" not in out
 
 

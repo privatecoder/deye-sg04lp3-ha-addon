@@ -207,6 +207,16 @@ export function endpointForm({ initial = null, editing = false, existingIds = []
     if (chosen && !idTouched) idInput.value = nextId(SUGGESTED_ID[transport], existingIds);
   }
 
+  // V5: the override or 1; otherwise the field (a half-typed value stays visible to validate)
+  function effectiveUnit(field_, override, v5) {
+    if (v5) {
+      const o = numberOf(override.control);
+      return o === undefined ? 1 : o;
+    }
+    const n = numberOf(field_.control);
+    return n === undefined ? '' : n;
+  }
+
   function values() {
     const v = { id: idInput.value.trim(), transport };
     if (transport === 'serial_rtu') {
@@ -304,10 +314,12 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
     endpoints.map((ep) => h('option', { value: ep.id, selected: ep.id === (f.endpoint || defaultEndpoint) }, label(ep))));
   const endpointField = register(field('endpoint', t('inv.endpoint'), endpointSelect, t('inv.endpoint_help')));
   const isV5 = (endpointId) => (endpoints.find((ep) => ep.id === endpointId) || {}).transport === 'solarman_v5_tcp';
+  // One place for the Modbus address. A Solarman logger sits on exactly one inverter and only
+  // answers on address 1: no field, a fixed note, an override under "Advanced" only. A gateway
+  // or serial bus can serve several inverters, so there the address belongs to the inverter.
   const unitField = register(field('unit_id', t('inv.unit'), numberInput(f.unit_id ?? 1), t('inv.unit_help')));
-  // A V5 logger only answers on address 1; the hint warns but never blocks saving.
-  const unitWarning = h('p', { class: 'help warn-text', 'data-warning': 'unit_id', role: 'status', hidden: true }, t('inv.unit_v5_warning'));
-  unitField.control.after(unitWarning);
+  const unitFixed = h('p', { class: 'help fixed-address', 'data-fixed': 'unit_id' }, t('inv.unit_fixed'));
+  unitField.el.after(unitFixed);
   let unitTouched = f.unit_id !== undefined;
   unitField.control.addEventListener('input', () => { unitTouched = true; });
 
@@ -316,28 +328,30 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
     endpoints.map((ep) => h('option', { value: ep.id, selected: ep.id === f.fallback_endpoint }, label(ep))));
   const fallbackField = register(field('fallback_endpoint', t('inv.fallback'), fallbackSelect, t('inv.fallback_help')));
   const fallbackUnitField = register(field('fallback_unit_id', t('inv.fallback_unit'), numberInput(f.fallback_unit_id ?? f.unit_id ?? 1), t('inv.unit_help')));
-  const fallbackUnitWarning = h('p', { class: 'help warn-text', 'data-warning': 'fallback_unit_id', role: 'status', hidden: true }, t('inv.unit_v5_warning'));
-  fallbackUnitField.control.after(fallbackUnitWarning);
+  const fallbackUnitFixed = h('p', { class: 'help fixed-address', 'data-fixed': 'fallback_unit_id' }, t('inv.unit_fixed'));
+  fallbackUnitField.el.after(fallbackUnitFixed);
   let fallbackUnitTouched = f.fallback_unit_id !== undefined && f.fallback_unit_id !== f.unit_id;
   fallbackUnitField.control.addEventListener('input', () => { fallbackUnitTouched = true; });
+  // Overrides for a logger address other than 1 (rare): Advanced only, empty = 1.
+  const unitOverride = register(field('unit_override', t('inv.unit_override'), numberInput(isV5(f.endpoint) && f.unit_id !== undefined && f.unit_id !== 1 ? f.unit_id : ''), t('inv.unit_override_help')));
+  const fallbackOverride = register(field('fallback_unit_override', t('inv.fallback_unit_override'), numberInput(isV5(f.fallback_endpoint) && f.fallback_unit_id !== undefined && f.fallback_unit_id !== 1 ? f.fallback_unit_id : ''), t('inv.unit_override_help')));
 
-  // Per route: the default address, the help text and the warning follow the connection type.
+  // Per route: the field, the fixed note and the override follow the connection type.
   function syncUnits({ endpointChanged = false } = {}) {
     if (endpointChanged && !unitTouched) unitField.control.value = 1;
-    if (!fallbackUnitTouched) {
-      fallbackUnitField.control.value = isV5(fallbackSelect.value) ? 1 : unitField.control.value;
-    }
-    for (const [x, warning, endpointId] of [[unitField, unitWarning, endpointSelect.value], [fallbackUnitField, fallbackUnitWarning, fallbackSelect.value]]) {
-      const v5 = isV5(endpointId);
-      x.helpEl.textContent = t(v5 ? 'inv.unit_help_logger' : 'inv.unit_help');
-      const value = numberOf(x.control);
-      warning.hidden = !(v5 && value !== undefined && value !== 1);
-    }
+    const primaryV5 = isV5(endpointSelect.value);
+    const fallbackV5 = isV5(fallbackSelect.value);
+    if (!fallbackUnitTouched) fallbackUnitField.control.value = fallbackV5 ? 1 : unitField.control.value;
+    unitField.el.hidden = primaryV5;
+    unitFixed.hidden = !primaryV5;
+    unitOverride.el.hidden = !primaryV5;
+    fallbackUnitField.el.hidden = !fallbackSelect.value || fallbackV5;
+    fallbackUnitFixed.hidden = !fallbackSelect.value || !fallbackV5;
+    fallbackOverride.el.hidden = !fallbackV5;
   }
   endpointSelect.addEventListener('change', () => syncUnits({ endpointChanged: true }));
   fallbackSelect.addEventListener('change', () => syncUnits());
   unitField.control.addEventListener('input', () => syncUnits());
-  fallbackUnitField.control.addEventListener('input', () => syncUnits());
 
   const serialField = register(field('expected_serial', t('inv.expected_serial'), textInput(f.expected_serial || '', { maxlength: 10 }), t('inv.expected_serial_help')));
   const energySelect = h('select', { class: 'select' },
@@ -350,22 +364,25 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
   }
   const details = h('details', { class: 'advanced' },
     h('summary', {}, t('inv.advanced')),
-    h('div', { class: 'grid-fields' }, Object.values(poll).map((x) => x.el)));
+    h('div', { class: 'grid-fields' }, unitOverride.el, fallbackOverride.el, Object.values(poll).map((x) => x.el)));
 
-  function refresh() {
-    const hasFallback = fallbackSelect.value !== '';
-    fallbackUnitField.el.hidden = !hasFallback;
+  // V5: the override or 1; otherwise the field (a half-typed value stays visible to validate)
+  function effectiveUnit(field_, override, v5) {
+    if (v5) {
+      const o = numberOf(override.control);
+      return o === undefined ? 1 : o;
+    }
+    const n = numberOf(field_.control);
+    return n === undefined ? '' : n;
   }
-  fallbackSelect.addEventListener('change', refresh);
 
   function values() {
     const v = { id: idInput.value.trim(), name: nameInput.value.trim(), endpoint: endpointSelect.value };
-    const unit = numberOf(unitField.control);
-    v.unit_id = unit === undefined ? '' : unit;
+    v.unit_id = effectiveUnit(unitField, unitOverride, isV5(endpointSelect.value));
     if (fallbackSelect.value) {
       v.fallback_endpoint = fallbackSelect.value;
-      const fu = numberOf(fallbackUnitField.control);
-      if (fu !== undefined) v.fallback_unit_id = fu;
+      const fu = effectiveUnit(fallbackUnitField, fallbackOverride, isV5(fallbackSelect.value));
+      if (fu !== '') v.fallback_unit_id = fu;
     }
     const serial = serialField.control.value;
     if (serial !== '') v.expected_serial = serial;
@@ -386,8 +403,8 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
     if (!ID_RE.test(v.id)) bad(idField, t('form.id_pattern'));
     else if (!editing && existingIds.includes(v.id)) bad(idField, t('form.id_taken'));
     if (!v.endpoint) bad(endpointField, t('form.required'));
-    if (typeof v.unit_id !== 'number') bad(unitField, v.unit_id === '' ? t('form.required') : t('form.number'));
-    if (v.fallback_endpoint && typeof v.fallback_unit_id === 'string') bad(fallbackUnitField, t('form.number'));
+    if (typeof v.unit_id !== 'number') bad(isV5(v.endpoint) ? unitOverride : unitField, v.unit_id === '' ? t('form.required') : t('form.number'));
+    if (v.fallback_endpoint && typeof v.fallback_unit_id === 'string') bad(isV5(v.fallback_endpoint) ? fallbackOverride : fallbackUnitField, t('form.number'));
     for (const [name, x] of Object.entries(poll)) {
       if (typeof v[name] === 'string') bad(x, t('form.number'));
     }
@@ -395,10 +412,9 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
   }
 
   const el = h('div', { class: 'plant-form inverter-form' },
-    nameField.el, idField.el, endpointField.el, unitField.el, fallbackField.el, fallbackUnitField.el,
+    nameField.el, idField.el, endpointField.el, unitField.el, unitFixed, fallbackField.el, fallbackUnitField.el, fallbackUnitFixed,
     serialField.el, energyField.el, details,
     h('p', { class: 'note writes-note' }, t('inv.writes_note')));
-  refresh();
   syncUnits();
   return {
     el,
@@ -406,8 +422,12 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
     values,
     validate,
     endpointValue: () => endpointSelect.value,
-    unitValue: () => numberOf(unitField.control),
-    fallbackValue: () => (fallbackSelect.value ? { endpoint: fallbackSelect.value, unit: numberOf(fallbackUnitField.control) } : null),
+    unitValue: () => { const u = effectiveUnit(unitField, unitOverride, isV5(endpointSelect.value)); return u === '' ? undefined : u; },
+    fallbackValue: () => {
+      if (!fallbackSelect.value) return null;
+      const u = effectiveUnit(fallbackUnitField, fallbackOverride, isV5(fallbackSelect.value));
+      return { endpoint: fallbackSelect.value, unit: u === '' ? undefined : u };
+    },
     focusFirst() { nameInput.focus(); },
   };
 }
@@ -469,6 +489,49 @@ export function savedInverterChecks(inv, endpoints) {
   const routes = [{ endpoint: inv.endpoint, unit: inv.unit_id, ...extra }];
   if (inv.fallback_endpoint) routes.push({ endpoint: inv.fallback_endpoint, unit: inv.fallback_unit_id ?? inv.unit_id, ...extra });
   return routeChecks(routes, endpoints);
+}
+
+// The address part of a connection's test. A Solarman logger answers on address 1 only (no field).
+// On a gateway or bus the address belongs to the inverters: the inverters that already use this
+// connection are each tested with their own address; without any, the field is an address to
+// test, which is not saved anywhere.
+export function connectionTest(form, usedBy = []) {
+  const input = h('input', { type: 'text', inputmode: 'numeric', class: 'select unit-input', value: '1', 'aria-label': t('ep.test_unit_unsaved') });
+  const field_ = h('div', { class: 'field', 'data-test-address': 'free' }, h('label', {}, t('ep.test_unit_unsaved')), input);
+  const users = h('p', { class: 'help', 'data-test-address': 'users' }, t('ep.test_users', { names: usedBy.map((u) => `${u.name} (${u.unit})`).join(', ') }));
+  const el = h('div', {}, field_, users);
+  const sync = () => {
+    const v5 = form.transport === 'solarman_v5_tcp';
+    field_.hidden = v5 || usedBy.length > 0;
+    users.hidden = v5 || usedBy.length === 0;
+  };
+  form.el.addEventListener('change', sync);
+  form.el.addEventListener('input', sync);
+  sync();
+  return {
+    el,
+    // null: not ready; else a body, or a list of { label, body } (one test per inverter)
+    build() {
+      if (!form.validate()) return null;
+      const endpoint = form.values();
+      if (form.transport === 'solarman_v5_tcp') return { endpoint, unit_id: 1 };
+      if (usedBy.length) return usedBy.map((u) => ({ label: t('ep.test_for', { name: u.name, unit: u.unit }), body: { endpoint, unit_id: u.unit } }));
+      const id = Number(input.value);
+      if (!Number.isInteger(id) || id < 1 || id > 247) return null;
+      return { endpoint, unit_id: id };
+    },
+  };
+}
+
+// Inverters of the saved plant that use a connection, with the address each one has on it.
+export function connectionUsers(endpointId) {
+  if (!endpointId || !state.plant) return [];
+  const out = [];
+  for (const inv of state.plant.inverters) {
+    if (inv.endpoint === endpointId) out.push({ name: inv.name, unit: inv.unit_id });
+    if (inv.fallback_endpoint === endpointId) out.push({ name: inv.name, unit: inv.fallback_unit_id ?? inv.unit_id });
+  }
+  return out;
 }
 
 // ``build()`` returns the request body (or, for several routes, a list of ``{label, body}``), or

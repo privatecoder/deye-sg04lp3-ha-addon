@@ -202,6 +202,7 @@ async def test_observation_counters(tmp_path: Path) -> None:
     regs = device_regs(SN, r672=0, r676=3500)
     async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
         inv = r.inv("deye1")
+        inv.daylight = lambda _ts: True  # PV zeros only count by day
         for _ in range(32):
             await inv.step()
             r.clock.offset += 11

@@ -61,7 +61,11 @@ def inverter_states(
     states: dict[str, dict[str, Any]], instance: str, inverter: str
 ) -> dict[str, str]:
     prefix = re.compile(rf"^(sensor|binary_sensor)\.deye_{instance}_{inverter}_(.+)$")
-    return {m.group(2): s["state"] for eid, s in states.items() if (m := prefix.match(eid))}
+    return {
+        m.group(2): s["state"]
+        for eid, s in states.items()
+        if (m := prefix.match(eid)) and not m.group(2).startswith("diag_")  # selected sensors only
+    }
 
 
 async def quiesce_and_check(app, fakes: dict, *, expect_traffic: bool = True) -> None:

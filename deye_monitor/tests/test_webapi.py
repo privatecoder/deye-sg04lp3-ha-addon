@@ -423,13 +423,14 @@ async def test_status_view_after_a_running_cycle(tmp_path: Path) -> None:
         _, body = await c.get("/api/inverters/deye1")
         st = body["status"]
         assert st["state"] == "running" and st["serial"] == "2401234567" and st["bound"] is True
-        assert st["identity"]["firmware_words"] == {"15": 0x1001, "17": 0x1000, "18": 0x0070}
+        words = st["identity"]["firmware_words"]
+        assert {a: words[a] for a in ("15", "17", "18")} == {"15": 0x1001, "17": 0x1000, "18": 0x70}
         assert st["last_success_wall"] == 1_700_000_000.0
         assert st["error_counters"]["transport"]["primary"]  # counters only
 
 
 async def test_session_reports_problems_and_store_state(tmp_path: Path) -> None:
-    (tmp_path / "selection.json").write_text("garbage")
+    (tmp_path / "selection.a.json").write_text("garbage")
     async with client(tmp_path) as c:
         _, s = await c.get("/api/session", csrf=None)
         assert s["store"] == {"status": "corrupt", "source": "template"}
@@ -547,6 +548,7 @@ async def test_transfer_preview_with_heterogeneous_inverters(tmp_path: Path) -> 
         assert t["selection"]["features"]["gen_port_mode"] == "generator"
         assert "battery_soc" in t["drops"]  # the target had it, the source removed it
         assert t["capability_conflicts"][0]["code"] == "mppt_count"
+        assert t["inactive"] == []  # deye2 is no parallel slave: everything stays active
         assert t["capability_warnings"] and all(
             PROFILE.entry(k).point == "pv" for k in t["capability_warnings"]
         )
@@ -858,3 +860,20 @@ async def test_inverter_view_names_the_connection_without_addresses(tmp_path: Pa
         }
         assert isinstance(body["now"], float)
         assert "127.0.0.1" not in json.dumps(first)
+
+
+async def test_transfer_preview_names_the_keys_kept_but_inactive_on_a_parallel_slave(
+    tmp_path: Path,
+) -> None:
+    async with client(tmp_path) as c:
+        await c.post("/api/inverters/deye1/sensors", {"add": ["bms_soc", "battery_temperature"]})
+        target = c.plant.rig.inv("deye2")
+        target.inactive = {
+            "battery_temperature": "parallel_slave_temperature",
+            "bms_soc": "parallel_slave_no_bms",
+        }
+        status, body = await c.post("/api/transfer/preview", {"source": "deye1"})
+        assert status == 200
+        t = body["targets"]["deye2"]
+        assert t["inactive"] == ["battery_temperature", "bms_soc"]
+        assert {"battery_temperature", "bms_soc"} <= set(t["selection"]["effective"])  # kept

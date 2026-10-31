@@ -27,8 +27,9 @@ def serial_words(serial: str) -> dict[int, int]:
 
 
 def device_regs(serial: str, **extra: int) -> dict[int, int]:
-    """A plausible SG04LP3: R0, R22 (2 MPPT / 3 phases), R24 and a printable serial number."""
-    regs = {0: 0x0500, 22: 0x0203, 24: 1, 15: 0x1001, 17: 0x1000, 18: 0x0070, 65: 0x0104}
+    """A plausible standalone SG04LP3: R0, R22 (2 MPPT / 3 phases), R24, R336 (no parallel mode)
+    and a printable serial number."""
+    regs = {0: 0x0500, 22: 0x0203, 24: 1, 15: 0x1001, 17: 0x1000, 18: 0x0070, 65: 0x0104, 336: 0}
     regs.update(serial_words(serial))
     regs.update({int(k[1:]): v for k, v in extra.items()})  # r588=55 -> {588: 55}
     return regs

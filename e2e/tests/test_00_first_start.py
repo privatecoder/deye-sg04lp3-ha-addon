@@ -60,9 +60,9 @@ async def test_first_start_reads_only_the_basics_until_the_selection_is_saved(st
         for name, fake in stack.fakes.items():
             blocks = {(r.start, r.count) for r in fake.wire.reads[: marks[name]]}
             assert blocks and blocks <= allowed, (name, sorted(blocks - allowed))
-        # no inverter entity exists, only the diagnostics of the app device
+        # no sensor entity exists, only diagnostics (the app's and the inverters' own)
         entries = await ours(ha, INSTANCE)
-        assert entries and all(u.startswith(f"deye_{INSTANCE}_app_") for u in entries), sorted(
+        assert entries and all(u.startswith(f"deye_{INSTANCE}_app_") or "_diag_" in u for u in entries), sorted(
             entries
         )[:5]
         groups = {m[1].rsplit("/", 1)[-1] for m in log.messages}

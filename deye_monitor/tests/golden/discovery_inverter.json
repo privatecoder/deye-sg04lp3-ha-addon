@@ -59,6 +59,295 @@
    "unit_of_measurement": "V",
    "value_template": "{{ value_json.get('battery_voltage') if value_json is mapping else none }}"
   },
+  "diag_bus_utilisation": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_bus_utilisation",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Bus utilisation",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "suggested_display_precision": 3,
+   "unique_id": "deye_ab12cd34_deye1_diag_bus_utilisation",
+   "value_template": "{{ value_json.get('bus_utilisation') if value_json is mapping else none }}"
+  },
+  "diag_capability_conflicts": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_capability_conflicts",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "json_attributes_template": "{{ {'conflicts': value_json.get('capability_conflict_list')} | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/diagnostics",
+   "name": "Capability conflicts",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_capability_conflicts",
+   "value_template": "{{ value_json.get('capability_conflicts') if value_json is mapping else none }}"
+  },
+  "diag_energy_resolution": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_energy_resolution",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Energy resolution",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_deye1_diag_energy_resolution",
+   "value_template": "{{ value_json.get('energy_resolution') if value_json is mapping else none }}"
+  },
+  "diag_energy_series": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_energy_series",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Energy series",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_energy_series",
+   "value_template": "{{ value_json.get('energy_series') if value_json is mapping else none }}"
+  },
+  "diag_energy_source": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_energy_source",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Energy resolution source",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_energy_source",
+   "value_template": "{{ value_json.get('energy_source') if value_json is mapping else none }}"
+  },
+  "diag_energy_status": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_energy_status",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Energy confirmation",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_energy_status",
+   "value_template": "{{ value_json.get('energy_status') if value_json is mapping else none }}"
+  },
+  "diag_firmware": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_firmware",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Firmware",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_firmware",
+   "value_template": "{{ value_json.get('firmware') if value_json is mapping else none }}"
+  },
+  "diag_last_success": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_last_success",
+   "device_class": "timestamp",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Last successful read",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_last_success",
+   "value_template": "{{ value_json.get('last_success') if value_json is mapping else none }}"
+  },
+  "diag_path": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_path",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Connection path",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_path",
+   "value_template": "{{ value_json.get('path') if value_json is mapping else none }}"
+  },
+  "diag_r65_raw": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_r65_raw",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Energy resolution raw word",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_r65_raw",
+   "value_template": "{{ value_json.get('r65_raw') if value_json is mapping else none }}"
+  },
+  "diag_r65_status": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_r65_status",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Energy resolution last reading",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_r65_status",
+   "value_template": "{{ value_json.get('r65_status') if value_json is mapping else none }}"
+  },
+  "diag_reason": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_reason",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "State reason",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_reason",
+   "value_template": "{{ value_json.get('reason') if value_json is mapping else none }}"
+  },
+  "diag_serial": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_serial",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Bound serial number",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_serial",
+   "value_template": "{{ value_json.get('serial') if value_json is mapping else none }}"
+  },
+  "diag_state": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_state",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "State",
+   "options": [
+    "starting",
+    "identifying",
+    "running",
+    "quarantined",
+    "offline",
+    "blocked"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_state",
+   "value_template": "{{ value_json.get('state') if value_json is mapping else none }}"
+  },
+  "diag_transport_cooldown": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_transport_cooldown",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Transport cooldown",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_transport_cooldown",
+   "value_template": "{{ value_json.get('transport_cooldown') if value_json is mapping else none }}"
+  },
+  "diag_transport_frame_errors": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_transport_frame_errors",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Transport frame errors",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_transport_frame_errors",
+   "value_template": "{{ value_json.get('transport_frame_errors') if value_json is mapping else none }}"
+  },
+  "diag_transport_resyncs": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_transport_resyncs",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Transport resyncs",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_transport_resyncs",
+   "value_template": "{{ value_json.get('transport_resyncs') if value_json is mapping else none }}"
+  },
+  "diag_transport_timeouts": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_transport_timeouts",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Transport timeouts",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_transport_timeouts",
+   "value_template": "{{ value_json.get('transport_timeouts') if value_json is mapping else none }}"
+  },
   "grid_selected_power_total": {
    "default_entity_id": "sensor.deye_ab12cd34_deye1_grid_selected_power_total",
    "device_class": "power",
@@ -132,7 +421,7 @@
    "deye_ab12cd34_deye1"
   ],
   "manufacturer": "Deye",
-  "model": "SG04LP3 three-phase low-voltage hybrid inverter",
+  "model": "Deye SG04LP3 three-phase low-voltage hybrid inverter",
   "name": "Deye 1",
   "serial_number": "2401234567",
   "via_device": "deye_ab12cd34_app"

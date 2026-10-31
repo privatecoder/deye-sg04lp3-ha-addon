@@ -15,9 +15,9 @@ import aiohttp
 import pytest
 
 from deye_monitor.app import Application
-from deye_monitor.config import AppConfig, parse_config
+from deye_monitor.config import AppConfig, PlantConfig, parse_config
 from deye_monitor.device import InverterState, RelaySink
-from deye_monitor.plant import PlantService, PlantStore, options_notice
+from deye_monitor.plant import PlantService, PlantStore
 from deye_monitor.selection import SelectionManager, SelectionStore, specs_from_config
 from deye_monitor.webapi import WebApi, WebSettings
 from tests.device_helpers import KIND_OF, device_regs
@@ -131,9 +131,15 @@ async def plant_rig(
 ) -> AsyncIterator[PlantRig]:
     monkeypatch.setenv("DEYE_MONITOR_DATA", str(directory))
     monkeypatch.delenv("DEYE_MONITOR_SUPERVISOR_MQTT_HOST", raising=False)
-    opts = parse_config({"mqtt": {}, **(options or {})})
+    # ``endpoints``/``inverters`` seed the plant store (a test shortcut: the app options carry none)
+    given = dict(options or {})
+    seed = {k: given.pop(k) for k in ("endpoints", "inverters") if k in given}
+    opts = parse_config({"mqtt": {}, **given})
     store = PlantStore(directory)
-    migrated = store.migrate_from_options(opts)
+    migrated = False
+    if seed and store.status.value == "missing":
+        store.commit(PlantConfig.model_validate(seed), 1)
+        migrated = True
     effective = opts.with_plant(store.plant)
     relay = RelaySink()
     manager = SelectionManager(
@@ -141,9 +147,7 @@ async def plant_rig(
     )
     app = Application(effective, "testinst", opts.mqtt, manager, relay)
     runtime = app.install(effective)
-    service = PlantService(
-        store, opts, manager, app, notices=options_notice(store, opts, migrated=migrated)
-    )
+    service = PlantService(store, opts, manager, app)
     api = WebApi(
         runtime,
         manager,

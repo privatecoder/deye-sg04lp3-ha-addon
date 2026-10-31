@@ -48,6 +48,7 @@ from deye_monitor.ha_discovery import (
     app_components,
     encode,
     inverter_component,
+    inverter_diagnostic_components,
     inverter_diagnostic_values,
     state_payload,
     timestamp,
@@ -235,7 +236,7 @@ class _Inverter:
     entries: dict[str, Entry] = field(default_factory=dict)
     diagnostics: Mapping[str, Any] | None = None  # newest event payload of the device loop
     dropped: frozenset[str] = frozenset()  # selected entries the device does not report
-    r65_unreported: bool = False
+    r65_shown: bool = False  # R65 is read and reported: its diagnostics exist
 
     @property
     def wants_online(self) -> bool:
@@ -356,14 +357,16 @@ class MqttPublisher:
             rec.epoch = epoch
             self._drop_slots(inverter_id)
         self._check_serial(rec)
-        self._note_unreported(rec, diagnostics.get("unreported"))
+        self._note_unreported(rec, diagnostics)
         rec.diagnostics = dict(diagnostics)
         self._app_dirty = True  # published (throttled) with the next app diagnostics
         self._wake.set()
 
-    def _note_unreported(self, rec: _Inverter, unreported: object) -> None:
-        """Entries the device does not report get no entity (and the R65 diagnostics go with an
-        unreported R65); the discovery follows when that set changes."""
+    def _note_unreported(self, rec: _Inverter, diagnostics: Mapping[str, Any]) -> None:
+        """Entries the device does not report get no entity. The R65 diagnostics exist only while
+        R65 is read and reported (not with a user-chosen energy resolution); the discovery
+        follows when that changes."""
+        unreported = diagnostics.get("unreported")
         found = unreported if isinstance(unreported, Mapping) else {}
         profile = rec.info.profile
         dropped = frozenset(
@@ -371,9 +374,14 @@ class MqttPublisher:
             for k in found
             if isinstance(k, str) and (e := self._entry_of(profile, k)) and not e.profile_fallback
         )
-        r65 = profile.energy_resolution_key in found
-        if dropped != rec.dropped or r65 != rec.r65_unreported:
-            rec.dropped, rec.r65_unreported = dropped, r65
+        inactive = diagnostics.get("inactive")
+        if isinstance(inactive, Mapping):  # not applicable on this unit (parallel slave)
+            dropped |= frozenset(k for k in inactive if isinstance(k, str))
+        r65 = diagnostics.get("r65")
+        read = isinstance(r65, Mapping) and r65.get("last_read_ok") is not None
+        shown = read and profile.energy_resolution_key not in found
+        if dropped != rec.dropped or shown != rec.r65_shown:
+            rec.dropped, rec.r65_shown = dropped, shown
             self._discovery_dirty = True
 
     @staticmethod
@@ -474,16 +482,8 @@ class MqttPublisher:
     def _targets(self) -> dict[str, DeviceTarget]:
         ns = self.ns
         app_meta = DeviceMeta(ns.app_device_id, "Deye Monitor", "app")
-        names = {i: r.info.name for i, r in self._inv.items()}
         states = tuple(s.value for s in InverterState)
-        targets = {
-            ns.discovery_topic(ns.app_device_id): DeviceTarget(
-                app_meta,
-                app_components(
-                    ns, names, states, [i for i, r in self._inv.items() if r.r65_unreported]
-                ),
-            )
-        }
+        targets = {ns.discovery_topic(ns.app_device_id): DeviceTarget(app_meta, app_components(ns))}
         for inverter_id, rec in self._inv.items():
             components: dict[str, dict[str, Any]] = {}
             for key in sorted(rec.keys - rec.dropped):
@@ -500,6 +500,9 @@ class MqttPublisher:
                     profile=rec.info.profile,
                 )
                 components[ckey] = comp
+            components.update(
+                inverter_diagnostic_components(ns, inverter_id, states, show_r65=rec.r65_shown)
+            )
             meta = DeviceMeta(
                 ns.inverter_device_id(inverter_id),
                 rec.info.name,
@@ -749,20 +752,20 @@ class MqttPublisher:
             "inverters_online": sum(1 for r in self._inv.values() if r.published == "online"),
             "inverters_configured": len(self._inv),
         }
-        for inverter_id, rec in self._inv.items():
-            body[f"inverter_{inverter_id}_state"] = rec.state.value
-            body[f"inverter_{inverter_id}_reason"] = rec.reason
-            source = self._diagnostics_of(inverter_id) if self._diagnostics_of else rec.diagnostics
-            for name, value in inverter_diagnostic_values(source).items():
-                body[f"inverter_{inverter_id}_{name}"] = value
-            # fallback only without a diagnostics provider: an explicit "no binding" stays null
-            if (
-                self._diagnostics_of is None
-                and body[f"inverter_{inverter_id}_serial"] is None
-                and rec.serial
-            ):
-                body[f"inverter_{inverter_id}_serial"] = rec.serial
         self._app_dirty = False
         self._last_heartbeat = self._clock()
         self._last_app_publish = self._last_heartbeat
         await publish(self.ns.app_state_topic, encode(body), False)
+        for inverter_id, rec in self._inv.items():
+            await self._publish_inverter_diagnostics(publish, inverter_id, rec)
+
+    async def _publish_inverter_diagnostics(
+        self, publish: Callable[[str, bytes, bool], Any], inverter_id: str, rec: _Inverter
+    ) -> None:
+        source = self._diagnostics_of(inverter_id) if self._diagnostics_of else rec.diagnostics
+        body: dict[str, Any] = dict(inverter_diagnostic_values(source))
+        body["state"], body["reason"] = rec.state.value, rec.reason
+        # fallback only without a diagnostics provider: an explicit "no binding" stays null
+        if self._diagnostics_of is None and body["serial"] is None and rec.serial:
+            body["serial"] = rec.serial
+        await publish(self.ns.inverter_diagnostics_topic(inverter_id), encode(body), False)

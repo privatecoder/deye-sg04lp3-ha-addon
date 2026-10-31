@@ -142,10 +142,11 @@ def test_dynamic_key_families_are_complete() -> None:
         f"test.hint.timeout.{t}" for t in ("modbus_tcp", "rtu_over_tcp", "solarman_v5_tcp")
     }
     expected |= {"test.hint.unreachable.serial_rtu"}
-    expected |= {f"plant.notice.{c}" for c in ("plant_migrated", "plant_options_present")}
-    expected |= {"plant.notice.plant_options_differ"}
     expected |= {f"load.{x}" for x in ("low", "mid", "high", "over", "unknown")}
     expected |= {f"hint.conflict.{c}" for c in CONFLICT_POINTS}
+    expected |= {
+        f"sensor.inactive.{r}" for r in ("parallel_slave_temperature", "parallel_slave_no_bms")
+    }
     expected |= {
         f"hint.obs.{s}"
         for s in (

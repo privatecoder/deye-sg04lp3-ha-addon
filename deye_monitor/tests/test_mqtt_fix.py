@@ -18,6 +18,8 @@ from deye_monitor.ha_discovery import (
     INVERTER_DIAGNOSTICS,
     R65_DIAGNOSTICS,
     app_components,
+    firmware_text,
+    inverter_diagnostic_components,
     inverter_diagnostic_values,
 )
 from deye_monitor.mqtt import MqttPublisher, PublisherSettings
@@ -30,7 +32,12 @@ APP = NS.app_status_topic
 
 
 def live_keys(doc: dict[str, Any]) -> set[str]:
-    return {k for k, v in doc["components"].items() if set(v) != {"platform"}}
+    """Live sensor components (the inverter's own ``diag_*`` entities are no selected sensors)."""
+    return {
+        k
+        for k, v in doc["components"].items()
+        if set(v) != {"platform"} and not k.startswith("diag_")
+    }
 
 
 # -- T8-02: the series is an opaque identity, never ordered across namespaces -------------------
@@ -180,8 +187,8 @@ def full_diag(**over: Any) -> dict[str, Any]:
 def test_every_contract_field_is_derived_and_unknown_is_null() -> None:
     v = inverter_diagnostic_values(full_diag())
     assert v["path"] == "primary:gw1" and v["serial"] == A
-    assert v["firmware"] == "r15=1001 r17=1000 r18=0070"
-    assert v["role"] == "parallel=yes master=no phase=B"
+    assert v["firmware"] == "MCU1: 1000-0070 / MCU2: ????-1001-????"
+    assert "role" not in v
     assert v["r65_raw"] == 0x0104 and v["r65_status"] == "ok"
     assert v["energy_resolution"] == 0.1 and v["energy_source"] == "R65"
     assert v["energy_status"] == "confirmed" and v["energy_series"] == "x7k2m9q4g0"
@@ -239,17 +246,49 @@ def test_diagnostics_are_curated_not_passed_through() -> None:
     assert len(v[CONFLICT_LIST_KEY]) == 20 and v["capability_conflicts"] == 50
 
 
-def test_app_device_has_diagnostic_entities_for_every_contract_field() -> None:
-    comps = app_components(NS, {"deye1": "Deye 1"}, tuple(s.value for s in InverterState))
+def test_inverter_device_has_diagnostic_entities_for_every_contract_field() -> None:
+    states = tuple(x.value for x in InverterState)
+    comps = inverter_diagnostic_components(NS, "deye1", states, show_r65=True)
     for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS):
-        comp = comps[f"inverter_deye1_{d.suffix}"]
+        comp = comps[f"diag_{d.suffix}"]
         assert comp["entity_category"] == "diagnostic" and comp["platform"] == "sensor"
-        assert comp["state_topic"] == NS.app_state_topic
+        assert comp["state_topic"] == NS.inverter_diagnostics_topic("deye1")
+        assert comp["unique_id"] == f"deye_ab12cd34_deye1_diag_{d.suffix}"
+        assert "deye1" not in comp["name"].lower()  # no inverter prefix: the device carries it
         assert "command_topic" not in comp
-    conflicts = comps["inverter_deye1_capability_conflicts"]
-    assert conflicts["json_attributes_topic"] == NS.app_state_topic
-    assert comps["inverter_deye1_last_success"]["device_class"] == "timestamp"
-    assert comps["inverter_deye1_transport_timeouts"]["state_class"] == "total_increasing"
+        assert comp["availability"] == [{"topic": NS.app_status_topic}]  # visible while offline
+    conflicts = comps["diag_capability_conflicts"]
+    assert conflicts["json_attributes_topic"] == NS.inverter_diagnostics_topic("deye1")
+    assert comps["diag_last_success"]["device_class"] == "timestamp"
+    assert comps["diag_transport_timeouts"]["state_class"] == "total_increasing"
+    assert comps["diag_state"]["options"] == list(states)
+    assert comps["diag_firmware"]["name"] == "Firmware"
+    assert "diag_role" not in comps  # the parallel role duplicates the inverter's own entities
+    assert not [
+        k
+        for k in inverter_diagnostic_components(NS, "deye1", states, show_r65=False)
+        if k.startswith("diag_r65")
+    ]
+
+
+def test_the_app_device_keeps_only_app_wide_entities() -> None:
+    assert set(app_components(NS)) == {
+        "app_version",
+        "mqtt_reconnects",
+        "inverters_online",
+        "inverters_configured",
+    }
+
+
+def test_firmware_is_shown_like_the_deye_cloud() -> None:
+    words = {14: 0x2005, 15: 0x1175, 16: 0x1807, 17: 0x1001, 18: 0xC070}
+    assert firmware_text(words) == "MCU1: 1001-C070 / MCU2: 2005-1175-1807"
+    assert firmware_text({15: 0x1175, 17: 0x1001, 18: 0xC070}) == (
+        "MCU1: 1001-C070 / MCU2: ????-1175-????"
+    )
+    assert firmware_text({}) is None and firmware_text(None) is None
+    out = inverter_diagnostic_values({"identity": {"firmware_words": words}})
+    assert out["firmware"] == "MCU1: 1001-C070 / MCU2: 2005-1175-1807"
 
 
 async def test_required_energy_diagnostics_are_not_discarded(tmp_path: Path) -> None:
@@ -261,15 +300,16 @@ async def test_required_energy_diagnostics_are_not_discarded(tmp_path: Path) -> 
         conn = await rig.ready()
         running(rig)
         rig.pub.on_diagnostics("deye1", {"event": "energy_changed", **live})
-        await settle(lambda: conn.last(NS.app_state_topic).json().get("inverter_deye1_r65_raw"))
-        body = conn.last(NS.app_state_topic).json()
-        assert body["inverter_deye1_r65_raw"] == 0x0104
-        assert body["inverter_deye1_energy_resolution"] == 0.1
-        assert body["inverter_deye1_energy_source"] == "R65"
-        assert body["inverter_deye1_energy_series"] == "x7k2m9q4g0"
-        assert body["inverter_deye1_capability_conflicts"] == 1
-        assert body["inverter_deye1_bus_utilisation"] == 0.123
-        assert not conn.last(NS.app_state_topic).retain
+        topic = NS.inverter_diagnostics_topic("deye1")
+        await settle(lambda: conn.last(topic).json().get("r65_raw"))
+        body = conn.last(topic).json()
+        assert body["r65_raw"] == 0x0104
+        assert body["energy_resolution"] == 0.1
+        assert body["energy_source"] == "R65"
+        assert body["energy_series"] == "x7k2m9q4g0"
+        assert body["capability_conflicts"] == 1
+        assert body["bus_utilisation"] == 0.123
+        assert not conn.last(topic).retain
 
 
 async def test_diagnostics_update_is_throttled(tmp_path: Path) -> None:
@@ -312,7 +352,7 @@ async def test_device_layer_tracks_r65_serial_and_cooldown(tmp_path: Path) -> No
         assert d["r65"] == {"raw": 0x0104, "last_read_ok": False}
         values = inverter_diagnostic_values(d)
         assert values["r65_status"] == "failed" and values["serial"] == A
-        assert values["firmware"] == "r15=1001 r17=1000 r18=0070"
+        assert values["firmware"] == "MCU1: 1000-0070 / MCU2: 002B-1001-0031"
 
 
 # -- T8-05: jitter ------------------------------------------------------------------------------
@@ -377,7 +417,8 @@ async def test_publisher_purge_is_explicit_scoped_and_republishes(tmp_path: Path
         assert rig.pub.purge_cleanup_ledger("deye1") == 3
         await settle(lambda: rig.pub.diagnostics()["retired_components"] == 0)
         await settle(lambda: live_keys(conn.on(TOPIC)[-1].json()) == {"battery_soc"})
-        assert set(conn.on(TOPIC)[-1].json()["components"]) == {"battery_soc"}
+        components = conn.on(TOPIC)[-1].json()["components"]
+        assert {k for k in components if not k.startswith("diag_")} == {"battery_soc"}
 
 
 async def test_ledger_full_is_visible_and_fail_closed(

@@ -318,7 +318,8 @@ def test_battery_without_bms(p: Profile, hw: HardwareProfile) -> None:
 def test_parallel_slave_without_pv(p: Profile, hw: HardwareProfile) -> None:
     slave = tpl(p, hw, parallel=True, mppt1_used=False, mppt2_used=False)
     assert not [k for k in slave if k.startswith(("pv1_", "pv2_", "pv_energy"))]
-    assert {"parallel_enable", "parallel_master", "parallel_phase", "parallel_sn"} <= slave
+    assert {"parallel_enable", "parallel_master", "parallel_sn"} <= slave
+    assert "parallel_phase" not in slave  # three-phase model: every unit reads "A"
     assert {"load_power_total", "battery_soc"} <= slave
     one = tpl(p, hw, mppt2_used=False)
     assert "pv1_power" in one and "pv2_power" not in one

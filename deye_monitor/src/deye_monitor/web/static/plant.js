@@ -4,18 +4,16 @@ import { t } from './i18n.js';
 import { h, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant } from './state.js';
 import {
-  endpointForm, inverterForm, testPanel, routeChecks, savedInverterChecks, loadSerialDevices, transportLabel, endpointTarget,
+  endpointForm, inverterForm, testPanel, connectionTest, connectionUsers, routeChecks, savedInverterChecks, loadSerialDevices, transportLabel, endpointTarget,
   saveEndpoint, saveInverter, deleteEndpoint, deleteInverter, existingEndpointIds, existingInverterIds,
 } from './plantforms.js';
 
 export function noticeBanners(notices) {
   return (notices || []).map((n) => {
-    const key = n.code === 'plant_options_present' && n.differs ? 'plant.notice.plant_options_differ' : `plant.notice.${n.code}`;
+    const key = `plant.notice.${n.code}`;
     return h('p', { class: 'banner warn plant-notice', role: 'status' }, t(key));
   });
 }
-
-const numberOrNull = (value) => (typeof value === 'number' ? value : null);
 
 // Dialog: add or edit a connection (with the read-only try-out).
 export async function openEndpointDialog(endpoint = null) {
@@ -23,16 +21,11 @@ export async function openEndpointDialog(endpoint = null) {
   const serialDevices = await loadSerialDevices();
   const form = endpointForm({ initial: endpoint, editing, existingIds: existingEndpointIds(), serialDevices });
   const message = h('div', { class: 'messages' });
-  const unit = h('input', { type: 'text', inputmode: 'numeric', class: 'select unit-input', value: '1', 'aria-label': t('ep.test_unit') });
+  const test = connectionTest(form, connectionUsers(editing ? endpoint.id : null));
   const panel = testPanel({
     intro: h('div', {}, h('h3', {}, t('ep.test_title')), h('p', { class: 'help' }, t('ep.test_help'))),
-    extra: h('div', { class: 'field' }, h('label', {}, t('ep.test_unit')), unit),
-    build() {
-      if (!form.validate()) return null;
-      const id = numberOrNull(Number(unit.value));
-      if (id === null || !Number.isInteger(id) || id < 1 || id > 247) return null;
-      return { endpoint: form.values(), unit_id: id };
-    },
+    extra: test.el,
+    build: test.build,
   });
   return modal({
     title: editing ? t('ep.title_edit') : t('ep.title_new'),

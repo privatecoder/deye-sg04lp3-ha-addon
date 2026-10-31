@@ -314,22 +314,6 @@ async def dialog_select(page: Page, name: str, value: str) -> None:
     await page.locator(f'dialog [data-field="{name}"] select').select_option(value)
 
 
-async def test_options_that_were_migrated_are_announced(
-    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    options = {
-        "endpoints": [GW],
-        "inverters": [{"id": "deye1", "name": "Deye 1", "endpoint": "gw1", "unit_id": 1}],
-    }
-    async with plant_ui(tmp_path, monkeypatch, options=options) as (_rig, url):
-        s = await open_page(browser, url)
-        await expect(s.page.locator("article.inverter")).to_have_count(1)
-        await expect(s.page.locator(".plant-notice")).to_contain_text("App-Optionen")
-        await s.page.locator("#nav-plant").click()
-        await expect(s.page.locator(".plant-notice")).to_contain_text("entferne")
-        await s.check()
-
-
 async def test_english_and_dark_mode_and_phone_width(
     browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -454,7 +438,7 @@ async def test_the_identifier_of_an_existing_connection_and_inverter_is_visibly_
             await dialog.get_by_role("button", name="Abbrechen").click()
 
 
-async def test_modbus_address_prefill_help_and_hint_follow_the_connection_type(
+async def test_the_modbus_address_has_one_place_and_follows_the_connection_type(
     browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async with plant_ui(tmp_path, monkeypatch) as (rig, url):
@@ -466,52 +450,36 @@ async def test_modbus_address_prefill_help_and_hint_follow_the_connection_type(
         assert status == 200, body
         page = (await open_page(browser, url + "#/plant")).page
         await page.get_by_role("button", name="Wechselrichter hinzufügen").click()
-        unit_help = page.locator('dialog [data-field="unit_id"] .help:not(.warn-text)')
-        unit_warning = page.locator('dialog [data-field="unit_id"] .warn-text')
-        fallback_unit = field(page, "fallback_unit_id")
+        dialog = page.locator("dialog")
+        fixed = dialog.locator('[data-fixed="unit_id"]')
+        unit = dialog.locator('[data-field="unit_id"]')
         await field(page, "name").fill("Slave")
 
-        await dialog_select(page, "endpoint", "gw1")
-        await expect(unit_help).to_contain_text("Modbus SN")
-        await expect(unit_help).to_contain_text("Slaves 2, 3")
-        await field(page, "unit_id").fill("2")  # edited: no longer prefilled
-        await dialog_select(page, "endpoint", "lg1")
-        await expect(field(page, "unit_id")).to_have_value("2")
-        await expect(unit_help).to_contain_text("immer 1, auch bei parallelen Slaves")
-        await expect(unit_warning).to_be_visible()
-        await expect(unit_warning).to_contain_text("nur auf Adresse 1")
+        await dialog_select(page, "endpoint", "gw1")  # a gateway: the address is the inverter's
+        await expect(unit).to_be_visible()
+        await expect(unit).to_contain_text("Modbus SN")
+        await expect(fixed).to_be_hidden()
+        await field(page, "unit_id").fill("3")
 
-        await field(page, "unit_id").fill("1")
-        await expect(unit_warning).to_be_hidden()
-        await dialog_select(page, "endpoint", "gw1")
-        await dialog_select(page, "endpoint", "lg1")
-        await expect(field(page, "unit_id")).to_have_value("1")
+        await dialog_select(page, "endpoint", "lg1")  # a logger: exactly one inverter, address 1
+        await expect(unit).to_be_hidden()
+        await expect(fixed).to_be_visible()
+        await expect(fixed).to_have_text("Adresse: 1 (fest bei Solarman-Loggern)")
 
         await dialog_select(page, "endpoint", "gw1")
         await field(page, "unit_id").fill("3")
         await dialog_select(page, "fallback_endpoint", "lg1")
-        await expect(fallback_unit).to_have_value(
-            "1"
-        )  # the logger fallback is 1, not the master unit
-        await expect(
-            page.locator('dialog [data-field="fallback_unit_id"] .help:not(.warn-text)')
-        ).to_contain_text("immer 1")
-        await expect(
-            page.locator('dialog [data-field="fallback_unit_id"] .warn-text')
-        ).to_be_hidden()
-        await fallback_unit.fill("4")
-        await expect(
-            page.locator('dialog [data-field="fallback_unit_id"] .warn-text')
-        ).to_be_visible()
-        await fallback_unit.fill("1")
+        fallback_fixed = dialog.locator('[data-fixed="fallback_unit_id"]')
+        await expect(fallback_fixed).to_be_visible()  # never copied from the primary
+        await expect(dialog.locator('[data-field="fallback_unit_id"]')).to_be_hidden()
 
-        await page.locator("dialog").get_by_role("button", name="Speichern", exact=True).click()
+        await dialog.get_by_role("button", name="Speichern", exact=True).click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         saved = rig.service.plant.inverters[0]
         assert (saved.unit_id, saved.fallback_endpoint, saved.fallback_unit_id) == (3, "lg1", 1)
 
 
-async def test_a_v5_address_other_than_one_does_not_block_saving_and_warns_in_the_check(
+async def test_a_logger_address_other_than_one_is_an_advanced_override(
     browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async with plant_ui(tmp_path, monkeypatch) as (rig, url):
@@ -522,18 +490,60 @@ async def test_a_v5_address_other_than_one_does_not_block_saving_and_warns_in_th
         assert status == 200, body
         page = (await open_page(browser, url + "#/plant")).page
         await page.get_by_role("button", name="Wechselrichter hinzufügen").click()
+        dialog = page.locator("dialog")
         await field(page, "name").fill("Slave")
         await dialog_select(page, "endpoint", "lg1")
-        await field(page, "unit_id").fill(
-            "2"
-        )  # the fake logger serves unit 1 only: the probe fails
-        await page.locator("dialog").get_by_role("button", name="Verbindung prüfen").click()
-        result = page.locator("dialog .test-result.fail")
+        override = dialog.locator('[data-field="unit_override"]')
+        await expect(override).to_be_hidden()  # inside the closed "Advanced" section
+        await dialog.locator("details.advanced summary").click()
+        await expect(override).to_be_visible()
+        await field(page, "unit_override").fill("2")  # the fake logger serves unit 1 only
+        await dialog.get_by_role("button", name="Verbindung prüfen").click()
+        result = dialog.locator(".test-result.fail")
         await expect(result).to_be_visible()
         await expect(result.locator(".hint.warn")).to_contain_text("nur auf Adresse 1")
-        await page.locator("dialog").get_by_role("button", name="Speichern", exact=True).click()
+        await dialog.get_by_role("button", name="Speichern", exact=True).click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         assert rig.service.plant.inverters[0].unit_id == 2
+
+
+async def test_the_connection_test_shows_no_stored_address(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await seed(rig)  # deye1 uses gw1 with address 1
+        await rig.add_server("lg1", "solarman_v5_tcp")
+        status, body = await rig.call(
+            "POST", "/api/plant/endpoints", rig.endpoint_body("lg1", "solarman_v5_tcp")
+        )
+        assert status == 200, body
+        page = (await open_page(browser, url + "#/plant")).page
+        # a connection that inverters already use: each is tested with its own address
+        await (
+            page.locator('article.endpoint[data-endpoint="gw1"]')
+            .get_by_role("button", name="Bearbeiten")
+            .click()
+        )
+        dialog = page.locator("dialog")
+        await expect(dialog.locator('[data-test-address="free"]')).to_be_hidden()
+        await expect(dialog.locator('[data-test-address="users"]')).to_contain_text("Deye 1 (1)")
+        await dialog.get_by_role("button", name="Verbindung prüfen").click()
+        await expect(dialog.locator(".test-route")).to_have_count(1)
+        await expect(dialog.locator(".route-title")).to_contain_text("Adresse 1")
+        await dialog.get_by_role("button", name="Abbrechen").click()
+        # a logger needs no address; a fresh connection offers one that is not saved
+        await (
+            page.locator('article.endpoint[data-endpoint="lg1"]')
+            .get_by_role("button", name="Bearbeiten")
+            .click()
+        )
+        await expect(dialog.locator('[data-test-address="free"]')).to_be_hidden()
+        await expect(dialog.locator('[data-test-address="users"]')).to_be_hidden()
+        await dialog.get_by_role("button", name="Abbrechen").click()
+        await page.get_by_role("button", name="Verbindung hinzufügen").click()
+        free = dialog.locator('[data-test-address="free"]')
+        await expect(free).to_be_visible()
+        await expect(free).to_contain_text("wird nicht gespeichert")
 
 
 async def test_check_connection_tests_every_route_with_its_own_address(

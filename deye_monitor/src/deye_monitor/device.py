@@ -78,6 +78,9 @@ _PV_POINTS = frozenset({"pv"})
 BOOTSTRAP_KEYS = frozenset(
     {"battery_operating_basis", "gen_port_usage", "gen_on_grid_input", "parallel_enable"}
 )
+SLAVE_TEMPERATURE_KEY = "battery_temperature"  # R586: valid on the parallel master only
+INACTIVE_SLAVE_TEMPERATURE = "parallel_slave_temperature"
+INACTIVE_SLAVE_NO_BMS = "parallel_slave_no_bms"
 R111_NO_BATTERY = 2  # the only numbered meaning of R111 in the V105.8 document
 PROBE_SHARE = 0.02  # rough allowance per inverter for identity probes and failover reads
 BLOCKED_RETRY_S = 60.0
@@ -270,6 +273,10 @@ class InverterRuntime:
         self.capability_conflicts: list[dict[str, str]] = []
         # entries the device does not report (key -> raw word), checked at the identity read
         self.unreported: dict[str, int] = {}
+        # entries that do not apply on this unit (key -> reason code): on a parallel slave the
+        # battery temperature and the BMS block. Same effect as ``unreported`` (not polled, no
+        # entity), but derived from the device-reported role and checked at every identity pass.
+        self.inactive: dict[str, str] = {}
         self._unreported_key: list[Any] | None = None
         self._load_unreported()
         self.seen_serial: str | None = None
@@ -307,6 +314,7 @@ class InverterRuntime:
             "consecutive_failed_cycles": self.fails,
             "capability_conflicts": list(self.capability_conflicts),
             "unreported": self._unreported_view(),
+            "inactive": {k: {"reason": r} for k, r in sorted(self.inactive.items())},
             "energy": self.energy.snapshot(),
             "coalesced_ticks": self.coalesced_ticks,
             "internal_errors": self.internal_errors,
@@ -467,6 +475,7 @@ class InverterRuntime:
         self.observations.clear()
         self.capability_conflicts = []
         self.unreported = {}
+        self.inactive = {}
         self._unreported_key = None
         self._plans.clear()
         self.state = InverterState.STARTING
@@ -588,6 +597,7 @@ class InverterRuntime:
         if self._unreported_stale(read.words, serial):
             return False
         self._after_identity(route, read, now, serial)
+        await self._check_parallel_slave(route, read.words, token)
         return True
 
     def _identify_failed(self, error: Exception | None, now: float, why: str | None = None) -> bool:
@@ -631,6 +641,55 @@ class InverterRuntime:
         self._due[IDENTITY_GROUP] = now + self.cfg.poll_identity_s
         self._emit(IDENTITY_GROUP, route, read)
 
+    def _parallel_slave(self, words: Mapping[int, int]) -> bool:
+        """The device itself says: parallel operation on, and this unit is not the master (R336).
+        Never derived from names or manual flags; unknown means no."""
+        enable = decode(self.profile.entry("parallel_enable"), words)
+        master = decode(self.profile.entry("parallel_master"), words)
+        return enable is True and master is False
+
+    async def _check_parallel_slave(
+        self, route: Route, words: Mapping[int, int], token: int
+    ) -> None:
+        """Only the parallel master has the battery and its BMS: a slave reports garbage for the
+        battery temperature (R586) and zeros for the BMS block. On a slave those entries are
+        inactive (not polled, no entity); an all-zero BMS block on the master stays visible."""
+        inactive: dict[str, str] = {}
+        if self._parallel_slave(words):
+            inactive = {
+                e.key: INACTIVE_SLAVE_TEMPERATURE
+                for e in self.profile.entries
+                if e.key == SLAVE_TEMPERATURE_KEY
+            }
+            bms = [e for e in self.profile.entries if e.point == "bms" and not e.internal]
+            addresses = sorted({a for e in bms for a in e.addresses})
+            silent = await self._bms_block_silent(route, addresses, token)
+            if silent is None:  # no verdict (read failed, connection changed): keep what is known
+                kept = {k: r for k, r in self.inactive.items() if r == INACTIVE_SLAVE_NO_BMS}
+                inactive |= kept
+            elif silent:
+                inactive |= {e.key: INACTIVE_SLAVE_NO_BMS for e in bms}
+        if inactive != self.inactive and token == self._token():
+            self.inactive = inactive
+            self._plans.clear()
+            self._diag("inactive_updated")
+
+    async def _bms_block_silent(
+        self, route: Route, addresses: list[int], token: int
+    ) -> bool | None:
+        """Read the BMS block once; ``None`` when no verdict is possible."""
+        if not addresses or addresses[-1] - addresses[0] + 1 > route.max_read_registers:
+            return None
+        outcome, epoch = await self._read(route, addresses[0], addresses[-1] - addresses[0] + 1)
+        if token != self._token():
+            return None
+        if epoch != route.verified_epoch:
+            self._connection_unidentified("connection changed")
+            return None
+        if isinstance(outcome, Exception):
+            return None
+        return all(outcome[a - addresses[0]] == 0 for a in addresses)
+
     def _identity_key(self, words: Mapping[int, int], serial: str) -> list[Any]:
         return [serial, words.get(15), words.get(17), words.get(18), self.profile.revision]
 
@@ -647,7 +706,7 @@ class InverterRuntime:
 
     def _check_capabilities(self, words: Mapping[int, int], serial: str) -> None:
         caps = {a: words[a] for a in _CAPABILITY_WORDS if a in words}
-        self.identity_info["firmware_words"] = {a: words.get(a) for a in (15, 17, 18)}
+        self.identity_info["firmware_words"] = {a: words.get(a) for a in (14, 15, 16, 17, 18)}
         self.identity_info["capability_words"] = dict(caps)  # raw, for comparing logger and gateway
         self.identity_info["capabilities_unreported"] = unreported_capabilities(caps)
         self.identity_info["capabilities_unknown"] = unknown_capability_codes(self.hardware, caps)
@@ -690,7 +749,7 @@ class InverterRuntime:
                 self._diag("capabilities_updated" if cached else "capabilities_cached")
         flagged = {_CONFLICT_POINTS.get(c.code) for c in conflicts}
         for key_, entry in ((k, self.profile.entry(k)) for k in self.selection):
-            obs = self.observations.setdefault(key_, Observation(placeholder=False))
+            obs = self._observation(key_, entry)
             obs.conflict = any(f is None or entry.point in f for f in flagged) and bool(conflicts)
         if changed:
             self._diag("unreported_updated")
@@ -849,6 +908,7 @@ class InverterRuntime:
     def _emit(self, group: str, route: Route, read: _GroupRead, *, failed: bool = False) -> None:
         self.cycle_id += 1
         dropped = {k for k in self.unreported if self.profile.entry(k).profile_fallback is None}
+        dropped |= set(self.inactive)
         keys = [
             k
             for k in sorted(self.selection)
@@ -899,12 +959,20 @@ class InverterRuntime:
             if entry.fw_offsets is not None and not failed:
                 self._note_firmware_offset(entry, snapshot.words)
             values[key] = value
-            obs = self.observations.setdefault(key, Observation())
+            obs = self._observation(key, entry)
             obs.record(
                 value, daylight=entry.point in _PV_POINTS and self.daylight(snapshot.wall_ts)
             )
         if values:  # an empty selection (or a group without selected keys) creates no entities
             self.sink.on_state(self.id, snapshot, values)
+
+    def _observation(self, key: str, entry: Entry) -> Observation:
+        obs = self.observations.get(key)
+        if obs is None:
+            obs = self.observations[key] = Observation(
+                watch_zero=entry.observes_zero, daylight_only=entry.zero_needs_daylight
+            )
+        return obs
 
     def _main_firmware(self) -> int | None:
         words = self.identity_info.get("firmware_words")
@@ -1040,7 +1108,7 @@ class InverterRuntime:
                 self.features,
                 max_read_registers=route.max_read_registers,
                 energy_auto=self.cfg.energy_resolution is EnergyResolution.AUTO,
-                unreported=self.unreported,
+                unreported=self.unreported.keys() | self.inactive.keys(),
                 poll=self.cfg.poll,
                 response_time_s=route.response_time_s,
                 gap_s=route.bus_gap_s,

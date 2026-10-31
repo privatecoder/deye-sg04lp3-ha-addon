@@ -343,7 +343,7 @@ async def test_a_slot_with_a_wrong_checksum_is_never_used(tmp_path: Path) -> Non
     ],
 )
 def test_unusable_documents_are_corrupt_never_silently_dropped(tmp_path: Path, text: str) -> None:
-    (tmp_path / "selection.json").write_text(text)
+    (tmp_path / "selection.a.json").write_text(text)
     m = manager_at(tmp_path)
     assert m.store.status is LoadStatus.CORRUPT
     assert {"selection_store_corrupt", "selection_store_template_used"} <= {
@@ -351,7 +351,7 @@ def test_unusable_documents_are_corrupt_never_silently_dropped(tmp_path: Path, t
     }
 
 
-def test_migration_reports_and_discards_unknown_keys(tmp_path: Path) -> None:
+def test_loading_reports_and_discards_unknown_keys(tmp_path: Path) -> None:
     placeholder = next(e.key for e in PROFILE.entries if e.support_status == "placeholder")
     doc = {
         "revision": 4,
@@ -365,7 +365,10 @@ def test_migration_reports_and_discards_unknown_keys(tmp_path: Path) -> None:
             "gone": {"features": {}, "added": [], "removed": []},
         },
     }
-    (tmp_path / "selection.json").write_text(json.dumps({"schema_version": 1, "data": doc}))
+    from deye_monitor.selection import SLOT_FORMAT, _checksum
+
+    slot = {"format": SLOT_FORMAT, "seq": 1, "checksum": _checksum(1, doc), "body": doc}
+    (tmp_path / "selection.a.json").write_text(json.dumps({"schema_version": 1, "data": slot}))
     m = manager_at(tmp_path)
     codes = {(p.code, p.subject) for p in m.store.problems}
     assert ("unknown_feature", "deye1.legacy_flag") in codes
@@ -478,7 +481,9 @@ async def test_publisher_follows_and_removes_only_its_own_component(tmp_path: Pa
 
         def keys(topic: str) -> set[str]:
             comps = conn.last(topic).json().get("components", {})
-            return {k for k, v in comps.items() if set(v) != {"platform"}}  # not a tombstone
+            return {
+                k for k, v in comps.items() if set(v) != {"platform"} and not k.startswith("diag_")
+            }  # not a tombstone
 
         assert "battery_soc" in keys(topic1) and "battery_soc" in keys(topic2)
         mark = len(conn.sent)
@@ -545,19 +550,3 @@ async def test_unknown_confirmation_is_rejected_and_changes_nothing(tmp_path: Pa
     with pytest.raises(ChangeError) as caught:
         await m.change(0, {"deye1": Edit(confirm=frozenset({"nonsense"}))})
     assert caught.value.key == "unknown_feature" and m.revision == 0
-
-
-async def test_old_files_without_confirmations_treat_non_default_values_as_answered(
-    tmp_path: Path,
-) -> None:
-    m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(features={"battery": False})})
-    body = newest_body(tmp_path)
-    del body["inverters"]["deye1"]["confirmed"]  # a file from before the confirmations
-    for slot in tmp_path.glob("selection.*.json"):
-        slot.unlink()
-    (tmp_path / "selection.json").write_text(json.dumps({"schema_version": 1, "data": body}))
-    loaded = manager_at(tmp_path)
-    assert loaded.store.problems == [], loaded.store.problems
-    assert loaded.selection("deye1").confirmed == frozenset({"battery"})
-    assert loaded.selection("deye2").confirmed == frozenset()

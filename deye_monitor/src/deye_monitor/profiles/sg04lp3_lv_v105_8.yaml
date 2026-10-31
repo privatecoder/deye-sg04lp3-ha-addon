@@ -242,6 +242,27 @@ entries:
   default_enabled: false
   internal: true
   mandatory: true
+- key: id_fw_control_r16
+  name:
+    de: Firmware Steuerplatine, drittes Wort (intern)
+    en: Control board firmware, third word (internal)
+  addr: 16
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  tags: []
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "V105.8 document: R14-R15-R16 are the control board (MCU2) version words; the Deye cloud shows them as one number (e.g. 2005-1175-1807)"
+  confidence: firmware_supported_1175_cloud_display
+  default_enabled: false
+  internal: true
+  mandatory: true
 - key: fw_main_version
   name:
     de: Firmware Hauptversion
@@ -395,8 +416,8 @@ entries:
   mandatory: true
 - key: mppt_count
   name:
-    de: MPPT-Anzahl (R22)
-    en: MPPT count (R22)
+    de: MPPT-Anzahl
+    en: MPPT count
   description:
     de: "Anzahl der PV-Eingänge (MPPT), die das Gerät meldet."
     en: "Number of PV inputs (MPPT) the device reports."
@@ -427,8 +448,8 @@ entries:
     \ never extra channels."
 - key: phase_count
   name:
-    de: Phasenanzahl (R22)
-    en: Phase count (R22)
+    de: Phasenanzahl
+    en: Phase count
   description:
     de: "Anzahl der Phasen, die das Gerät meldet."
     en: "Number of phases the device reports."
@@ -478,8 +499,8 @@ entries:
   mandatory: true
 - key: model_selector
   name:
-    de: Modellauswahl (R23)
-    en: Model selector (R23)
+    de: Modellauswahl
+    en: Model selector
   description:
     de: "Interne Modellauswahl des Herstellers, unverändert als Zahl."
     en: "Internal model selector of the manufacturer, shown as a plain number."
@@ -559,8 +580,8 @@ entries:
   mandatory: true
 - key: output_phase_arrangement
   name:
-    de: Ausgangsphasen-System (R25)
-    en: Output phase arrangement (R25)
+    de: Ausgangsphasen-System
+    en: Output phase arrangement
   description:
     de: "Anordnung der Ausgangsphasen laut Gerät."
     en: "Arrangement of the output phases as reported by the device."
@@ -591,8 +612,8 @@ entries:
   notes: Range printed [0,1] but value 2 is documented; kept as documented enum.
 - key: grid_standard_region
   name:
-    de: EU/UL/JP-Variante (R26)
-    en: EU/UL/JP variant (R26)
+    de: EU/UL/JP-Variante
+    en: EU/UL/JP variant
   description:
     de: "Netzvariante (EU, UL oder JP), für die das Gerät gebaut ist."
     en: "Grid variant (EU, UL or JP) the device is built for."
@@ -622,8 +643,8 @@ entries:
   default_enabled: false
 - key: fan_config
   name:
-    de: Lüfterkonfiguration (R27)
-    en: Fan configuration (R27)
+    de: Lüfterkonfiguration
+    en: Fan configuration
   description:
     de: "Lüfterkonfiguration des Geräts, unverändert als Zahl."
     en: "Fan configuration of the device, shown as a plain number."
@@ -646,8 +667,8 @@ entries:
   notes: Bit field documented per fan; shown raw only.
 - key: inverter_generation
   name:
-    de: Generation (R28)
-    en: Inverter generation (R28)
+    de: Generation
+    en: Inverter generation
   description:
     de: "Interne Gerätegeneration des Herstellers, unverändert als Zahl."
     en: "Internal device generation of the manufacturer, shown as a plain number."
@@ -670,8 +691,8 @@ entries:
   notes: Only 1=SG01 and 2=SG02 are documented. Never interpreted as '4 = SG04'.
 - key: dsp_protocol_version
   name:
-    de: DSP-Protokollversion (R65)
-    en: DSP protocol version (R65)
+    de: DSP-Protokollversion
+    en: DSP protocol version
   description:
     de: "Protokollversion der Signalverarbeitung; bestimmt, wie genau Energiezähler aufgelöst werden."
     en: "Protocol version of the signal processor; decides the resolution of the energy counters."
@@ -792,7 +813,8 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R336 (TXT 2367-2379)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
+  internal: true  # every unit of a three-phase model reads "A": no entity, kept in the diagnostics
   mandatory: true
   notes: "R336: bit0 enable, bit1 master (1) / slave (0), bits 8-9 phase, bits 10-15 Modbus SN: sn=(raw>>10)&0x3f. Configured\
     \ role, not proof of a successful master takeover."
@@ -868,8 +890,8 @@ entries:
     must not be assumed for 5/6.
 - key: power_switch
   name:
-    de: Software-Ein/Aus (R551)
-    en: Software on/off state (R551)
+    de: Software-Ein/Aus
+    en: Software on/off state
   description:
     de: "Zeigt, ob der Wechselrichter per Software ein- oder ausgeschaltet ist."
     en: "Shows whether the inverter is switched on or off by software."
@@ -1055,8 +1077,8 @@ entries:
   notes: Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded.
 - key: relay_state_raw
   name:
-    de: Relaiszustände roh (R552)
-    en: Relay state raw (R552)
+    de: Relaiszustände roh
+    en: Relay state raw
   description:
     de: "Zustand aller internen Relais und Kontakte in einer Zahl, für Fachleute."
     en: "State of all internal relays and contacts as one number, for experts."
@@ -1558,8 +1580,8 @@ entries:
   notes: SOC is never summed across inverters.
 - key: battery_power_raw
   name:
-    de: Batterieleistung roh (R590)
-    en: Battery power raw (R590)
+    de: Batterieleistung roh
+    en: Battery power raw
   description:
     de: "Batterieleistung als Rohzahl; Einheit und Lade-/Entladerichtung sind nicht bestätigt."
     en: "Battery power as a raw number; unit and charge/discharge direction are not confirmed."
@@ -1995,8 +2017,8 @@ entries:
   default_enabled: true
 - key: bms_current_raw
   name:
-    de: BMS Strom roh (R216)
-    en: BMS current raw (R216)
+    de: BMS Strom roh
+    en: BMS current raw
   description:
     de: "Batteriestrom laut BMS als Rohzahl; Einheit und Richtung sind nicht bestätigt."
     en: "Battery current according to the BMS as a raw number; unit and direction are not confirmed."
@@ -2088,8 +2110,8 @@ entries:
   default_enabled: false
 - key: bms_offgrid_discharge_limit_raw
   name:
-    de: BMS Off-Grid-Entladestrom (R219)
-    en: BMS off-grid discharge limit (R219)
+    de: BMS Off-Grid-Entladestrom
+    en: BMS off-grid discharge limit
   description:
     de: "Maximaler Entladestrom im Inselbetrieb laut Batteriemanagement (BMS)."
     en: "Maximum discharge current in island operation according to the BMS."
@@ -2878,8 +2900,8 @@ entries:
     \ boundary: document only."
 - key: grid_apparent_internal
   name:
-    de: Scheinleistung Netz intern (R608/704)
-    en: Grid apparent power internal (R608/704)
+    de: Scheinleistung Netz intern
+    en: Grid apparent power internal
   low: 608
   high: 704
   type: u32
@@ -2922,8 +2944,8 @@ entries:
   notes: "Zero-filled in MCU2 1151 and 1175: no independent apparent-power measurement."
 - key: grid_apparent_external_r620
   name:
-    de: Scheinleistung Netz extern (R620)
-    en: Grid apparent power external (R620)
+    de: Scheinleistung Netz extern
+    en: Grid apparent power external
   addr: 620
   type: s16
   category: grid
@@ -2957,8 +2979,8 @@ entries:
   notes: Standalone S16 x100 VA in V105.8 (never a pair with R709); zero-filled in both analysed builds.
 - key: grid_power_factor
   name:
-    de: Leistungsfaktor Netz (R621)
-    en: Grid power factor (R621)
+    de: Leistungsfaktor Netz
+    en: Grid power factor
   description:
     de: "Leistungsfaktor am Netzanschluss als Rohzahl; Bedeutung nicht bestätigt."
     en: "Power factor at the grid connection as a raw number; meaning not confirmed."
@@ -3256,8 +3278,8 @@ entries:
   notes: Signed 32 bit word pair; document-only physical semantics.
 - key: inverter_apparent_r637
   name:
-    de: Scheinleistung Ausgang (R637/695)
-    en: Inverter apparent power (R637/695)
+    de: Scheinleistung Ausgang
+    en: Inverter apparent power
   low: 637
   high: 695
   type: u32
@@ -3487,8 +3509,8 @@ entries:
     or an independently calibrated bus measurement.
 - key: load_current_invalid_a
   name:
-    de: Laststrom Phase A (ungültig, R647)
-    en: Load current phase A (invalid, R647)
+    de: Laststrom Phase A (ungültig)
+    en: Load current phase A (invalid)
   addr: 647
   type: s16
   category: power
@@ -3545,8 +3567,8 @@ entries:
     or an independently calibrated bus measurement.
 - key: load_current_invalid_b
   name:
-    de: Laststrom Phase B (ungültig, R648)
-    en: Load current phase B (invalid, R648)
+    de: Laststrom Phase B (ungültig)
+    en: Load current phase B (invalid)
   addr: 648
   type: s16
   category: power
@@ -3603,8 +3625,8 @@ entries:
     or an independently calibrated bus measurement.
 - key: load_current_invalid_c
   name:
-    de: Laststrom Phase C (ungültig, R649)
-    en: Load current phase C (invalid, R649)
+    de: Laststrom Phase C (ungültig)
+    en: Load current phase C (invalid)
   addr: 649
   type: s16
   category: power
@@ -3737,11 +3759,12 @@ entries:
   source: "V105.8 registers.json inverter: R653 (TXT 3808-3810), R659 (TXT 3824-3826)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
   default_enabled: true
+  observe_zero: true  # a total of 0 W with load voltage present is worth a look
   notes: "Signed 32 bit: low 0xFFFF / high 0 = 65535 W, both 0xFFFF = -1 W."
 - key: load_apparent_r654
   name:
-    de: Scheinleistung Last (R654/660)
-    en: Load apparent power (R654/660)
+    de: Scheinleistung Last
+    en: Load apparent power
   low: 654
   high: 660
   type: u32
@@ -4120,8 +4143,8 @@ entries:
     \ only."
 - key: ev_charge_power_r709
   name:
-    de: EV-Ladeleistung (R709)
-    en: EV charge power (R709)
+    de: EV-Ladeleistung
+    en: EV charge power
   description:
     de: "Ladeleistung eines Elektroautos als Rohzahl; je nach Firmware nicht belegt."
     en: "EV charging power as a raw number; not substantiated on every firmware."
@@ -4588,8 +4611,8 @@ entries:
     on 10/12 kW share two MPPT).
 - key: pv1_energy_today_r530
   name:
-    de: PV1 Tagesenergie (R530)
-    en: PV1 daily energy (R530)
+    de: PV1 Tagesenergie
+    en: PV1 daily energy
   addr: 530
   type: u16
   category: energy
@@ -4622,8 +4645,8 @@ entries:
   notes: Zero-filled in both analysed builds, even for PV1/PV2; use R529 (total) or R534/R535 instead.
 - key: pv2_energy_today_r531
   name:
-    de: PV2 Tagesenergie (R531)
-    en: PV2 daily energy (R531)
+    de: PV2 Tagesenergie
+    en: PV2 daily energy
   addr: 531
   type: u16
   category: energy
@@ -4656,8 +4679,8 @@ entries:
   notes: Zero-filled in both analysed builds, even for PV1/PV2; use R529 (total) or R534/R535 instead.
 - key: pv3_energy_today_r532
   name:
-    de: PV3 Tagesenergie (R532)
-    en: PV3 daily energy (R532)
+    de: PV3 Tagesenergie
+    en: PV3 daily energy
   addr: 532
   type: u16
   category: energy
@@ -4690,8 +4713,8 @@ entries:
   notes: Zero-filled in both analysed builds, even for PV1/PV2; use R529 (total) or R534/R535 instead.
 - key: pv4_energy_today_r533
   name:
-    de: PV4 Tagesenergie (R533)
-    en: PV4 daily energy (R533)
+    de: PV4 Tagesenergie
+    en: PV4 daily energy
   addr: 533
   type: u16
   category: energy
@@ -4724,8 +4747,8 @@ entries:
   notes: Zero-filled in both analysed builds, even for PV1/PV2; use R529 (total) or R534/R535 instead.
 - key: pv_total_power_r718
   name:
-    de: PV Gesamtleistung (R718)
-    en: PV total power (R718)
+    de: PV Gesamtleistung
+    en: PV total power
   addr: 718
   type: u16
   category: pv
@@ -4758,8 +4781,8 @@ entries:
   notes: V105.8 name notwithstanding, zero-filled in both builds. A computed PV1+PV2 sum must be labelled as computed.
 - key: pv5_voltage_r719
   name:
-    de: PV5 Spannung (R719)
-    en: PV5 voltage (R719)
+    de: PV5 Spannung
+    en: PV5 voltage
   addr: 719
   type: u16
   category: pv
@@ -4792,8 +4815,8 @@ entries:
   notes: Zero-filled in the local builder; no voltage producer.
 - key: pv6_voltage_r720
   name:
-    de: PV6 Spannung (R720)
-    en: PV6 voltage (R720)
+    de: PV6 Spannung
+    en: PV6 voltage
   addr: 720
   type: u16
   category: pv
@@ -4826,8 +4849,8 @@ entries:
   notes: Zero-filled in the local builder; no voltage producer.
 - key: pv7_voltage_r721
   name:
-    de: PV7 Spannung (R721)
-    en: PV7 voltage (R721)
+    de: PV7 Spannung
+    en: PV7 voltage
   addr: 721
   type: u16
   category: pv
@@ -5885,8 +5908,8 @@ entries:
   notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
 - key: grid_side_energy_today_r501
   name:
-    de: Netzseitige Tagesenergie (R501, roh)
-    en: Grid-side energy today (R501, raw)
+    de: Netzseitige Tagesenergie (roh)
+    en: Grid-side energy today (raw)
   description:
     de: "Netzseitige Tagesenergie als Rohzahl; Bedeutung nicht bestätigt."
     en: "Grid-side daily energy as a raw number; meaning not confirmed."
@@ -5910,8 +5933,8 @@ entries:
   notes: "Separate decision pending: signed 16 bit, not automatically monotonic and not part of the R65 whitelist. Raw only."
 - key: grid_connected_time_today
   name:
-    de: Netzparallelzeit heute (R503, roh)
-    en: Grid-connected time today (R503, raw)
+    de: Netzparallelzeit heute (roh)
+    en: Grid-connected time today (raw)
   description:
     de: "Heutige Dauer der Netzverbindung als Rohzahl (laut Hersteller in Sekunden)."
     en: "Time connected to the grid today as a raw number (seconds according to the manufacturer)."
@@ -5935,8 +5958,8 @@ entries:
   notes: Seconds per document; not an energy counter.
 - key: gen_energy_today_r536
   name:
-    de: GEN-Energie heute (R536, roh)
-    en: Generator energy today (R536, raw)
+    de: GEN-Energie heute (roh)
+    en: Generator energy today (raw)
   description:
     de: "Heute vom Generator gelieferte Energie als Rohzahl."
     en: "Energy delivered by the generator today as a raw number."
@@ -5960,8 +5983,8 @@ entries:
   notes: GEN energy is a separate catalog decision and is not R65-scaled by default.
 - key: gen_energy_total_r537
   name:
-    de: GEN-Energie gesamt (R537/538, roh)
-    en: Generator energy total (R537/538, raw)
+    de: GEN-Energie gesamt (roh)
+    en: Generator energy total (raw)
   description:
     de: "Insgesamt vom Generator gelieferte Energie als Rohzahl."
     en: "Total energy delivered by the generator as a raw number."
@@ -5986,8 +6009,8 @@ entries:
   notes: "Documented as bytes but behaves as a word pair; resolution unresolved: raw only."
 - key: gen_runtime_total_r512
   name:
-    de: GEN-Laufzeit gesamt (R512/513, roh)
-    en: Generator runtime total (R512/513, raw)
+    de: GEN-Laufzeit gesamt (roh)
+    en: Generator runtime total (raw)
   description:
     de: "Gesamte Laufzeit des Generators als Rohzahl."
     en: "Total generator run time as a raw number."
@@ -6012,8 +6035,8 @@ entries:
   notes: Runtime, not energy; byte-vs-word labelling unresolved.
 - key: gen_runtime_today_r539
   name:
-    de: GEN-Laufzeit heute (R539, roh)
-    en: Generator runtime today (R539, raw)
+    de: GEN-Laufzeit heute (roh)
+    en: Generator runtime today (raw)
   description:
     de: "Heutige Laufzeit des Generators als Rohzahl."
     en: "Generator run time today as a raw number."
@@ -6037,8 +6060,8 @@ entries:
   notes: Runtime, not energy.
 - key: remote_run_enable
   name:
-    de: Fernsteuerung Ein/Aus (R80)
-    en: Remote run enable (R80)
+    de: Fernsteuerung Ein/Aus
+    en: Remote run enable
   description:
     de: "Zeigt, ob der Wechselrichter per Fernsteuerung ein- oder ausgeschaltet ist (nur gelesen)."
     en: "Shows whether the inverter is switched on or off remotely (read only)."
@@ -6066,8 +6089,8 @@ entries:
   notes: "0 = software OFF, 1 = ON; controls operation, not electrical isolation. Read only. Never write 0: software OFF triggers fault F19."
 - key: battery_chemistry
   name:
-    de: Batterietyp (R98)
-    en: Battery chemistry (R98)
+    de: Batterietyp
+    en: Battery chemistry
   description:
     de: "Eingestellter Batterietyp (zum Beispiel Blei oder Lithium)."
     en: "Configured battery type (for example lead-acid or lithium)."
@@ -6096,8 +6119,8 @@ entries:
   default_enabled: true
 - key: battery_operating_basis
   name:
-    de: Batterie-Betriebsbasis (R111)
-    en: Battery operating basis (R111)
+    de: Batterie-Betriebsbasis
+    en: Battery operating basis
   description:
     de: "Eingestellte Batterie-Betriebsart als Rohzahl; der Wert 2 bedeutet „ohne Batterie“."
     en: "Configured battery operating mode as a raw number; the value 2 means “no battery”."
@@ -6120,8 +6143,8 @@ entries:
     that meaning is applied separately in suggested_features. 0, 1 and unknown codes keep their raw value.
 - key: gen_port_usage
   name:
-    de: GEN-Port-Verwendung (R133)
-    en: GEN port usage (R133)
+    de: GEN-Port-Verwendung
+    en: GEN port usage
   description:
     de: "Eingestellte Verwendung des GEN-Anschlusses (zum Beispiel Generator oder Smart-Load)."
     en: "Configured use of the GEN port (for example generator or smart load)."
@@ -6152,8 +6175,8 @@ entries:
   notes: Configured usage only; no proof that a source is connected.
 - key: gen_on_grid_input
   name:
-    de: Generator am Netzeingang (R189)
-    en: Generator on grid input (R189)
+    de: Generator am Netzeingang
+    en: Generator on grid input
   description:
     de: "Einstellung für Generatorbetrieb am GRID-Anschluss; bestätigt weder einen angeschlossenen noch einen laufenden Generator."
     en: "Setting for generator use at the GRID port; does not confirm a connected or running generator."
@@ -6177,8 +6200,8 @@ entries:
   default_enabled: false
 - key: gen_min_power_retention
   name:
-    de: Generator Mindestleistung (R189)
-    en: Generator minimum power retention (R189)
+    de: Generator Mindestleistung
+    en: Generator minimum power retention
   description:
     de: "Eingestellte Mindestleistung des Generators."
     en: "Configured minimum generator power."
@@ -6212,8 +6235,8 @@ entries:
   default_enabled: false
 - key: parallel_balancing_stop_soc_raw
   name:
-    de: Off-Grid-Balancing-Stopp-SOC (R335, roh)
-    en: Off-grid balancing stop SOC (R335, raw)
+    de: Off-Grid-Balancing-Stopp-SOC (roh)
+    en: Off-grid balancing stop SOC (raw)
   description:
     de: "Ladestand, bei dem der Ausgleich im Inselbetrieb endet, als Rohzahl."
     en: "State of charge at which balancing ends in island operation, as a raw number."
@@ -6239,8 +6262,8 @@ entries:
   notes: No unit or range printed.
 - key: parallel_config_2_raw
   name:
-    de: Parallel-Konfiguration 2 (R337, roh)
-    en: Parallel configuration 2 (R337, raw)
+    de: Parallel-Konfiguration 2 (roh)
+    en: Parallel configuration 2 (raw)
   description:
     de: "Zweite Parallel-Einstellung als Rohzahl; Bedeutung nicht bestätigt."
     en: "Second parallel setting as a raw number; meaning not confirmed."
@@ -6266,8 +6289,8 @@ entries:
   notes: No bit plan; a slave count is not derived from it.
 - key: tou_enable
   name:
-    de: ToU aktiv (R146)
-    en: ToU enabled (R146)
+    de: ToU aktiv
+    en: ToU enabled
   description:
     de: "Zeigt, ob die zeitgesteuerte Batterienutzung (Time of Use) eingeschaltet ist."
     en: "Shows whether time-of-use battery control is switched on."
@@ -6293,8 +6316,8 @@ entries:
   default_enabled: false
 - key: tou_weekdays
   name:
-    de: ToU Wochentage (R146)
-    en: ToU weekdays (R146)
+    de: ToU Wochentage
+    en: ToU weekdays
   description:
     de: "Wochentage, an denen die zeitgesteuerte Batterienutzung gilt."
     en: "Weekdays on which time-of-use battery control applies."
@@ -6321,8 +6344,8 @@ entries:
   notes: Bits 1..7 = Monday..Sunday.
 - key: tou_spain_mode
   name:
-    de: ToU Spanien-Modus (R146)
-    en: ToU Spain mode (R146)
+    de: ToU Spanien-Modus
+    en: ToU Spain mode
   description:
     de: "Zeigt, ob der spanische Sondermodus der Zeitsteuerung aktiv ist."
     en: "Shows whether the Spanish special mode of the time control is active."

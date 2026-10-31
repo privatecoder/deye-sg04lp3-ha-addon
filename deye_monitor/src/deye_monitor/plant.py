@@ -10,9 +10,7 @@ A change runs validate -> adopt (stop the running generation, build the new one)
 failure at any step restores the previous generation; success is reported only when the new plant
 is durable.
 
-Migration: options of older installations may still carry ``endpoints``/``inverters``. They are
-taken over ONCE, and only while no plant file exists. Afterwards the store is authoritative; options
-that are still present only produce a notice, they never override the store.
+The app options carry no connections or inverters; the store is the only source.
 """
 
 from __future__ import annotations
@@ -136,11 +134,6 @@ class PlantStore:
         if corrupt:
             self.problems.append(Problem("plant_store_recovered_previous", "plant"))
 
-    @property
-    def exists(self) -> bool:
-        """A plant file (valid or damaged) is present: the options are no migration source."""
-        return self.status is not LoadStatus.MISSING
-
     # -- write ------------------------------------------------------------------------------
 
     def _target_slot(self) -> int:
@@ -163,33 +156,6 @@ class PlantStore:
         self.plant, self.revision = plant, revision
         self.status = LoadStatus.VALID
         self.problems = []
-
-    def migrate_from_options(self, options: AppConfig) -> bool:
-        """Take ``endpoints``/``inverters`` of the options over, once. Only while no plant file
-        exists and the options carry something. Returns whether this happened."""
-        if self.exists or not (options.endpoints or options.inverters):
-            return False
-        self.commit(options.plant, 1)
-        return True
-
-
-def options_notice(
-    store: PlantStore, options: AppConfig, *, migrated: bool
-) -> list[dict[str, Any]]:
-    """Notices for the web interface about entries that are still present in the app options."""
-    if not (options.endpoints or options.inverters):
-        return []
-    if migrated:
-        return [{"code": "plant_migrated", "differs": False}]
-    return [
-        {
-            "code": "plant_options_present",
-            "differs": plant_to_body(options.plant, 0)["endpoints"]
-            != plant_to_body(store.plant, 0)["endpoints"]
-            or plant_to_body(options.plant, 0)["inverters"]
-            != plant_to_body(store.plant, 0)["inverters"],
-        }
-    ]
 
 
 # -- live change --------------------------------------------------------------------------------

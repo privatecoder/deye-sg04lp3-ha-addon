@@ -75,7 +75,7 @@ async def test_values_match_the_fake_registers(running):
         assert float(got["battery_energy_charge_today_g0"]) == pytest.approx(12.3)
         assert got["fault_word_1"] == "1"  # raw fault word, bit 0 set
         assert got["operating_state"] == "Normal"
-        assert got["parallel_phase"] == "A"
+        assert "parallel_phase" not in got  # three-phase model: only master/slave is shown
 
 
 async def test_only_sensor_and_binary_sensor_platforms_and_no_command_fields(running):

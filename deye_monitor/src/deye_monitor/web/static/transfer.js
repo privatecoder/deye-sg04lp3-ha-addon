@@ -29,10 +29,11 @@ export async function openTransfer(sourceId) {
       const message = h('div', { class: 'messages' });
       const run = h('button', { class: 'btn primary', type: 'button', disabled: true }, t('transfer.execute'));
       const cancelBtn = h('button', { class: 'btn', type: 'button', onClick: () => close(false) }, t('common.cancel'));
-      const previewBtn = h('button', { class: 'btn', type: 'button' }, t('transfer.preview'));
 
+      // A change of targets or options invalidates the preview and loads a new one at once.
       const stale = () => { generation += 1; previewData = null; previewed = null; revision = null; run.disabled = true; result.replaceChildren(); };
-      const lock = (locked) => { running = locked; for (const input of body.querySelectorAll('input')) input.disabled = locked; previewBtn.disabled = locked; cancelBtn.disabled = locked; };
+      const restale = () => { stale(); doPreview(); };
+      const lock = (locked) => { running = locked; for (const input of body.querySelectorAll('input')) input.disabled = locked; cancelBtn.disabled = locked; };
 
       function targetCard(id, p) {
         const inv = inverterById(id);
@@ -46,6 +47,7 @@ export async function openTransfer(sourceId) {
             h('span', { class: 'minus' }, `− ${t('setup.drops', { n: p.drops.length })}`), '  ', levelChip(level, `${t('setup.query_load')}: ${t(`load.${level}`)}`), ' ', busChip(p.selection.budget)),
           p.adds.length ? h('details', {}, h('summary', {}, t('transfer.adds_list')), h('p', {}, sensorList(inv, p.adds))) : null,
           p.drops.length ? h('details', {}, h('summary', {}, t('transfer.drops_list')), h('p', {}, sensorList(inv, p.drops))) : null,
+          p.inactive && p.inactive.length ? h('p', { class: 'banner info', 'data-inactive': 'true' }, t('transfer.inactive', { names: sensorList(inv, p.inactive) })) : null,
           p.capability_warnings.length ? h('p', { class: 'banner warn' }, t('setup.cap_warning', { names: sensorList(inv, p.capability_warnings) })) : null,
           p.selection.budget.overloaded ? h('p', { class: 'banner warn' }, t('setup.overloaded')) : null);
       }
@@ -54,7 +56,6 @@ export async function openTransfer(sourceId) {
         message.replaceChildren();
         stale();
         if (!chosen.size) { message.append(h('p', { class: 'banner error', role: 'alert' }, t('transfer.none_chosen'))); return; }
-        busy(previewBtn, true);
         const mine = generation;
         const payload = { source: sourceId, targets: [...chosen], include_features: includeFeatures };
         try {
@@ -68,8 +69,6 @@ export async function openTransfer(sourceId) {
         } catch (error) {
           if (mine !== generation) return;
           message.append(h('p', { class: 'banner error', role: 'alert' }, errorText(error)));
-        } finally {
-          busy(previewBtn, false);
         }
       }
 
@@ -94,7 +93,6 @@ export async function openTransfer(sourceId) {
           busy(run, false);
         }
       }
-      previewBtn.addEventListener('click', doPreview);
       run.addEventListener('click', doRun);
 
       const featureId = uid('inc');
@@ -103,13 +101,14 @@ export async function openTransfer(sourceId) {
         h('p', { class: 'muted' }, t('transfer.not_copied')),
         h('fieldset', { class: 'feature' }, h('legend', {}, t('transfer.targets')),
           h('div', { class: 'options' }, targets.map((i) => h('label', { class: 'option' },
-            h('input', { type: 'checkbox', checked: true, onChange: (e) => { if (e.target.checked) chosen.add(i.id); else chosen.delete(i.id); stale(); } }),
+            h('input', { type: 'checkbox', checked: true, onChange: (e) => { if (e.target.checked) chosen.add(i.id); else chosen.delete(i.id); restale(); } }),
             h('span', { class: 'opt-text' }, h('span', { class: 'opt-title' }, i.name), h('span', { class: 'opt-help' }, i.id)))))),
         h('label', { class: 'option', for: featureId },
-          h('input', { type: 'checkbox', id: featureId, checked: true, onChange: (e) => { includeFeatures = e.target.checked; stale(); } }),
+          h('input', { type: 'checkbox', id: featureId, checked: true, onChange: (e) => { includeFeatures = e.target.checked; restale(); } }),
           h('span', { class: 'opt-text' }, h('span', { class: 'opt-title' }, t('transfer.include_features')), h('span', { class: 'opt-help' }, t('transfer.include_features_help')))),
         message, result,
-        h('div', { class: 'actions' }, cancelBtn, previewBtn, run));
+        h('div', { class: 'actions' }, cancelBtn, run));
+      doPreview();
       return body;
     },
   });

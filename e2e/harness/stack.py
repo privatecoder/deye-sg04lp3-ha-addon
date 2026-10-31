@@ -127,11 +127,18 @@ class App:
 
     def __init__(self, name: str, opts: dict[str, Any], web_port: int) -> None:
         self.name = name
-        self.opts = opts
+        # the app options hold no connections or inverters: those go into the plant store
+        plant = {k: opts[k] for k in ("endpoints", "inverters") if k in opts}
+        self.opts = {k: v for k, v in opts.items() if k not in plant}
         self.web_port = web_port
         self.dir = Path(tempfile.mkdtemp(prefix=f"deye-e2e-{name}-"))
         self.log = self.dir / "app.log"
-        (self.dir / "options.json").write_text(json.dumps(opts))
+        (self.dir / "options.json").write_text(json.dumps(self.opts))
+        if any(plant.values()):  # an empty plant is a fresh installation: no plant file
+            from deye_monitor.config import PlantConfig
+            from deye_monitor.plant import PlantStore
+
+            PlantStore(self.dir).commit(PlantConfig.model_validate(plant), 1)
         self.csrf: str | None = None
 
     @property

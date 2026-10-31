@@ -21,7 +21,7 @@ import datetime
 import json
 import math
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -35,7 +35,7 @@ MAX_DOCUMENT_BYTES: Final = 256 * 1024  # application limit per device discovery
 APP_DEVICE_SUFFIX: Final = "app"
 ORIGIN_NAME: Final = "Deye SG04LP3 Monitor"
 MANUFACTURER: Final = "Deye"
-INVERTER_MODEL: Final = "SG04LP3 three-phase low-voltage hybrid inverter"
+INVERTER_MODEL: Final = "Deye SG04LP3 three-phase low-voltage hybrid inverter"
 NONE_TEMPLATE: Final = "{{ none }}"
 APP_HEARTBEAT_S: Final = 30.0
 STATIC_GROUPS: Final = frozenset({"identity", "settings"})
@@ -65,6 +65,7 @@ _COMPONENT_FIELDS = frozenset(
         "payload_off",
         "json_attributes_topic",
         "json_attributes_template",
+        "availability",
     }
 )
 _SENSOR_ONLY = frozenset(
@@ -129,6 +130,10 @@ class Namespace:
 
     def group_topic(self, inverter_id: str, group: str) -> str:
         return f"{self.state_prefix}/{self.instance}/{inverter_id}/{group}"
+
+    def inverter_diagnostics_topic(self, inverter_id: str) -> str:
+        """Per-inverter diagnostics (a name no profile group can have)."""
+        return self.group_topic(inverter_id, "diagnostics")
 
 
 # -- component builders --------------------------------------------------------------------------
@@ -262,30 +267,31 @@ class InverterDiagnostic:
 
 
 INVERTER_DIAGNOSTICS: Final = (
-    InverterDiagnostic("path", "connection path"),
-    InverterDiagnostic("serial", "bound serial number"),
-    InverterDiagnostic("firmware", "firmware words"),
-    InverterDiagnostic("role", "parallel role (R336)"),
-    InverterDiagnostic("energy_resolution", "energy resolution", "number", precision=1),
-    InverterDiagnostic("energy_source", "energy resolution source"),
-    InverterDiagnostic("energy_status", "energy confirmation"),
-    InverterDiagnostic("energy_series", "energy series"),
+    InverterDiagnostic("state", "State"),
+    InverterDiagnostic("reason", "State reason"),
+    InverterDiagnostic("path", "Connection path"),
+    InverterDiagnostic("serial", "Bound serial number"),
+    InverterDiagnostic("firmware", "Firmware"),
+    InverterDiagnostic("energy_resolution", "Energy resolution", "number", precision=1),
+    InverterDiagnostic("energy_source", "Energy resolution source"),
+    InverterDiagnostic("energy_status", "Energy confirmation"),
+    InverterDiagnostic("energy_series", "Energy series"),
     InverterDiagnostic(
-        "capability_conflicts", "capability conflicts", "number", "measurement", attributes=True
+        "capability_conflicts", "Capability conflicts", "number", "measurement", attributes=True
     ),
-    InverterDiagnostic("bus_utilisation", "bus utilisation", "number", "measurement", 3),
-    InverterDiagnostic("transport_timeouts", "transport timeouts", "number", "total_increasing"),
+    InverterDiagnostic("bus_utilisation", "Bus utilisation", "number", "measurement", 3),
+    InverterDiagnostic("transport_timeouts", "Transport timeouts", "number", "total_increasing"),
     InverterDiagnostic(
-        "transport_frame_errors", "transport frame errors", "number", "total_increasing"
+        "transport_frame_errors", "Transport frame errors", "number", "total_increasing"
     ),
-    InverterDiagnostic("transport_resyncs", "transport resyncs", "number", "total_increasing"),
-    InverterDiagnostic("transport_cooldown", "transport cooldown"),
-    InverterDiagnostic("last_success", "last successful read", "timestamp"),
+    InverterDiagnostic("transport_resyncs", "Transport resyncs", "number", "total_increasing"),
+    InverterDiagnostic("transport_cooldown", "Transport cooldown"),
+    InverterDiagnostic("last_success", "Last successful read", "timestamp"),
 )
-# Only present while R65 is reported; the raw value then lives in the app diagnostics only.
+# Only present while R65 is read and reported (not with a user-chosen energy resolution).
 R65_DIAGNOSTICS: Final = (
-    InverterDiagnostic("r65_raw", "R65 raw value", "number"),
-    InverterDiagnostic("r65_status", "R65 last reading"),
+    InverterDiagnostic("r65_raw", "Energy resolution raw word", "number"),
+    InverterDiagnostic("r65_status", "Energy resolution last reading"),
 )
 ENERGY_SOURCES: Final = {"override": "user choice", "r65": "R65"}
 CONFLICT_LIST_KEY: Final = "capability_conflict_list"
@@ -306,12 +312,35 @@ def _number(value: object) -> int | float | None:
     return value if math.isfinite(value) else None
 
 
+def firmware_text(words: object) -> str | None:
+    """Firmware as the Deye cloud shows it: ``MCU1: 1001-C070 / MCU2: 2005-1175-1807``.
+    MCU1 is the communication/HMI board (R17-R18), MCU2 the control board (R14-R15-R16)."""
+    if not isinstance(words, Mapping):
+        return None
+
+    def board(addrs: tuple[int, ...]) -> str | None:
+        values = [words.get(a) for a in addrs]
+        if not any(isinstance(w, int) and not isinstance(w, bool) for w in values):
+            return None
+        return "-".join(
+            f"{w:04X}" if isinstance(w, int) and not isinstance(w, bool) else "????" for w in values
+        )
+
+    parts = [f"{name}: {text}" for name, addrs in _FIRMWARE_BOARDS if (text := board(addrs))]
+    return " / ".join(parts) or None
+
+
+_FIRMWARE_BOARDS: Final = (("MCU1", (17, 18)), ("MCU2", (14, 15, 16)))
+
+
 def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]:
     """The curated diagnostic values of one inverter from ``InverterRuntime.diagnostics()``.
     Only the fields below are ever read (no pass-through of arbitrary dictionaries, no secrets);
     anything unknown or malformed is ``None``."""
     out: dict[str, Any] = {d.suffix: None for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS)}
     out[CONFLICT_LIST_KEY] = []
+    out["state"] = _text(diag.get("state")) if isinstance(diag, Mapping) else None
+    out["reason"] = _text(diag.get("reason")) if isinstance(diag, Mapping) else None
     if not isinstance(diag, Mapping):
         return out
 
@@ -322,25 +351,7 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     path, endpoint = _text(diag.get("active_path")), _text(diag.get("endpoint"))
     out["path"] = f"{path}:{endpoint}" if path and endpoint else path
     out["serial"] = _text(diag.get("bound_serial"))
-    words = sub("identity").get("firmware_words")
-    if isinstance(words, Mapping):
-        parts = [
-            f"r{a}={w:04X}"
-            for a in (15, 17, 18)
-            if isinstance(w := words.get(a), int) and not isinstance(w, bool)
-        ]
-        out["firmware"] = " ".join(parts) or None
-    role = sub("identity").get("role")
-    if isinstance(role, Mapping):
-
-        def flag(v: object) -> str:
-            return "?" if not isinstance(v, bool) else ("yes" if v else "no")
-
-        phase = _text(role.get("phase")) or "?"
-        out["role"] = (
-            f"parallel={flag(role.get('parallel_enable'))} "
-            f"master={flag(role.get('master'))} phase={phase}"
-        )
+    out["firmware"] = firmware_text(sub("identity").get("firmware_words"))
     r65 = sub("r65")
     out["r65_raw"] = _number(r65.get("raw"))
     ok = r65.get("last_read_ok")
@@ -383,71 +394,66 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     return out
 
 
-def app_components(
-    ns: Namespace,
-    inverters: Mapping[str, str],
-    states: tuple[str, ...],
-    r65_unreported: Collection[str] = (),
-) -> dict[str, dict[str, Any]]:
-    """Diagnostic entities of the app device. Per inverter the connection state and reason and the
-    curated diagnostics (``INVERTER_DIAGNOSTICS``) live here, so an inverter without selected
-    sensors still has its status visible while its own device has no entities at all. The R65
-    entities of an inverter in ``r65_unreported`` (the device reports no R65) are left out."""
+def app_components(ns: Namespace) -> dict[str, dict[str, Any]]:
+    """Diagnostic entities of the app device: only what concerns the whole app. Everything that
+    belongs to one inverter lives on that inverter's device (``inverter_diagnostic_components``)."""
     device_id = ns.app_device_id
     expire = math.ceil(3 * APP_HEARTBEAT_S)
     out: dict[str, dict[str, Any]] = {}
+    for diag in APP_DIAGNOSTICS:
+        comp: dict[str, Any] = {
+            "platform": "sensor",
+            "unique_id": f"{device_id}_{diag.key}",
+            "default_entity_id": f"sensor.{device_id}_{diag.key}",
+            "name": diag.name,
+            "state_topic": ns.app_state_topic,
+            "value_template": _template(diag.key, "sensor"),
+            "expire_after": expire,
+            "entity_category": "diagnostic",
+        }
+        if diag.state_class:
+            comp["state_class"] = diag.state_class
+        out[diag.key] = comp
+    return out
 
-    def add(key: str, name: str, **extra: Any) -> None:
+
+def inverter_diagnostic_components(
+    ns: Namespace, inverter_id: str, states: tuple[str, ...], *, show_r65: bool
+) -> dict[str, dict[str, Any]]:
+    """Diagnostic entities of one inverter's own device. They stay available while the inverter is
+    offline (the state and the reason are exactly what one looks at then): their availability is
+    the app's only. ``show_r65``: the device reports R65 and it is read."""
+    device_id = ns.inverter_device_id(inverter_id)
+    expire = math.ceil(3 * APP_HEARTBEAT_S)
+    out: dict[str, dict[str, Any]] = {}
+    for d in (*INVERTER_DIAGNOSTICS, *(R65_DIAGNOSTICS if show_r65 else ())):
+        key = f"diag_{d.suffix}"
         comp: dict[str, Any] = {
             "platform": "sensor",
             "unique_id": f"{device_id}_{key}",
             "default_entity_id": f"sensor.{device_id}_{key}",
-            "name": name,
-            "state_topic": ns.app_state_topic,
-            "value_template": _template(key, "sensor"),
+            "name": d.name,
+            "state_topic": ns.inverter_diagnostics_topic(inverter_id),
+            "value_template": _template(d.suffix, "sensor"),
             "expire_after": expire,
             "entity_category": "diagnostic",
+            "availability": [{"topic": ns.app_status_topic}],
         }
-        comp.update(extra)
-        out[key] = comp
-
-    for diag in APP_DIAGNOSTICS:
-        extra: dict[str, Any] = {}
-        if diag.state_class:
-            extra["state_class"] = diag.state_class
-        add(diag.key, diag.name, **extra)
-    for inverter_id, label in inverters.items():
-        add(
-            f"inverter_{inverter_id}_state",
-            f"{label} state",
-            device_class="enum",
-            options=list(states),
-        )
-        add(f"inverter_{inverter_id}_reason", f"{label} state reason")
-        shown = (
-            INVERTER_DIAGNOSTICS
-            if inverter_id in r65_unreported
-            else (
-                *INVERTER_DIAGNOSTICS,
-                *R65_DIAGNOSTICS,
+        if d.suffix == "state":
+            comp["device_class"] = "enum"
+            comp["options"] = list(states)
+        if d.kind == "timestamp":
+            comp["device_class"] = "timestamp"
+        if d.state_class:
+            comp["state_class"] = d.state_class
+        if d.precision is not None:
+            comp["suggested_display_precision"] = d.precision
+        if d.attributes:
+            comp["json_attributes_topic"] = comp["state_topic"]
+            comp["json_attributes_template"] = (
+                f"{{{{ {{'conflicts': value_json.get('{CONFLICT_LIST_KEY}')}} | tojson }}}}"
             )
-        )
-        for d in shown:
-            extra = {}
-            if d.kind == "timestamp":
-                extra["device_class"] = "timestamp"
-            if d.state_class:
-                extra["state_class"] = d.state_class
-            if d.precision is not None:
-                extra["suggested_display_precision"] = d.precision
-            if d.attributes:
-                extra["json_attributes_topic"] = ns.app_state_topic
-                extra["json_attributes_template"] = (
-                    "{{ {'conflicts': value_json.get('"
-                    f"inverter_{inverter_id}_{CONFLICT_LIST_KEY}"
-                    "')} | tojson }}"
-                )
-            add(f"inverter_{inverter_id}_{d.suffix}", f"{label} {d.name}", **extra)
+        out[key] = comp
     return out
 
 
@@ -529,7 +535,9 @@ def replay_document(
     """Cold-start cleanup step 2: ONE old component under its original unique id. Its template
     renders ``none`` and the extra cleanup availability topic (always ``offline``) keeps it
     unavailable, so no new measurement can appear under the old identity."""
-    comp = {k: v for k, v in component.items() if k in _COMPONENT_FIELDS and k != "value_template"}
+    # no own availability: the cleanup topic of the document root must keep the entity unavailable
+    skipped = {"value_template", "availability"}
+    comp = {k: v for k, v in component.items() if k in _COMPONENT_FIELDS and k not in skipped}
     comp["value_template"] = NONE_TEMPLATE
     doc = _root(ns, meta, cleanup=True)
     doc["components"] = {key: comp}
@@ -575,6 +583,13 @@ def validate_component(key: str, comp: Mapping[str, Any]) -> None:
         raise DiscoveryError(f"component {key}: entity_category not allowed")
     if comp.get("state_class", "measurement") not in _STATE_CLASSES:
         raise DiscoveryError(f"component {key}: state_class not allowed")
+    own = comp.get("availability")
+    if own is not None and (
+        not isinstance(own, list)
+        or not own
+        or not all(isinstance(i, dict) and set(i) == {"topic"} for i in own)
+    ):
+        raise DiscoveryError(f"component {key}: availability must be a list of topics")
     options = comp.get("options")
     if options is not None and (
         not isinstance(options, list) or not options or not all(isinstance(o, str) for o in options)

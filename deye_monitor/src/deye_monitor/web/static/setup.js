@@ -400,7 +400,9 @@ export function setupView(invId) {
     const added = new Set(sel.deviations.added);
     const removed = new Set(sel.deviations.removed);
     const warned = new Set(preview && dirty() ? preview.warnings : []);
-    const unreported = ((inverterById(invId) || base).status || {}).unreported || {};
+    const status = (inverterById(invId) || base).status || {};
+    const unreported = status.unreported || {};
+    const inactive = status.inactive || {}; // not applicable on this unit (parallel slave)
     for (const [key, r] of rows) {
       r.input.checked = eff.has(key);
       let mark = '';
@@ -414,9 +416,11 @@ export function setupView(invId) {
       r.reset.hidden = !(removed.has(key) || added.has(key));
       r.warn.hidden = !warned.has(key);
       const gone = unreported[key];
-      r.row.classList.toggle('unreported', !!gone && gone.profile_value == null);
-      r.note.hidden = !gone;
-      r.note.textContent = gone ? t(gone.profile_value == null ? 'sensor.unreported' : 'sensor.unreported_profile', { reg: `R${gone.register}`, raw: `0x${Number(gone.raw).toString(16).toUpperCase().padStart(4, '0')}` }) : '';
+      const off = inactive[key];
+      r.row.classList.toggle('unreported', !!off || (!!gone && gone.profile_value == null));
+      r.note.hidden = !gone && !off;
+      if (off) r.note.textContent = t(`sensor.inactive.${off.reason}`);
+      else r.note.textContent = gone ? t(gone.profile_value == null ? 'sensor.unreported' : 'sensor.unreported_profile', { reg: `R${gone.register}`, raw: `0x${Number(gone.raw).toString(16).toUpperCase().padStart(4, '0')}` }) : '';
     }
     for (const g of groups) {
       const on = g.keys.filter((k) => eff.has(k)).length;

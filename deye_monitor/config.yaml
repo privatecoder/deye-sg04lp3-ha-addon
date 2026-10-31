@@ -21,44 +21,12 @@ ingress: true
 panel_icon: mdi:solar-power-variant
 panel_title: "Deye Monitor"
 options:
-  # Connections and inverters are set up in the Ingress web interface. The two lists stay as optional
-  # options only for installations that still carry them (taken over once, see DOCS.md).
-  endpoints: []
-  inverters: []
+  # Connections and inverters are set up in the Ingress web interface (nothing to configure here).
   mqtt:
     discovery_prefix: homeassistant
     topic_prefix: deye_monitor
   log_level: info
 schema:
-  endpoints:
-    - id: "match(^[a-z0-9_]{1,32}$)"
-      transport: "list(modbus_tcp|rtu_over_tcp|serial_rtu|solarman_v5_tcp)"
-      host: "str?"
-      port: "int(1,65535)?"
-      logger_serial: "int(1,4294967295)?"
-      serial_device: "str?"
-      baudrate: "int(50,4000000)?"
-      bus_id: "match(^[a-z0-9_]{1,32}$)?"
-      timeout_s: "float(0.1,)?"
-      rtu_late_window_s: "float(0.1,)?"
-      max_read_registers: "int(6,100)?"
-      request_gap_ms: "float(0,)?"
-      queue_size: "int(1,1000)?"
-  inverters:
-    - id: "match(^[a-z0-9_]{1,32}$)"
-      name: "str"
-      endpoint: "match(^[a-z0-9_]{1,32}$)"
-      unit_id: "int(1,247)"
-      fallback_endpoint: "match(^[a-z0-9_]{1,32}$)?"
-      fallback_unit_id: "int(1,247)?"
-      expected_serial: "match(^[!-~][ -~]{8}[!-~]$)?"
-      profile: "str?"
-      energy_resolution: "list(auto|0.1|1)?"
-      poll_fast_s: "float(1,)?"
-      poll_energy_s: "float(1,)?"
-      poll_settings_s: "float(1,)?"
-      poll_identity_s: "float(1,)?"
-      allow_writes: "bool?"
   # A nested mapping is REQUIRED by the Supervisor (only "?" strings are optional), so every
   # configuration must keep an `mqtt:` block (it may be `mqtt: {}`); the defaults below provide it.
   mqtt:

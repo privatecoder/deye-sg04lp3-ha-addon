@@ -123,10 +123,12 @@ async def test_retain_qos_and_the_only_subscription(
         assert snap[ns.app_status_topic] == b"online"
         assert snap[ns.inverter_availability_topic("deye1")] == b"online"
         doc = json.loads(snap[ns.discovery_topic(ns.inverter_device_id("deye1"))])
-        assert sorted(doc["components"]) == ["battery_soc", "battery_voltage"]
+        sensors = [k for k in doc["components"] if not k.startswith("diag_")]
+        assert sorted(sensors) == ["battery_soc", "battery_voltage"]
         assert ns.discovery_topic(ns.app_device_id) in snap
         # ... but a measurement is not: no state is ever replayed to a late subscriber
         assert ns.group_topic("deye1", "battery") not in snap
+        assert ns.inverter_diagnostics_topic("deye1") not in snap
         await stop(pub, task)
         after = await retained_snapshot(broker.port)
         assert after[ns.app_status_topic] == b"offline"  # orderly end: explicit offline

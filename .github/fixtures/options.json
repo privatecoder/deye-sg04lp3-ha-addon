@@ -1,11 +1,8 @@
 {
-  "endpoints": [
-    {"id": "gw1", "transport": "modbus_tcp", "host": "192.0.2.10"},
-    {"id": "logger1", "transport": "solarman_v5_tcp", "host": "192.0.2.20", "logger_serial": 1700000001}
-  ],
-  "inverters": [
-    {"id": "deye1", "name": "Deye 1", "endpoint": "gw1", "unit_id": 1, "fallback_endpoint": "logger1"}
-  ],
-  "mqtt": {"host": "192.0.2.30", "discovery_prefix": "homeassistant", "topic_prefix": "deye_monitor"},
+  "mqtt": {
+    "host": "192.0.2.30",
+    "discovery_prefix": "homeassistant",
+    "topic_prefix": "deye_monitor"
+  },
   "log_level": "info"
 }

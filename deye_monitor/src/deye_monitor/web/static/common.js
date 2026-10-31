@@ -36,12 +36,13 @@ export function reasonText(status) {
   return t(`reason.generic.${status.state}`);
 }
 
+// Master or slave only: on a three-phase model the phase letter of R336 says nothing useful
+// (every unit shows "A"); it stays in the diagnostics.
 export function roleText(status) {
   const role = status.identity && status.identity.role;
   if (!role || !role.parallel_enable) return role ? t('role.single') : t('value.unknown');
   const master = role.master === true || role.master === 1 || role.master === 'master';
-  const phase = role.phase !== null && role.phase !== undefined ? ` · ${t('role.phase', { phase: role.phase })}` : '';
-  return (master ? t('role.master') : t('role.slave')) + phase;
+  return master ? t('role.master') : t('role.slave');
 }
 
 export function ageText(wall) {
@@ -127,10 +128,8 @@ export function hintsOf(inv) {
   for (const conflict of s.capability_conflicts || []) {
     out.push({ kind: 'conflict', text: conflictText(conflict), detail: conflict.detail || '' });
   }
-  const unreported = (s.identity && s.identity.capabilities_unreported) || [];
-  if (unreported.length) out.push({ kind: 'info', text: t('hint.unreported') });
-  const unknown = (s.identity && s.identity.capabilities_unknown) || {};
-  if (unknown.battery_input_code !== undefined) out.push({ kind: 'info', text: t('hint.unknown_battery_code', { value: unknown.battery_input_code }) });
+  const hardware = hardwareHint(s.identity || {});
+  if (hardware) out.push({ kind: 'info', text: hardware });
   if (s.energy && s.energy.needs_choice) {
     out.push({ kind: 'energy', text: t('hint.energy.r65_invalid'), actions: energyChoice(inv) });
   }
@@ -148,7 +147,25 @@ export function hintsOf(inv) {
     out.push({ kind: 'energy', text: t('hint.energy.pending', { value: energy.pending_change }) });
   }
   if (energy.blocked) out.push({ kind: 'energy', text: t('hint.energy.blocked') });
-  return out;
+  // warnings (real problems) first, then information, then observations
+  return out.map((hint, i) => ({ hint, i })).sort((a, b) => HINT_RANK(a.hint) - HINT_RANK(b.hint) || a.i - b.i).map((x) => x.hint);
+}
+
+const HINT_RANK = (hint) => ({ conflict: 0, energy: 0, info: 1, observation: 2 }[hint.kind] ?? 1);
+
+// "Hardware data not reported" and an undefined battery input code are one finding: one hint.
+function hardwareHint(identity) {
+  const unreported = identity.capabilities_unreported || [];
+  const unknown = (identity.capabilities_unknown || {}).battery_input_code;
+  const words = identity.capability_words || {};
+  const hex = (a) => `R${a}=0x${Number(words[a]).toString(16).toUpperCase().padStart(4, '0')}`;
+  const parts = [];
+  if (unreported.includes('device_type')) parts.push(hex(0));
+  if (unreported.includes('mppt_phases')) parts.push(hex(22));
+  if (unreported.includes('battery_input_code')) parts.push(hex(24));
+  if (!parts.length) return unknown === undefined ? null : t('hint.unknown_battery_code', { value: unknown });
+  if (unknown !== undefined) parts.push(`R24=${unknown}`);
+  return t('hint.hardware_unreported', { words: parts.join(', ') });
 }
 
 export function describe(entry) {

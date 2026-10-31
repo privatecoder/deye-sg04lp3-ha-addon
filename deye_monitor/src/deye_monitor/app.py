@@ -31,7 +31,7 @@ from deye_monitor.mqtt import (
     aiomqtt_factory,
 )
 from deye_monitor.mqtt_discovery import valid_discovery_document
-from deye_monitor.plant import PlantService, PlantStore, SwitchError, options_notice
+from deye_monitor.plant import PlantService, PlantStore, SwitchError
 from deye_monitor.profiles.plan import SelectionError
 from deye_monitor.runtime import Runtime
 from deye_monitor.selection import (
@@ -300,19 +300,6 @@ async def serve(cfg: AppConfig, stop: asyncio.Event) -> None:
     devices = os.environ.get(NO_DEVICES_ENV) != "1"
     directory = data_dir()
     plant_store = PlantStore(directory)
-    migrated = plant_store.migrate_from_options(cfg)
-    if migrated:
-        log.warning(
-            "connections and inverters of the app options were taken over into the web interface; "
-            "please remove them from the app options"
-        )
-    notices = options_notice(plant_store, cfg, migrated=migrated)
-    if notices and not migrated:
-        log.warning(
-            "the app options still contain connections/inverters; the web interface is "
-            "authoritative%s",
-            " and its plant differs" if notices[0]["differs"] else "",
-        )
     for problem in plant_store.problems:
         log.error("plant store: %s (%s)", problem.code, problem.subject)
     effective = cfg.with_plant(plant_store.plant)
@@ -337,7 +324,7 @@ async def serve(cfg: AppConfig, stop: asyncio.Event) -> None:
     web: WebApi | None = None
     if devices:
         runtime = application.install(effective)
-        service = PlantService(plant_store, cfg, manager, application, notices=notices)
+        service = PlantService(plant_store, cfg, manager, application)
         web = WebApi(runtime, manager, publisher=application.publisher, plant=service)
         application.web = web
         await application.start_generation()

@@ -8,6 +8,9 @@ import { openTransfer } from './transfer.js';
 import { maintenanceSection } from './maintenance.js';
 import { noticeBanners } from './plant.js';
 
+const HINTS_SHOWN = 4;
+const expandedHints = new Set(); // inverter ids whose full hint list is open
+
 export function overviewView() {
   const root = h('div', { class: 'overview' });
   const timeRefs = [];
@@ -48,16 +51,33 @@ export function overviewView() {
       unidentified && s.state !== 'blocked'
         ? h('p', { class: 'note' }, t('overview.unidentified_hint'))
         : null,
-      hints.length
-        ? h('ul', { class: 'hints', 'aria-label': t('overview.hints') },
-            hints.slice(0, 4).map((hint) => h('li', { class: `hint ${hint.kind}` }, hintBody(hint))),
-            hints.length > 4 ? h('li', { class: 'muted' }, t('overview.more_hints', { n: hints.length - 4 })) : null)
-        : null,
+      hintList(inv.id, hints),
       h('footer', { class: 'card-actions' },
         h('a', { class: 'btn primary', href: `#/inv/${inv.id}` }, t('overview.setup')),
         state.inverters.length > 1
           ? h('button', { class: 'btn', type: 'button', disabled: !canEdit(), onClick: () => openTransfer(inv.id) }, t('overview.transfer'))
           : null));
+  }
+
+  // The first hints are always shown; the rest opens with a button (state kept while the page lives).
+  function hintList(id, hints) {
+    if (!hints.length) return null;
+    const open = expandedHints.has(id);
+    const rest = hints.slice(HINTS_SHOWN);
+    const toggle = h('button', { class: 'btn small linklike', type: 'button', 'aria-expanded': String(open), 'aria-controls': `hints-more-${id}` },
+      open ? t('overview.show_less') : t('overview.show_more', { n: rest.length }));
+    toggle.addEventListener('click', () => {
+      if (expandedHints.has(id)) expandedHints.delete(id); else expandedHints.add(id);
+      signature = '';
+      onData();
+      const again = root.querySelector(`[aria-controls="hints-more-${id}"]`);
+      if (again) again.focus();
+    });
+    return h('div', { class: 'hint-block' },
+      h('ul', { class: 'hints', 'aria-label': t('overview.hints') },
+        hints.slice(0, HINTS_SHOWN).map((hint) => h('li', { class: `hint ${hint.kind}` }, hintBody(hint))),
+        open ? rest.map((hint) => h('li', { class: `hint ${hint.kind}` }, hintBody(hint))) : null),
+      rest.length ? h('div', { id: `hints-more-${id}` }, toggle) : null);
   }
 
   function fact(label, value) {
@@ -87,7 +107,7 @@ export function overviewView() {
 
   let signature = '';
   function onData() {
-    const next = JSON.stringify([state.session && state.session.plant_notices, state.inverters.map((i) => ({ ...i, status: { ...i.status, last_success_wall: null } })), state.session && state.session.problems, state.lang]);
+    const next = JSON.stringify([state.session && state.session.plant_notices, state.inverters.map((i) => ({ ...i, status: { ...i.status, last_success_wall: null } })), state.session && state.session.problems, state.lang, [...expandedHints]]);
     if (next !== signature) {
       signature = next;
       // Keep an open "Maintenance" section open across re-renders.

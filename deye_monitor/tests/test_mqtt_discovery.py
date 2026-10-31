@@ -68,7 +68,7 @@ def inverter_target(
 def targets(keys: tuple[str, ...], series: str = "g0") -> dict[str, DeviceTarget]:
     app = DeviceTarget(
         DeviceMeta(NS.app_device_id, "Deye Monitor", "app"),
-        app_components(NS, {"deye1": "Deye 1"}, STATES),
+        app_components(NS),
     )
     return {APP_TOPIC: app, INV_TOPIC: inverter_target(keys, series)}
 
@@ -352,7 +352,7 @@ async def test_prefix_change_cleans_the_old_topic_from_the_inventory(tmp_path: P
     eng2 = DiscoveryEngine(moved, eng.store, wire)
     new_app = DeviceTarget(
         DeviceMeta(moved.app_device_id, "Deye Monitor", "app"),
-        app_components(moved, {"deye1": "Deye 1"}, STATES),
+        app_components(moved),
     )
     wire.sent.clear()
     await eng2.sync({moved.discovery_topic(moved.app_device_id): new_app}, replay=True)

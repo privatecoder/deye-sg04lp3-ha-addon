@@ -300,6 +300,7 @@ def status_view(inv: InverterRuntime, bus_load: float | None) -> dict[str, Any]:
         "identity": d["identity"],
         "capability_conflicts": d["capability_conflicts"],
         "unreported": d["unreported"],
+        "inactive": d["inactive"],
         "energy": d["energy"],
         "hints": hints,
         "error_counters": {
@@ -583,6 +584,7 @@ class WebApi:
                 "identity": {},
                 "capability_conflicts": [],
                 "unreported": {},
+                "inactive": {},
                 "energy": {},
                 "hints": [],
                 "error_counters": {},
@@ -743,6 +745,7 @@ class WebApi:
             "drops": sorted(current.active - sel.active),
             "capability_conflicts": list(runtime.capability_conflicts),
             "capability_warnings": warned,
+            "inactive": sorted(set(runtime.inactive) & sel.effective),
         }
 
     # -- transfer ---------------------------------------------------------------------------

@@ -50,7 +50,7 @@ async def test_an_empty_plant_starts_and_asks_for_the_setup(running, instance_p)
     )
     assert not fake.wire.reads  # nothing is contacted without a configured connection
     entries = await ours(running.ha, P)
-    assert all(u.startswith(f"deye_{P}_app_") for u in entries), sorted(entries)
+    assert all(u.startswith(f"deye_{P}_app_") or "_diag_" in u for u in entries), sorted(entries)
 
 
 async def test_the_connection_is_checked_created_and_the_inverter_identified(running, instance_p):
@@ -108,7 +108,7 @@ async def test_the_connection_is_checked_created_and_the_inverter_identified(run
     # up to its first choice only the mandatory and bootstrap reads (plus the check) reach the device
     assert {(r.start, r.count) for r in fake.wire.reads} <= allowed_blocks()
     entries = await ours(running.ha, P)
-    assert all(u.startswith(f"deye_{P}_app_") for u in entries), sorted(
+    assert all(u.startswith(f"deye_{P}_app_") or "_diag_" in u for u in entries), sorted(
         entries
     )  # no inverter entity yet
 
