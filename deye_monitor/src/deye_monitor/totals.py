@@ -211,7 +211,7 @@ METRICS: Final = (
     ),
     Metric(
         "plant_bms_power",
-        "Plant battery power (BMS bank view)",
+        "Plant battery power (BMS)",
         "master",
         ("bms_voltage", "bms_current"),
         "W",

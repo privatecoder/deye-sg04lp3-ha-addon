@@ -148,6 +148,9 @@ class Namespace:
 SERIES_RE: Final = re.compile(r"^([a-z0-9]{8})?g[0-9]+$")
 
 
+ENERGY_SERIES_ATTRIBUTE = "{{ {'energy_series': value_json.get('energy_series')} | tojson }}"
+
+
 def check_series(series: str) -> str:
     if not SERIES_RE.match(series):
         raise DiscoveryError(f"invalid energy series {series!r}")
@@ -202,7 +205,7 @@ def inverter_component(
     """(component key, discovery component) of one selected profile entry."""
     device_id = ns.inverter_device_id(inverter_id)
     ckey = component_key(entry, series)
-    name = entry.name.en + (f" ({series})" if entry.scale_source else "")
+    name = entry.name.en
     comp: dict[str, Any] = {
         "platform": entry.platform,
         "unique_id": f"{device_id}_{ckey}",
@@ -238,6 +241,9 @@ def inverter_component(
         comp["json_attributes_template"] = (
             f"{{{{ {{'alarms': value_json.get('{entry.key}{ALARM_LIST_SUFFIX}')}} | tojson }}}}"
         )
+    if entry.scale_source:  # the series is not in the name: an attribute tells the series apart
+        comp["json_attributes_topic"] = comp["state_topic"]
+        comp["json_attributes_template"] = ENERGY_SERIES_ATTRIBUTE
     if entry.profile_fallback and entry.platform == "sensor":
         # ``source`` tells a device value from the hardware profile's value (the device left it out)
         comp["json_attributes_topic"] = comp["state_topic"]
@@ -444,12 +450,15 @@ def plant_components(
             "platform": "sensor",
             "unique_id": f"{device_id}_{ckey}",
             "default_entity_id": f"sensor.{device_id}_{ckey}",
-            "name": m.name + (f" ({series})" if energy else ""),
+            "name": m.name,
             "state_topic": ns.plant_state_topic,
             "value_template": _template(m.key, "sensor", series if energy else None),
             "expire_after": max(expire.get(m.key, heartbeat), heartbeat),
             "unit_of_measurement": m.unit,
         }
+        if energy:
+            comp["json_attributes_topic"] = comp["state_topic"]
+            comp["json_attributes_template"] = ENERGY_SERIES_ATTRIBUTE
         if m.device_class:
             comp["device_class"] = m.device_class
         if m.state_class:

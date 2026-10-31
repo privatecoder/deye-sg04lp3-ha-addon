@@ -396,3 +396,14 @@ def test_a_diagnostic_keeps_its_own_availability_but_a_cleanup_replay_does_not()
 
 def test_the_device_model_says_deye() -> None:
     assert inverter_doc()["device"]["model"].startswith("Deye SG04LP3 ")
+
+
+def test_energy_names_carry_no_series_but_an_attribute() -> None:
+    key, energy = comp("battery_energy_charge_total", "g3")
+    assert key.endswith("_g3") and energy["unique_id"].endswith("_g3")
+    assert energy["name"] == "Battery charge total" and "(g" not in energy["name"]
+    assert energy["json_attributes_topic"] == energy["state_topic"]
+    assert "'energy_series': value_json.get('energy_series')" in energy["json_attributes_template"]
+    assert "value_json.get('energy_series') == 'g3'" in energy["value_template"]
+    _, plain = comp("battery_voltage", "g3")
+    assert "json_attributes_topic" not in plain

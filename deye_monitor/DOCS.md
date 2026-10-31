@@ -90,12 +90,12 @@ device loop and without the publisher.
   | --- | --- |
   | Plant PV power / load power / inverter output power | sums of PV1..n power, "Load power total" (equals the LOAD/UPS output on these units) and "Inverter output power total" |
   | Plant battery power | sum of battery voltage x battery current of the members; **positive = discharging** |
-  | Plant PV energy, battery charge, battery discharge, load energy | sums of the members' total counters (`total_increasing`), name suffix `(g<n>)` |
+  | Plant PV energy, battery charge, battery discharge, load energy | sums of the members' total counters (`total_increasing`); the series is in the entity id (`..._g<n>`) and the attribute `energy_series`, not in the name |
   | Plant ... today (PV, battery charge/discharge, load) | sums of the "today" counters, measurement only |
-  | Plant battery SOC, BMS SOC / voltage / current (bank) / temperature, battery power (BMS bank view) | from the parallel **master** only (R336), never averaged; `unknown` without exactly one master among the members. BMS current is positive while charging, so the bank-view power is negated to show discharging as positive |
+  | Plant battery SOC, BMS SOC / voltage / current (bank) / temperature, battery power (BMS) | from the parallel **master** only (R336), never averaged; `unknown` without exactly one master among the members. BMS current is positive while charging, so the BMS power is negated to show discharging as positive |
   | Plant members / stale members / master / energy series | diagnostics; the members are attributes |
 
-  **Energy dashboard.** Use the energy sensors with `(g<n>)`: *Plant PV energy* as solar
+  **Energy dashboard.** Use the energy sensors of the current series (the entity id ends in `_g<n>`; the attribute `energy_series` and the diagnostic *Plant energy series* show it; after a series change the retired entities are removed, so the names do not clash): *Plant PV energy* as solar
   production, *Plant battery charge* and *Plant battery discharge* as the battery's "energy
   going in" and "out", *Plant load energy* as individual device or house consumption. Do not use
   the "today" sensors there. Every inverter counts its own battery, PV and load energy, so the sum

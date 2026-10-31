@@ -25,7 +25,9 @@
    "default_entity_id": "sensor.deye_ab12cd34_deye1_battery_energy_charge_total_g0",
    "device_class": "energy",
    "expire_after": 180,
-   "name": "Battery charge total (g0)",
+   "json_attributes_template": "{{ {'energy_series': value_json.get('energy_series')} | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/energy",
+   "name": "Battery charge total",
    "platform": "sensor",
    "state_class": "total_increasing",
    "state_topic": "deye/ab12cd34/deye1/energy",
@@ -399,7 +401,9 @@
    "default_entity_id": "sensor.deye_ab12cd34_deye1_pv_energy_today_g0",
    "device_class": "energy",
    "expire_after": 180,
-   "name": "PV energy today (g0)",
+   "json_attributes_template": "{{ {'energy_series': value_json.get('energy_series')} | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/energy",
+   "name": "PV energy today",
    "platform": "sensor",
    "state_class": "total_increasing",
    "state_topic": "deye/ab12cd34/deye1/energy",
@@ -443,6 +447,6 @@
  },
  "origin": {
   "name": "Deye SG04LP3 Monitor",
-  "sw_version": "0.2.11"
+  "sw_version": "0.2.12"
  }
 }

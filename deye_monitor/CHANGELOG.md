@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.12
+
+- **Energy entity names without the series**: "Battery charge total (g0)" is now "Battery charge
+  total" (inverter and plant energy entities). The series stays in `unique_id`, the entity id and
+  the template guard (statistics identity unchanged) and is exposed as the attribute
+  `energy_series` of each energy entity. After a series change the retired entity is removed, so
+  two entities with the same name do not coexist.
+- **BMS names**: "Plant battery power (BMS bank view)" is "Plant battery power (BMS)". "BMS
+  current (bank)" and "Plant BMS current (bank)" keep "(bank)" to tell them from "Battery
+  current"; their description says it is the whole bank's current, positive = charging.
+- Includes the 0.2.11 CI fix (server default `bms` true).
+
 ## 0.2.11
 
 - The server-side feature default `bms` is now `true` too (the wizard shows the server's draft, so the client default alone had no effect). A plant without a saved answer gets the BMS sensors in its template (65 instead of 59 for the default plant).
