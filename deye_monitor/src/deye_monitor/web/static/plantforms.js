@@ -52,6 +52,13 @@ function textInput(value, props = {}) {
   return h('input', { type: 'text', class: 'select', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', value: value ?? '', ...props });
 }
 
+// An identifier that is fixed after creating: read-only (still submitted), visibly locked.
+function lockId(input) {
+  input.readOnly = true;
+  input.classList.add('locked');
+  input.setAttribute('aria-readonly', 'true');
+}
+
 function numberInput(value, props = {}) {
   return h('input', { type: 'text', inputmode: 'decimal', class: 'select', autocomplete: 'off', value: value ?? '', ...props });
 }
@@ -117,10 +124,10 @@ export function endpointForm({ initial = null, editing = false, existingIds = []
   const register = (x) => { fields.set(x.name, x); return x; };
 
   const idInput = textInput(f.id || '', { maxlength: 32 });
-  if (editing) idInput.readOnly = true;
+  if (editing) lockId(idInput);
   let idTouched = editing;
   idInput.addEventListener('input', () => { idTouched = true; });
-  const idField = register(field('id', t('ep.id'), idInput, t('ep.id_help')));
+  const idField = register(field('id', t('ep.id'), idInput, editing ? t('ep.id_locked') : t('ep.id_help')));
 
   const hostField = register(field('host', t('ep.host'), textInput(f.host || '', { inputmode: 'url' }), t('ep.host_help')));
   const portField = register(field('port', t('ep.port'), numberInput(f.port ?? '')));
@@ -281,7 +288,7 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
   const nameInput = textInput(f.name || '', { maxlength: 64 });
   const nameField = register(field('name', t('inv.name'), nameInput, t('inv.name_help')));
   const idInput = textInput(f.id || '', { maxlength: 32 });
-  if (editing) idInput.readOnly = true;
+  if (editing) lockId(idInput);
   let idTouched = editing;
   idInput.addEventListener('input', () => { idTouched = true; });
   const idField = register(field('id', t('inv.id'), idInput, editing ? t('inv.id_locked') : t('inv.id_help')));

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.5
+
+Small UI and test hardening.
+
+- The identifier of an existing connection or inverter is shown as locked in the edit dialog
+  (greyed, read-only, `aria-readonly`, lock icon and "cannot be changed" text). The value is still
+  submitted as before; the server keeps rejecting changes.
+- Tests: fixed a race in the UI test for a saved connection whose refresh fails; regression tests
+  for the reset of unreported fields on identity changes, the same-connection refresh after a
+  firmware change, and discovery removal and restoration of unreported entities.
+
 ## 0.2.4
 
 Display polish from the live test (master 1 through the gateway, firmware 1175: R22 = 0xFFFF,

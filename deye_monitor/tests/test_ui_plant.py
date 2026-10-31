@@ -3,6 +3,7 @@ their drop-downs, the read-only connection check and the live changes behind the
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -418,3 +419,27 @@ async def test_an_unusable_r65_asks_for_the_energy_resolution_and_the_choice_is_
         await card.get_by_role("button", name="0,1 kWh wählen").click()
         await expect(s.page.locator(".toast.ok")).to_be_visible()
         assert rig.service.plant.inverters[0].energy_resolution.value == "0.1"
+
+
+async def test_the_identifier_of_an_existing_connection_and_inverter_is_visibly_locked(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await seed(rig)
+        page = (await open_page(browser, url + "#/plant")).page
+        dialog = page.locator("dialog")
+        edits = (
+            page.locator('article.endpoint[data-endpoint="gw1"]'),
+            page.locator('article.inverter[data-inverter="deye1"]'),
+        )
+        for card in edits:
+            await card.get_by_role("button", name="Bearbeiten").click()
+            ident = field(page, "id")
+            await expect(ident).to_have_attribute("readonly", "")
+            await expect(ident).to_have_attribute("aria-readonly", "true")
+            await expect(ident).to_have_class(re.compile(r"\blocked\b"))
+            await expect(dialog.locator('[data-field="id"] .help')).to_contain_text("🔒")
+            await expect(dialog.locator('[data-field="id"] .help')).to_contain_text(
+                "nicht mehr ändern"
+            )
+            await dialog.get_by_role("button", name="Abbrechen").click()

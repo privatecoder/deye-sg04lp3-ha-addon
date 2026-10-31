@@ -12,7 +12,7 @@ MODULES = [
 
 
 def test_version() -> None:
-    assert deye_monitor.__version__ == "0.2.4"
+    assert deye_monitor.__version__ == "0.2.5"
 
 
 @pytest.mark.parametrize("name", MODULES)

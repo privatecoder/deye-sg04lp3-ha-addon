@@ -103,8 +103,11 @@ async def test_a_saved_connection_is_not_reported_as_a_failed_save_when_refresh_
         assert [e.id for e in rig.store.plant.endpoints] == ["gw1"]
         assert rig.service.revision == 1
         await expect(page.locator(".wizard .banner.error")).to_have_count(0)
-        # saving again does not send the change again
+        # saving again does not send the change again; it reads again, and the failing read replaces
+        # the banner with a new one: mark the old button and wait for the new one (not for timing)
+        await page.locator("#plant-reload").evaluate("b => b.setAttribute('data-stale', '')")
         await next_button.click()
+        await expect(page.locator("#plant-reload:not([data-stale])")).to_be_visible()
         await expect(warn).to_be_visible()
         assert len(posts) == 1, posts
         # reading works again: the assistant goes on with the accepted connection

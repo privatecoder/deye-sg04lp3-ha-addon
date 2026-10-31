@@ -6,7 +6,7 @@ The app is **read-only**: it sends only FC03 read accesses to inverters (see sec
 
 ## 1. Start prerequisites – tick these off first
 
-- [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.4` alone does not identify a state: note the commit/digest in the result sheet (section 10).
+- [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.5` alone does not identify a state: note the commit/digest in the result sheet (section 10).
 - [ ] The earlier re-verification findings N2-01 to N2-04 (energy namespace, isolated identity reset, restart after blocking, reconnect/confirmation states) were fixed in the fix rounds T7-Fix 2/3; the approval from the first item confirms that the approved version contains these rounds.
 - [x] **Before your first selection the app reads only identity and status.** An inverter without a saved selection shows "Please choose sensors" (section 3.1); normal reading begins only after saving via the web interface. There are no options such as `selected_keys` and no files in `/data` are changed by hand.
 - [x] Identity, active selection/read plan and connection errors can be inspected: web interface (overview, polling load per selection) and the diagnostic entities of the app device (section 7).

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from deye_monitor.config import EnergyResolution
 from deye_monitor.device import InverterState
 from deye_monitor.profiles.decode import Value
@@ -117,3 +119,50 @@ def test_unreported_entries_are_per_field() -> None:
     assert set(found) == {"mppt_count", "phase_count", "dsp_protocol_version"}
     assert unreported_entries(PROFILE, {}) == {}
     assert EnergyResolution.AUTO  # imported for the config contract
+
+
+@pytest.mark.parametrize("changed", ["r15", "r17", "r18", "profile_revision", "serial"])
+async def test_each_identity_version_resets_the_persisted_unreported_fields(
+    tmp_path: Path, changed: str
+) -> None:
+    cfg = inverter("deye1", "gw1", energy_resolution="0.1")
+    bad = device_regs(SN, r0=0xFFFF, r22=0xFFFF, r24=5, r65=0xFFFF)
+    async with rig([ep("gw1")], [cfg], {"gw1": bad}, tmp_path) as r:
+        inv = r.inv("deye1")
+        inv.set_selection(set(inv.selection) | {"dsp_protocol_version"}, 1)
+        await inv.step()
+        assert inv.unreported and 65 not in inv.current_plan().addresses
+    if changed == "profile_revision":
+        # rewrite through the real store, so that its integrity wrapper stays valid
+        r.runtime._capabilities.data["deye1"]["key"][-1] = "old-profile-revision"
+        r.runtime._capabilities.save()
+    good = device_regs("2409876543" if changed == "serial" else SN, r65=0x0104)
+    if changed == "serial":
+        cfg = inverter("deye1", "gw1", energy_resolution="0.1", expected_serial="2409876543")
+    if changed not in ("profile_revision", "serial"):
+        good[int(changed[1:])] += 1
+    async with rig([ep("gw1")], [cfg], {"gw1": good}, tmp_path) as r:
+        inv = r.inv("deye1")
+        inv.set_selection(set(inv.selection) | {"dsp_protocol_version"}, 1)
+        await r.step_until("deye1", lambda i: i.state is InverterState.RUNNING)
+        assert inv.unreported == {} and 65 in inv.current_plan().addresses
+        assert _values(r, "dsp_protocol_version")[-1] == 0x0104
+
+
+async def test_the_periodic_identity_restores_a_field_on_the_same_connection(
+    tmp_path: Path,
+) -> None:
+    cfg = inverter("deye1", "gw1", energy_resolution="0.1")
+    async with rig([ep("gw1")], [cfg], {"gw1": device_regs(SN, r65=0xFFFF)}, tmp_path) as r:
+        inv = r.inv("deye1")
+        inv.set_selection(set(inv.selection) | {"dsp_protocol_version"}, 1)
+        await inv.step()
+        assert "dsp_protocol_version" in inv.unreported
+        epoch = inv.route.transport.connection_epoch
+        r.servers["gw1"].responder.regs.update({15: 0x1176, 65: 0x0104})
+        r.clock.offset += inv.cfg.poll_identity_s + 1
+        await inv.step()
+        await inv.step()
+        assert inv.route.transport.connection_epoch == epoch
+        assert "dsp_protocol_version" not in inv.unreported
+        assert _values(r, "dsp_protocol_version")[-1] == 0x0104
