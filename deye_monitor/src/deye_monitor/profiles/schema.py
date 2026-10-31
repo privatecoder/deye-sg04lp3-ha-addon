@@ -13,7 +13,14 @@ from importlib import resources
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
 
 from deye_monitor.profiles.features import FEATURE_VALUES, Feature, Features
 
@@ -46,6 +53,13 @@ ENERGY_TOTAL_PAIRS = frozenset(
 _KEY_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _FORBIDDEN_PAIRS = frozenset({(620, 709), (709, 620)})  # V105.8: standalone fields, never a pair
+
+
+def _as_tuple(value: object) -> object:
+    return (value,) if isinstance(value, int) and not isinstance(value, bool) else value
+
+
+ProfileFallback = Literal["mppt_count", "phase_count", "battery_inputs"]
 
 
 class _Model(BaseModel):
@@ -160,9 +174,20 @@ class Entry(_Model):
         | None
     ) = None
     scale_source: Literal["energy_resolution"] | None = None
-    # a word that means "not reported by the device" (decoded as unknown, never as a value)
-    not_reported: Annotated[int, Field(ge=0, le=0xFFFF)] | None = None
-    display: Literal["hex"] | None = None  # raw words shown as 0x…
+    # Words that mean "not reported by the device" (decoded as unknown, never as a value). Per
+    # field, never global: 0xFFFF is a valid value of signed or 32-bit entries.
+    not_reported: Annotated[
+        tuple[Annotated[int, Field(ge=0, le=0xFFFF)], ...], BeforeValidator(_as_tuple)
+    ] = ()
+    # enum / value_map entries: every code the profile does not define counts as not reported
+    undefined_not_reported: bool = False
+    # u16 entries: defined code -> published number; every other code is unknown
+    value_map: dict[Annotated[int, Field(ge=0, le=0xFFFF)], int] | None = None
+    # enum entries: published label per enum value (what Home Assistant shows)
+    enum_labels: dict[str, str] | None = None
+    # shown with the hardware profile's value (source ``profile``) while the device reports none
+    profile_fallback: ProfileFallback | None = None
+    display: Literal["hex"] | None = None  # raw words shown as hex digits (no prefix)
     unit: str | None = None
     device_class: str | None = None
     state_class: Literal["measurement", "total", "total_increasing"] | None = None
@@ -194,6 +219,24 @@ class Entry(_Model):
         if self.low is not None and self.high is not None:
             return (self.low, self.high)
         return self.addrs or ()
+
+    @property
+    def declares_not_reported(self) -> bool:
+        return bool(self.not_reported) or self.undefined_not_reported
+
+    def is_not_reported(self, word: int) -> bool:
+        """The device leaves this field out: a declared sentinel, or (``undefined_not_reported``)
+        a code the profile does not define."""
+        if word in self.not_reported:
+            return True
+        if not self.undefined_not_reported:
+            return False
+        defined = self.enum.keys() if self.enum is not None else (self.value_map or {}).keys()
+        return word not in defined
+
+    def label(self, value: str) -> str:
+        """Published label of an enum value (the value itself without ``enum_labels``)."""
+        return (self.enum_labels or {}).get(value, value)
 
     @property
     def is_numeric(self) -> bool:
@@ -283,8 +326,21 @@ class Entry(_Model):
                 self.scale is None or self.raw_offset or self.release == "unresolved"
             ):
                 out.append("fw_offsets need a scale, a released entry and no raw_offset")
-        if self.not_reported is not None and self.addr is None:
+        if self.declares_not_reported and self.addr is None:
             out.append("not_reported applies to single-word entries")
+        if self.undefined_not_reported and self.enum is None and self.value_map is None:
+            out.append("undefined_not_reported needs an enum or a value_map")
+        if self.value_map is not None and self.type != "u16":
+            out.append("value_map applies to u16 entries")
+        if self.enum is not None:
+            if self.enum_labels is None or set(self.enum_labels) != set(self.enum.values()):
+                out.append("enum_labels must label exactly the enum values")
+        elif self.enum_labels is not None:
+            out.append("enum_labels apply to enum entries")
+        if self.profile_fallback is not None and not (
+            self.type == "u16" and (self.not_reported or self.undefined_not_reported)
+        ):
+            out.append("profile_fallback needs a u16 entry that declares not_reported")
         if self.display is not None and (self.type not in ("raw", "u32") or self.scale is not None):
             out.append("display requires an unscaled raw or u32 entry")
         if not self.is_numeric and (

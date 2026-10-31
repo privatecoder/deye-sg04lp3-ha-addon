@@ -5,6 +5,6 @@
  "cycle_id": 7,
  "energy_generation": 0,
  "energy_series": "g0",
- "operating_state": "normal",
+ "operating_state": "Normal",
  "timestamp": "2023-11-14T22:13:20Z"
 }

@@ -171,7 +171,7 @@ def test_expire_after_is_three_group_intervals() -> None:
 def test_enum_sensor_has_a_complete_option_list_and_no_unit_or_state_class() -> None:
     _, c = comp("operating_state")
     assert c["device_class"] == "enum"
-    assert c["options"] == ["standby", "self_check", "normal", "alarm", "fault", "activating"]
+    assert c["options"] == ["Standby", "Self-check", "Normal", "Alarm", "Fault", "Activating"]
     assert not {"unit_of_measurement", "state_class"} & set(c)
 
 
@@ -350,7 +350,7 @@ def test_missing_values_are_json_null_and_real_zero_stays_zero() -> None:
 
 def test_unknown_enum_and_nan_become_null() -> None:
     assert clean_value(PROFILE.entry("operating_state"), "unknown_99") == (None, True)
-    assert clean_value(PROFILE.entry("operating_state"), "normal") == ("normal", False)
+    assert clean_value(PROFILE.entry("operating_state"), "normal") == ("Normal", False)
     assert clean_value(PROFILE.entry("battery_voltage"), math.nan) == (None, True)
     assert clean_value(PROFILE.entry("battery_voltage"), math.inf) == (None, True)
     assert clean_value(PROFILE.entry("battery_voltage"), True) == (None, True)

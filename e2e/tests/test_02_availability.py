@@ -152,7 +152,7 @@ async def test_binary_sensor_true_false_unknown_and_unknown_enum_code(running):
     fake.regs[500] = 99
     await until(lambda: _enum(ha, "unknown"), "unknown enum code -> unknown", 60, 1)
     fake.regs[500] = 2
-    await until(lambda: _enum(ha, "normal"), "known code again", 60, 1)
+    await until(lambda: _enum(ha, "Normal"), "known code again", 60, 1)
 
 
 async def _enum(ha, expect: str) -> bool:

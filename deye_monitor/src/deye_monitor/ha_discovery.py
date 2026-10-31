@@ -21,7 +21,7 @@ import datetime
 import json
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -211,7 +211,7 @@ def inverter_component(
         # A fixed, complete option list: HA ignores values outside it (and would keep the old
         # state), so the publisher maps every unlisted value to null.
         comp["device_class"] = "enum"
-        comp["options"] = list(dict.fromkeys(entry.enum.values()))
+        comp["options"] = list(dict.fromkeys(entry.label(v) for v in entry.enum.values()))
     else:
         if entry.device_class:
             comp["device_class"] = entry.device_class
@@ -222,6 +222,14 @@ def inverter_component(
             comp["state_class"] = entry.state_class
         if entry.unit and entry.is_numeric and not entry.scale_source:
             comp["suggested_display_precision"] = _decimals(entry.scale)
+    if entry.profile_fallback and entry.platform == "sensor":
+        # ``source`` tells a device value from the hardware profile's value (the device left it out)
+        comp["json_attributes_topic"] = comp["state_topic"]
+        comp["json_attributes_template"] = (
+            "{{ {'source': (value_json.get('sources') or {}).get('"
+            f"{entry.key}"
+            "', 'device')} | tojson }}"
+        )
     return ckey, comp
 
 
@@ -258,8 +266,6 @@ INVERTER_DIAGNOSTICS: Final = (
     InverterDiagnostic("serial", "bound serial number"),
     InverterDiagnostic("firmware", "firmware words"),
     InverterDiagnostic("role", "parallel role (R336)"),
-    InverterDiagnostic("r65_raw", "R65 raw value", "number"),
-    InverterDiagnostic("r65_status", "R65 last reading"),
     InverterDiagnostic("energy_resolution", "energy resolution", "number", precision=1),
     InverterDiagnostic("energy_source", "energy resolution source"),
     InverterDiagnostic("energy_status", "energy confirmation"),
@@ -276,6 +282,12 @@ INVERTER_DIAGNOSTICS: Final = (
     InverterDiagnostic("transport_cooldown", "transport cooldown"),
     InverterDiagnostic("last_success", "last successful read", "timestamp"),
 )
+# Only present while R65 is reported; the raw value then lives in the app diagnostics only.
+R65_DIAGNOSTICS: Final = (
+    InverterDiagnostic("r65_raw", "R65 raw value", "number"),
+    InverterDiagnostic("r65_status", "R65 last reading"),
+)
+ENERGY_SOURCES: Final = {"override": "user choice", "r65": "R65"}
 CONFLICT_LIST_KEY: Final = "capability_conflict_list"
 _TEXT_LIMIT: Final = 120
 _MAX_CONFLICTS: Final = 20
@@ -298,7 +310,7 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     """The curated diagnostic values of one inverter from ``InverterRuntime.diagnostics()``.
     Only the fields below are ever read (no pass-through of arbitrary dictionaries, no secrets);
     anything unknown or malformed is ``None``."""
-    out: dict[str, Any] = {d.suffix: None for d in INVERTER_DIAGNOSTICS}
+    out: dict[str, Any] = {d.suffix: None for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS)}
     out[CONFLICT_LIST_KEY] = []
     if not isinstance(diag, Mapping):
         return out
@@ -313,7 +325,7 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     words = sub("identity").get("firmware_words")
     if isinstance(words, Mapping):
         parts = [
-            f"r{a}=0x{w:04x}"
+            f"r{a}={w:04X}"
             for a in (15, 17, 18)
             if isinstance(w := words.get(a), int) and not isinstance(w, bool)
         ]
@@ -335,7 +347,8 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     out["r65_status"] = None if not isinstance(ok, bool) else ("ok" if ok else "failed")
     energy = sub("energy")
     out["energy_resolution"] = _number(energy.get("effective_resolution"))
-    out["energy_source"] = _text(energy.get("source"))
+    source = _text(energy.get("source"))
+    out["energy_source"] = ENERGY_SOURCES.get(source, source) if source else None
     blocked, pending = _text(energy.get("blocked")), energy.get("pending_change")
     if blocked:
         out["energy_status"] = f"blocked: {blocked}"
@@ -371,11 +384,15 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
 
 
 def app_components(
-    ns: Namespace, inverters: Mapping[str, str], states: tuple[str, ...]
+    ns: Namespace,
+    inverters: Mapping[str, str],
+    states: tuple[str, ...],
+    r65_unreported: Collection[str] = (),
 ) -> dict[str, dict[str, Any]]:
     """Diagnostic entities of the app device. Per inverter the connection state and reason and the
     curated diagnostics (``INVERTER_DIAGNOSTICS``) live here, so an inverter without selected
-    sensors still has its status visible while its own device has no entities at all."""
+    sensors still has its status visible while its own device has no entities at all. The R65
+    entities of an inverter in ``r65_unreported`` (the device reports no R65) are left out."""
     device_id = ns.app_device_id
     expire = math.ceil(3 * APP_HEARTBEAT_S)
     out: dict[str, dict[str, Any]] = {}
@@ -407,7 +424,15 @@ def app_components(
             options=list(states),
         )
         add(f"inverter_{inverter_id}_reason", f"{label} state reason")
-        for d in INVERTER_DIAGNOSTICS:
+        shown = (
+            INVERTER_DIAGNOSTICS
+            if inverter_id in r65_unreported
+            else (
+                *INVERTER_DIAGNOSTICS,
+                *R65_DIAGNOSTICS,
+            )
+        )
+        for d in shown:
             extra = {}
             if d.kind == "timestamp":
                 extra["device_class"] = "timestamp"
@@ -619,12 +644,10 @@ def clean_value(entry: Entry, value: Value) -> tuple[Value, bool]:
         return None, True  # a sensor never shows a boolean
     if isinstance(value, float):
         return (value, False) if math.isfinite(value) else (None, True)
-    if (
-        entry.type == "enum"
-        and entry.enum
-        and not (isinstance(value, str) and value in set(entry.enum.values()))
-    ):
-        return None, True  # e.g. "unknown_99": the physical enum is unknown
+    if entry.type == "enum" and entry.enum:
+        if not (isinstance(value, str) and value in set(entry.enum.values())):
+            return None, True  # e.g. "unknown_99": the physical enum is unknown
+        return entry.label(value), False
     return value, False
 
 
@@ -640,6 +663,7 @@ def state_payload(
     energy_series: str,
     values: Mapping[str, Value],
     entries: Mapping[str, Entry],
+    profile_keys: frozenset[str] = frozenset(),
 ) -> tuple[bytes, int]:
     """Group JSON: only the selected keys, ``null`` for unknown values. Returns (bytes, number of
     values replaced by null because they were not publishable)."""
@@ -656,4 +680,6 @@ def state_payload(
             continue
         body[key], flag = clean_value(entry, value)
         replaced += flag
+    if profile_keys:
+        body["sources"] = {k: "profile" for k in sorted(profile_keys) if k in values}
     return encode(body), replaced

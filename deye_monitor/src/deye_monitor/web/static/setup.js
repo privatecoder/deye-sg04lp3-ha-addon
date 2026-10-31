@@ -308,6 +308,7 @@ export function setupView(invId) {
     const state_ = h('span', { class: 'sensor-state', id: `${id}-state` });
     const reset = h('button', { class: 'link', type: 'button', hidden: true, 'aria-label': t('sensor.reset_for', { name: localName(entry) }), onClick: () => { setKey(entry.key, shown().template.includes(entry.key)); } }, t('sensor.reset'));
     const warn = h('span', { class: 'chip warn', hidden: true }, t('sensor.warn'));
+    const note = h('span', { class: 'chip', hidden: true });
     const description = localText(entry.description);
     const row = h('div', { class: 'sensor', 'data-key': entry.key },
       h('label', { class: 'sensor-main', for: id },
@@ -318,10 +319,10 @@ export function setupView(invId) {
           h('span', { class: 'sensor-meta' },
             entry.hint ? h('span', { class: `chip hint-${entry.hint}` }, t(`sensor.hint.${entry.hint}`)) : null,
             expert ? h('span', { class: 'chip' }, t(`point.${entry.point}`)) : null,
-            warn))),
+            warn, note))),
       h('span', { class: 'sensor-actions' }, state_, reset));
     const search = [entry.key, entry.name.de, entry.name.en, description, entry.unit || '', t(`point.${entry.point}`)].join(' ').toLowerCase();
-    rows.set(entry.key, { entry, row, input, state: state_, reset, warn, search });
+    rows.set(entry.key, { entry, row, input, state: state_, reset, warn, note, search });
     return row;
   }
 
@@ -399,6 +400,7 @@ export function setupView(invId) {
     const added = new Set(sel.deviations.added);
     const removed = new Set(sel.deviations.removed);
     const warned = new Set(preview && dirty() ? preview.warnings : []);
+    const unreported = ((inverterById(invId) || base).status || {}).unreported || {};
     for (const [key, r] of rows) {
       r.input.checked = eff.has(key);
       let mark = '';
@@ -411,6 +413,10 @@ export function setupView(invId) {
       r.row.dataset.state = kind;
       r.reset.hidden = !(removed.has(key) || added.has(key));
       r.warn.hidden = !warned.has(key);
+      const gone = unreported[key];
+      r.row.classList.toggle('unreported', !!gone && gone.profile_value == null);
+      r.note.hidden = !gone;
+      r.note.textContent = gone ? t(gone.profile_value == null ? 'sensor.unreported' : 'sensor.unreported_profile', { reg: `R${gone.register}`, raw: `0x${Number(gone.raw).toString(16).toUpperCase().padStart(4, '0')}` }) : '';
     }
     for (const g of groups) {
       const on = g.keys.filter((k) => eff.has(k)).length;

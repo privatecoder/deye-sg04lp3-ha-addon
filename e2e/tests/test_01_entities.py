@@ -74,7 +74,7 @@ async def test_values_match_the_fake_registers(running):
         assert float(got["pv_energy_total_g0"]) == pytest.approx(12345.6)
         assert float(got["battery_energy_charge_today_g0"]) == pytest.approx(12.3)
         assert got["fault_word_1"] == "1"  # raw fault word, bit 0 set
-        assert got["operating_state"] == "normal"
+        assert got["operating_state"] == "Normal"
         assert got["parallel_phase"] == "A"
 
 

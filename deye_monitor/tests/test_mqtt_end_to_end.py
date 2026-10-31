@@ -43,7 +43,7 @@ async def test_running_inverter_publishes_values_and_goes_online(tmp_path: Path)
         groups = {s.topic.rsplit("/", 1)[1] for s in conn.sent if "/deye1/" in s.topic}
         assert {"status", "battery", "ac", "pv", "energy"} <= groups
         body = conn.last(pub.ns.group_topic("deye1", "status")).json()
-        assert body["operating_state"] == "normal" and body["cycle_id"] >= 1
+        assert body["operating_state"] == "Normal" and body["cycle_id"] >= 1
         assert not conn.last(pub.ns.group_topic("deye1", "status")).retain
         # every discovered key is a selected one; mandatory/internal reads never appear
         doc = conn.on(pub.ns.discovery_topic(pub.ns.inverter_device_id("deye1")))[-1].json()

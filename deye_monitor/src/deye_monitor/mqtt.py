@@ -234,6 +234,8 @@ class _Inverter:
     serial: str | None = None
     entries: dict[str, Entry] = field(default_factory=dict)
     diagnostics: Mapping[str, Any] | None = None  # newest event payload of the device loop
+    dropped: frozenset[str] = frozenset()  # selected entries the device does not report
+    r65_unreported: bool = False
 
     @property
     def wants_online(self) -> bool:
@@ -354,9 +356,32 @@ class MqttPublisher:
             rec.epoch = epoch
             self._drop_slots(inverter_id)
         self._check_serial(rec)
+        self._note_unreported(rec, diagnostics.get("unreported"))
         rec.diagnostics = dict(diagnostics)
         self._app_dirty = True  # published (throttled) with the next app diagnostics
         self._wake.set()
+
+    def _note_unreported(self, rec: _Inverter, unreported: object) -> None:
+        """Entries the device does not report get no entity (and the R65 diagnostics go with an
+        unreported R65); the discovery follows when that set changes."""
+        found = unreported if isinstance(unreported, Mapping) else {}
+        profile = rec.info.profile
+        dropped = frozenset(
+            k
+            for k in found
+            if isinstance(k, str) and (e := self._entry_of(profile, k)) and not e.profile_fallback
+        )
+        r65 = profile.energy_resolution_key in found
+        if dropped != rec.dropped or r65 != rec.r65_unreported:
+            rec.dropped, rec.r65_unreported = dropped, r65
+            self._discovery_dirty = True
+
+    @staticmethod
+    def _entry_of(profile: Profile, key: str) -> Entry | None:
+        try:
+            return profile.entry(key)
+        except KeyError:
+            return None
 
     # -- control --------------------------------------------------------------------------------
 
@@ -453,12 +478,15 @@ class MqttPublisher:
         states = tuple(s.value for s in InverterState)
         targets = {
             ns.discovery_topic(ns.app_device_id): DeviceTarget(
-                app_meta, app_components(ns, names, states)
+                app_meta,
+                app_components(
+                    ns, names, states, [i for i, r in self._inv.items() if r.r65_unreported]
+                ),
             )
         }
         for inverter_id, rec in self._inv.items():
             components: dict[str, dict[str, Any]] = {}
-            for key in sorted(rec.keys):
+            for key in sorted(rec.keys - rec.dropped):
                 entry = rec.entries[key]
                 if entry.internal or not entry.selectable:
                     log.warning("%s: %s is not selectable and is not published", inverter_id, key)
@@ -705,6 +733,7 @@ class MqttPublisher:
             energy_series=snap.energy_series,
             values=slot.values,
             entries=rec.entries,
+            profile_keys=snap.profile_keys,
         )
         self.nulled_values += replaced
         await publish(self.ns.group_topic(inverter_id, snap.group), payload, False)

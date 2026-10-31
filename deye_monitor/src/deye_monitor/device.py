@@ -56,7 +56,7 @@ from deye_monitor.profiles.hardware import (
     unknown_capability_codes,
     unreported_capabilities,
 )
-from deye_monitor.profiles.plan import ReadPlan, build_read_plan
+from deye_monitor.profiles.plan import ReadPlan, build_read_plan, unreported_entries
 from deye_monitor.profiles.schema import Entry, Profile
 from deye_monitor.protocol.modbus import ModbusError, ModbusExceptionResponse
 from deye_monitor.protocol.solarman_v5 import V5LoggerError
@@ -116,6 +116,7 @@ class Snapshot:
     energy_generation: int = 0
     energy_series: str = "g0"  # opaque statistics series: ``g<n>`` or ``<token>g<n>``
     failed: bool = False  # every read of the group failed: all values are unknown
+    profile_keys: frozenset[str] = frozenset()  # values taken from the hardware profile
 
 
 class StateSink(Protocol):
@@ -267,6 +268,10 @@ class InverterRuntime:
         self.cycle_id = 0
         self.observations: dict[str, Observation] = {}
         self.capability_conflicts: list[dict[str, str]] = []
+        # entries the device does not report (key -> raw word), checked at the identity read
+        self.unreported: dict[str, int] = {}
+        self._unreported_key: list[Any] | None = None
+        self._load_unreported()
         self.seen_serial: str | None = None
         self._plans: dict[int, ReadPlan] = {}
         self._due: dict[str, float] = {}
@@ -301,6 +306,7 @@ class InverterRuntime:
             ),
             "consecutive_failed_cycles": self.fails,
             "capability_conflicts": list(self.capability_conflicts),
+            "unreported": self._unreported_view(),
             "energy": self.energy.snapshot(),
             "coalesced_ticks": self.coalesced_ticks,
             "internal_errors": self.internal_errors,
@@ -321,6 +327,39 @@ class InverterRuntime:
                 "effective": self.route.max_read_registers,
             },
         }
+
+    def _load_unreported(self) -> None:
+        cached = self.capability_store.data.get(self.id)
+        if not isinstance(cached, dict) or not isinstance(cached.get("key"), list):
+            return
+        known = {e.key for e in self.profile.entries}
+        stored = cached.get("unreported")
+        if isinstance(stored, dict):
+            self.unreported = {
+                k: v
+                for k, v in stored.items()
+                if k in known and isinstance(v, int) and not isinstance(v, bool)
+            }
+            self._unreported_key = cached["key"]
+
+    def _unreported_view(self) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        for key, raw in sorted(self.unreported.items()):
+            entry = self.profile.entry(key)
+            out[key] = {
+                "register": entry.addr,
+                "raw": raw,
+                "profile_value": self._profile_value(entry),
+            }
+        return out
+
+    def _profile_value(self, entry: Entry) -> int | None:
+        return {
+            "mppt_count": self.hardware.expected_mppt_count,
+            "phase_count": self.hardware.expected_phase_count,
+            "battery_inputs": self.hardware.battery_inputs,
+            None: None,
+        }[entry.profile_fallback]
 
     def mark_internal_error(self, exc: BaseException) -> None:
         """An unexpected exception ended the task: go ``offline`` at once (reason
@@ -427,6 +466,9 @@ class InverterRuntime:
         self.seen_serial = None
         self.observations.clear()
         self.capability_conflicts = []
+        self.unreported = {}
+        self._unreported_key = None
+        self._plans.clear()
         self.state = InverterState.STARTING
         self.reason = why
 
@@ -543,6 +585,8 @@ class InverterRuntime:
             self._diag("bound", source="first_seen")
         elif serial != bound:
             return self._mismatch(route, now)
+        if self._unreported_stale(read.words, serial):
+            return False
         self._after_identity(route, read, now, serial)
         return True
 
@@ -587,6 +631,20 @@ class InverterRuntime:
         self._due[IDENTITY_GROUP] = now + self.cfg.poll_identity_s
         self._emit(IDENTITY_GROUP, route, read)
 
+    def _identity_key(self, words: Mapping[int, int], serial: str) -> list[Any]:
+        return [serial, words.get(15), words.get(17), words.get(18), self.profile.revision]
+
+    def _unreported_stale(self, words: Mapping[int, int], serial: str) -> bool:
+        """A new serial, firmware or profile revision voids what is known about unreported
+        fields: identify again with the full read plan so every field is checked once more."""
+        if not self.unreported or self._identity_key(words, serial) == self._unreported_key:
+            return False
+        self.unreported = {}
+        self._unreported_key = None
+        self._plans.clear()
+        self._next_identify_at = self.clock()
+        return True
+
     def _check_capabilities(self, words: Mapping[int, int], serial: str) -> None:
         caps = {a: words[a] for a in _CAPABILITY_WORDS if a in words}
         self.identity_info["firmware_words"] = {a: words.get(a) for a in (15, 17, 18)}
@@ -595,15 +653,35 @@ class InverterRuntime:
         self.identity_info["capabilities_unknown"] = unknown_capability_codes(self.hardware, caps)
         conflicts = capability_conflicts(self.hardware, caps)
         self.capability_conflicts = [{"code": c.code, "detail": c.detail} for c in conflicts]
-        key = [serial, words.get(15), words.get(17), words.get(18), self.profile.revision]
+        key = self._identity_key(words, serial)
+        found = unreported_entries(self.profile, words)
+        checked = {
+            e.key
+            for e in self.profile.entries
+            if not e.internal and e.declares_not_reported and e.addr in words
+        }
+        unreported = {k: v for k, v in self.unreported.items() if k not in checked} | found
+        changed = unreported != self.unreported
+        self.unreported = unreported
+        self._unreported_key = key
+        if changed:
+            self._plans.clear()
         if self.capability_store.corrupt:  # a cache may be rebuilt after a diagnostic
             self._diag("capability_store_rebuilt", problem=self.capability_store.problem)
             with contextlib.suppress(OSError):
                 self.capability_store.reset({})
         cached = self.capability_store.data.get(self.id)
-        if not isinstance(cached, dict) or cached.get("key") != key:
+        if (
+            not isinstance(cached, dict)
+            or cached.get("key") != key
+            or cached.get("unreported") != unreported
+        ):
             doc = copy.deepcopy(self.capability_store.data)
-            doc[self.id] = {"key": key, "conflicts": self.capability_conflicts}
+            doc[self.id] = {
+                "key": key,
+                "conflicts": self.capability_conflicts,
+                "unreported": unreported,
+            }
             try:
                 self.capability_store.commit(doc)
             except OSError:
@@ -614,6 +692,8 @@ class InverterRuntime:
         for key_, entry in ((k, self.profile.entry(k)) for k in self.selection):
             obs = self.observations.setdefault(key_, Observation(placeholder=False))
             obs.conflict = any(f is None or entry.point in f for f in flagged) and bool(conflicts)
+        if changed:
+            self._diag("unreported_updated")
         if conflicts:
             self._diag("capability_conflict")
 
@@ -768,11 +848,19 @@ class InverterRuntime:
 
     def _emit(self, group: str, route: Route, read: _GroupRead, *, failed: bool = False) -> None:
         self.cycle_id += 1
-        keys = [k for k in sorted(self.selection) if self.profile.entry(k).group == group]
+        dropped = {k for k in self.unreported if self.profile.entry(k).profile_fallback is None}
+        keys = [
+            k
+            for k in sorted(self.selection)
+            if self.profile.entry(k).group == group and k not in dropped
+        ]
         if failed:
             missing = {a for b in self._plan(route).blocks if b.group == group for a in b.needed}
         else:
             missing = set(read.missing)
+        profile_keys = frozenset(
+            k for k in keys if k in self.unreported and not failed
+        )  # fallback entries
         snapshot = Snapshot(
             cycle_id=self.cycle_id,
             group=group,
@@ -786,6 +874,7 @@ class InverterRuntime:
             energy_generation=self.energy.generation,
             energy_series=self.energy.series,
             failed=failed,
+            profile_keys=profile_keys,
         )
         if not failed:
             self._update_suggestions(snapshot)
@@ -794,16 +883,19 @@ class InverterRuntime:
         values: dict[str, Value] = {}
         for key in keys:
             entry = self.profile.entry(key)
-            value = (
-                None
-                if failed
-                else decode(
-                    entry,
-                    snapshot.words,
-                    energy_resolution=resolution,
-                    main_firmware=self._main_firmware(),
+            if key in profile_keys:
+                value: Value = self._profile_value(entry)
+            else:
+                value = (
+                    None
+                    if failed
+                    else decode(
+                        entry,
+                        snapshot.words,
+                        energy_resolution=resolution,
+                        main_firmware=self._main_firmware(),
+                    )
                 )
-            )
             if entry.fw_offsets is not None and not failed:
                 self._note_firmware_offset(entry, snapshot.words)
             values[key] = value
@@ -948,6 +1040,7 @@ class InverterRuntime:
                 self.features,
                 max_read_registers=route.max_read_registers,
                 energy_auto=self.cfg.energy_resolution is EnergyResolution.AUTO,
+                unreported=self.unreported,
                 poll=self.cfg.poll,
                 response_time_s=route.response_time_s,
                 gap_s=route.bus_gap_s,

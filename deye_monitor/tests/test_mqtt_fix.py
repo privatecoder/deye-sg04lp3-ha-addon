@@ -16,6 +16,7 @@ from deye_monitor.device import InverterState
 from deye_monitor.ha_discovery import (
     CONFLICT_LIST_KEY,
     INVERTER_DIAGNOSTICS,
+    R65_DIAGNOSTICS,
     app_components,
     inverter_diagnostic_values,
 )
@@ -179,10 +180,10 @@ def full_diag(**over: Any) -> dict[str, Any]:
 def test_every_contract_field_is_derived_and_unknown_is_null() -> None:
     v = inverter_diagnostic_values(full_diag())
     assert v["path"] == "primary:gw1" and v["serial"] == A
-    assert v["firmware"] == "r15=0x1001 r17=0x1000 r18=0x0070"
+    assert v["firmware"] == "r15=1001 r17=1000 r18=0070"
     assert v["role"] == "parallel=yes master=no phase=B"
     assert v["r65_raw"] == 0x0104 and v["r65_status"] == "ok"
-    assert v["energy_resolution"] == 0.1 and v["energy_source"] == "r65"
+    assert v["energy_resolution"] == 0.1 and v["energy_source"] == "R65"
     assert v["energy_status"] == "confirmed" and v["energy_series"] == "x7k2m9q4g0"
     assert v["capability_conflicts"] == 1
     assert v[CONFLICT_LIST_KEY] == [{"code": "mppt_count", "detail": "R22 reports 1 MPPT"}]
@@ -228,9 +229,9 @@ def test_diagnostics_are_curated_not_passed_through() -> None:
     )
     v = inverter_diagnostic_values(hostile)
     text = json.dumps(v, allow_nan=False)
-    assert "s3cret" not in text and set(v) == {d.suffix for d in INVERTER_DIAGNOSTICS} | {
-        CONFLICT_LIST_KEY
-    }
+    assert "s3cret" not in text and set(v) == {
+        d.suffix for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS)
+    } | {CONFLICT_LIST_KEY}
     assert len(v["serial"]) <= 120 and v["bus_utilisation"] is None
     assert v["energy_resolution"] is None and v["energy_series"] is None
     assert v["energy_source"] is None and v["transport_timeouts"] is None
@@ -240,7 +241,7 @@ def test_diagnostics_are_curated_not_passed_through() -> None:
 
 def test_app_device_has_diagnostic_entities_for_every_contract_field() -> None:
     comps = app_components(NS, {"deye1": "Deye 1"}, tuple(s.value for s in InverterState))
-    for d in INVERTER_DIAGNOSTICS:
+    for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS):
         comp = comps[f"inverter_deye1_{d.suffix}"]
         assert comp["entity_category"] == "diagnostic" and comp["platform"] == "sensor"
         assert comp["state_topic"] == NS.app_state_topic
@@ -264,7 +265,7 @@ async def test_required_energy_diagnostics_are_not_discarded(tmp_path: Path) -> 
         body = conn.last(NS.app_state_topic).json()
         assert body["inverter_deye1_r65_raw"] == 0x0104
         assert body["inverter_deye1_energy_resolution"] == 0.1
-        assert body["inverter_deye1_energy_source"] == "r65"
+        assert body["inverter_deye1_energy_source"] == "R65"
         assert body["inverter_deye1_energy_series"] == "x7k2m9q4g0"
         assert body["inverter_deye1_capability_conflicts"] == 1
         assert body["inverter_deye1_bus_utilisation"] == 0.123
@@ -311,7 +312,7 @@ async def test_device_layer_tracks_r65_serial_and_cooldown(tmp_path: Path) -> No
         assert d["r65"] == {"raw": 0x0104, "last_read_ok": False}
         values = inverter_diagnostic_values(d)
         assert values["r65_status"] == "failed" and values["serial"] == A
-        assert values["firmware"] == "r15=0x1001 r17=0x1000 r18=0x0070"
+        assert values["firmware"] == "r15=1001 r17=1000 r18=0070"
 
 
 # -- T8-05: jitter ------------------------------------------------------------------------------

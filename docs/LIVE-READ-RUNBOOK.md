@@ -6,7 +6,7 @@ The app is **read-only**: it sends only FC03 read accesses to inverters (see sec
 
 ## 1. Start prerequisites – tick these off first
 
-- [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.3` alone does not identify a state: note the commit/digest in the result sheet (section 10).
+- [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.4` alone does not identify a state: note the commit/digest in the result sheet (section 10).
 - [ ] The earlier re-verification findings N2-01 to N2-04 (energy namespace, isolated identity reset, restart after blocking, reconnect/confirmation states) were fixed in the fix rounds T7-Fix 2/3; the approval from the first item confirms that the approved version contains these rounds.
 - [x] **Before your first selection the app reads only identity and status.** An inverter without a saved selection shows "Please choose sensors" (section 3.1); normal reading begins only after saving via the web interface. There are no options such as `selected_keys` and no files in `/data` are changed by hand.
 - [x] Identity, active selection/read plan and connection errors can be inspected: web interface (overview, polling load per selection) and the diagnostic entities of the app device (section 7).
@@ -133,10 +133,10 @@ In HA: app log, the web interface and under **Developer tools → States** times
 | `sensor.deye_deyetest1_app_inverter_deye1_reason` | Reason in text form (e.g. "no usable identity answer", "serial number differs"); read first in every state except `running`. |
 | `sensor.deye_deyetest1_app_inverter_deye1_path` | Active path (`primary`/`fallback`) and endpoint. |
 | `sensor.deye_deyetest1_app_inverter_deye1_serial` | Bound inverter SN = `expected_serial`, unique per device. |
-| `sensor.deye_deyetest1_app_inverter_deye1_firmware` | Firmware words R15/R17/R18. |
+| `sensor.deye_deyetest1_app_inverter_deye1_firmware` | Firmware words R15/R17/R18 as hex digits, for example `r15=1175 r17=1001 r18=C070`. |
 | `sensor.deye_deyetest1_app_inverter_deye1_role` | Parallel role from R336 (display only). |
-| `sensor.deye_deyetest1_app_inverter_deye1_r65_raw` / `…_r65_status` | R65 raw value and whether the last reading worked. In the minimal stage a missing R65 is normal. |
-| `sensor.deye_deyetest1_app_inverter_deye1_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`r65`/override), confirmation/lock. |
+| `sensor.deye_deyetest1_app_inverter_deye1_r65_raw` / `…_r65_status` | R65 raw value and whether the last reading worked. Only present while the device reports R65 (a device that reports `0xFFFF` has no such entities). |
+| `sensor.deye_deyetest1_app_inverter_deye1_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`R65` or `user choice`), confirmation/lock. |
 | `sensor.deye_deyetest1_app_inverter_deye1_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |
 | `sensor.deye_deyetest1_app_inverter_deye1_capability_conflicts` | Number of conflicts with the hardware profile; the list is in the attribute `conflicts`. |
 | `sensor.deye_deyetest1_app_inverter_deye1_bus_utilisation` | Utilisation of the app bus (estimate, 1.0 = full). |
@@ -164,7 +164,7 @@ In HA: app log, the web interface and under **Developer tools → States** times
 
 If the device reports R65 = `0xFFFF` (or `0`), the overview and the sensor page show "The inverter reports no valid energy resolution (R65)", the energy values are `unknown`, the diagnostics show source `unknown` and status `r65_invalid`.
 
-1. Record the raw value and the display: `…_r65_raw` and the daily energy (PV today) on the inverter display.
+1. Record the raw value (the `unreported` entry `dsp_protocol_version` in the inverter diagnostics; there is no `…_r65_raw` entity while R65 is not reported) and the daily energy (PV today) on the inverter display.
 2. In the note **Choose 0.1 kWh** (usual for SG04LP3) or **Choose 1 kWh**, or set it under **Set up plant → Inverter → Energy resolution**. This is the only writing change of the app configuration; nothing is written to the device.
 3. The choice begins a **new energy series** (`…_energy_series` changes); the old series is never continued with a different factor.
 4. Check: daily energy in HA against the display (e.g. 7.0 instead of 70 kWh). If it does not match, choose the other resolution; that again begins a new series.

@@ -79,12 +79,12 @@
    "expire_after": 30,
    "name": "Operating state",
    "options": [
-    "standby",
-    "self_check",
-    "normal",
-    "alarm",
-    "fault",
-    "activating"
+    "Standby",
+    "Self-check",
+    "Normal",
+    "Alarm",
+    "Fault",
+    "Activating"
    ],
    "platform": "sensor",
    "state_topic": "deye/ab12cd34/deye1/status",
@@ -139,6 +139,6 @@
  },
  "origin": {
   "name": "Deye SG04LP3 Monitor",
-  "sw_version": "0.2.3"
+  "sw_version": "0.2.4"
  }
 }

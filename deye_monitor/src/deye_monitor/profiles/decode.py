@@ -70,7 +70,7 @@ def decode(
         or energy_resolution not in ENERGY_FACTORS
     ):
         raise ValueError(f"energy_resolution must be one of {ENERGY_FACTORS}")
-    if entry.not_reported is not None and words[0] == entry.not_reported:
+    if entry.is_not_reported(words[0]):
         return None
     t = entry.type
     if t == "ascii":
@@ -78,11 +78,13 @@ def decode(
     if t in ("u32", "s32"):
         raw = (words[1] << 16) | words[0]  # words are ordered low, high
         if entry.display == "hex":
-            return f"0x{raw:08x}"
+            return f"{raw:08X}"
         if t == "s32":
             raw = _signed(raw, 32)
         return _scale(entry, raw, energy_resolution)
     field, bits = _masked(entry, words[0])
+    if entry.value_map is not None:
+        return entry.value_map.get(words[0])
     if t == "u16":
         return _scale(entry, field, energy_resolution)
     if t == "s16":
@@ -103,7 +105,7 @@ def decode(
     if t == "hhmm":
         hours, minutes = divmod(field, 100)
         return f"{hours:02d}:{minutes:02d}" if hours <= 23 and minutes <= 59 else None
-    return f"0x{field:04x}" if entry.display == "hex" else field  # raw
+    return f"{field:04X}" if entry.display == "hex" else field  # raw
 
 
 def _ascii(words: list[int]) -> str | None:

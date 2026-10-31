@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.2.4
+
+Display polish from the live test (master 1 through the gateway, firmware 1175: R22 = 0xFFFF,
+R24 = 5, R65 = 0xFFFF).
+
+- **Breaking for automations:** enum states are now readable labels instead of snake_case, for every
+  enum sensor (for example `smart_load` is now `Smart Load`, `three_phase_lv_hybrid` is
+  `Three-phase LV hybrid`, `lithium` is `Lithium`, `normal` is `Normal`, `off`/`on` are `Off`/`On`).
+  The discovery `options` list the labels. Update templates and automations that compare the old
+  values.
+- Fields the device does not report are checked once at the identity read (and again after a change
+  of serial number, R15/R17/R18 or profile revision) and then no longer polled or published. This is
+  per field and only for profile entries that declare a not-reported value (R0, R22, R24, R65), never
+  a global 0xFFFF rule. The result is kept per inverter (diagnostics `unreported`: key, register, raw
+  value); existing selections stay valid, the field is just inactive and greyed out in the sensor
+  selection ("not reported by the device (R22=0xFFFF)"). Discovery of such an entity is removed like
+  a deselected one.
+- MPPT count and Phase count show the profile value (SUN-10K: 2 MPPT, 3 phases) while R22 is not
+  reported; the entity attribute `source` is `profile` (otherwise `device`).
+- R24 is now "Battery inputs" (a number): a defined code gives the device value, an undefined code
+  (anything except 0/1/2) or 0xFFFF gives the profile value 1 with `source: profile`. The raw code
+  is only in the diagnostics (`identity.capability_words`), no longer an own entity. The key
+  `battery_input_code` is unchanged.
+- Firmware words are shown as hex digits without prefix, upper case, four digits: `1175`, `1001`,
+  `C070` (entities and the diagnostics `r15=1175 r17=1001 r18=C070`).
+- `alarm_parallel_comm` (R554 bit 15) is named "Parallel communication warning" (key unchanged).
+- The entities "R65 raw value" and "R65 last reading" are only created while R65 is reported. The
+  derived "Energy resolution" stays, its source reads `user choice` or `R65`.
+
 ## 0.2.3
 
 Findings from comparing the sources (community projects, document history V100.0 to V105.8, firmware
@@ -14,8 +43,11 @@ inverter, not from the logger.
   of unsigned (unsigned showed jumps of 65 kW).
 - R219 BMS off-grid discharge current is now a current in A (like R218; a third-party dump shows
   420/420 A) instead of a raw number.
-- `max_read_registers` is limited to 6 to 80 (was 100): 87 and 89 registers in one read work, 131
-  fails. The default 60 and the 50 ms pause between requests are unchanged.
+- `max_read_registers`: configurations with 81 to 100 still start; values above 80 are limited to 80
+  at runtime (87 and 89 registers in one read work, 131 fails). A warning is logged once at start and
+  the diagnostics show `max_read_registers` configured and effective. The default 60 and the 50 ms
+  pause between requests are unchanged.
+- All documents under `docs/` are now in English.
 - Hint for an unusable R65: 0.1 kWh is marked as recommended (a third-party capture of a SUN-10K-SG04LP3
   also shows R65 = 0xFFFF with counters in 0.1 kWh). Still no automatic choice.
 - Profile notes: R0 0x0005 is documented in V104.2 (22.12.2022); R24 history corrected (V100.0: R24

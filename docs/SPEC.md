@@ -39,7 +39,7 @@ Transport enum fixed: `modbus_tcp | rtu_over_tcp | serial_rtu | solarman_v5_tcp`
 - `solarman_v5_tcp`: `host`, `port` (default 8899), `logger_serial` (uint32 ≠ 0). The unit ID is that of the inverter.
 - `modbus_tcp` / `rtu_over_tcp`: `host`, `port` (default 502). No auto-detection of the framing.
 - `serial_rtu`: `serial_device` (`/dev/serial/by-id/...`), `baudrate` (default 9600), 8N1 fixed.
-- Common: `bus_id` (default = canonical endpoint, see §8.1), `timeout_s`, `max_read_registers` (default 60, max 80, hard upper limit 125), `request_gap_ms`.
+- Common: `bus_id` (default = canonical endpoint, see §8.1), `timeout_s`, `max_read_registers` (default 60, configurable up to 100 but limited to 80 at runtime, hard upper limit 125), `request_gap_ms`.
 
 Each inverter has exactly one `endpoint` (primary) and optionally a `fallback_endpoint`. Fallback only after N consecutive failures (default 3), and only if the same inverter serial number (R3–R7) is read there; return to the primary path periodically (default 300 s). Never poll both permanently at the same time. Entity IDs depend only on the inverter ID, not on the endpoint.
 

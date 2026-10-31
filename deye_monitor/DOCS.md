@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher (0.2.3, experimental).** The app validates its
+> **Status: device loop with MQTT publisher (0.2.4, experimental).** The app validates its
 > configuration, then connects to the configured endpoints (read-only, Modbus function code 03
 > only), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
@@ -10,7 +10,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.3 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.4 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -61,12 +61,24 @@ device loop and without the publisher.
   own time budget. If the app's `offline` cannot be delivered, the connection is cut without a
   DISCONNECT so that the broker publishes the will.
 * **Diagnostics.** The app device carries, per inverter, diagnostic sensors: state and reason,
-  connection path and endpoint, bound serial number, firmware words (R15/R17/R18), parallel role
-  (R336), R65 raw value and whether the last reading worked, effective energy resolution and its
-  source, confirmation/blocking state, current energy series, number of capability conflicts (the
+  connection path and endpoint, bound serial number, firmware words (R15/R17/R18, hex digits such as
+  `r15=1175 r17=1001 r18=C070`), parallel role (R336), R65 raw value and whether the last reading
+  worked (only while the device reports R65), effective energy resolution and its source (`user
+  choice` or `R65`), confirmation/blocking state, current energy series, number of capability conflicts (the
   list is an attribute), bus utilisation, transport timeouts/frame errors/resyncs, cooldown and the
   time of the last successful read. Unknown values are `unknown` (`null`); updates are throttled to
   one message per 0.5 s.
+* **Fields the device does not report.** Profile entries that declare a not-reported value (R0,
+  R22, R24, R65: `0xFFFF`, R65 also `0`, R24 any undefined code) are checked once at the identity
+  read and again after a change of serial number, firmware (R15/R17/R18) or profile revision.
+  Such a field is no longer polled and gets no Home Assistant entity (a published one is removed
+  like a deselected sensor); in the sensor selection it is greyed out with the note "not reported by
+  the device (R22=0xFFFF)", and saved selections stay valid. The result is kept per inverter and
+  shown in the inverter diagnostics (`unreported`: key, register, raw value). MPPT count, Phase count
+  and Battery inputs are the exception: they show the hardware profile value (SUN-10K: 2 MPPT, 3
+  phases, 1 battery input) with the attribute `source: profile`, and `source: device` otherwise.
+* **Readable states.** Enum sensors publish readable labels (`Smart Load`, `Three-phase LV hybrid`,
+  `Lithium`, `Normal`); the discovery `options` list them.
 * **Limits.** One discovery document per device is limited to 256 KiB (the app refuses to send
   more; nothing is truncated). `/data/discovery.json` is written before anything is published; if it
   cannot be written, nothing is published and the app stays `offline`.

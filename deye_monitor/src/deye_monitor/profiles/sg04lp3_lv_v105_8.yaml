@@ -90,7 +90,8 @@ entries:
     de: "Gerätetyp-Kennung, die der Wechselrichter meldet."
     en: "Device type code reported by the inverter."
   addr: 0
-  not_reported: 65535
+  not_reported:
+  - 65535
   type: enum
   enum:
     512: string_inverter
@@ -101,6 +102,14 @@ entries:
     1536: three_phase_hv_hybrid
     2048: pcs_100k
     2304: balcony_storage
+  enum_labels:
+    'string_inverter': "String inverter"
+    'single_phase_hybrid': "Single-phase hybrid"
+    'microinverter': "Microinverter"
+    'three_phase_lv_hybrid': "Three-phase LV hybrid"
+    'three_phase_hv_hybrid': "Three-phase HV hybrid"
+    'pcs_100k': "PCS 100K"
+    'balcony_storage': "Balcony storage"
   entity_category: diagnostic
   category: diagnostic
   point: diagnostic
@@ -392,7 +401,9 @@ entries:
     de: "Anzahl der PV-Eingänge (MPPT), die das Gerät meldet."
     en: "Number of PV inputs (MPPT) the device reports."
   addr: 22
-  not_reported: 65535
+  not_reported:
+  - 65535
+  profile_fallback: mppt_count
   type: u16
   mask: 65280
   shift: 8
@@ -422,7 +433,9 @@ entries:
     de: "Anzahl der Phasen, die das Gerät meldet."
     en: "Number of phases the device reports."
   addr: 22
-  not_reported: 65535
+  not_reported:
+  - 65535
+  profile_fallback: phase_count
   type: u16
   mask: 255
   scale: 1
@@ -491,18 +504,22 @@ entries:
     to claim a power class.
 - key: battery_input_code
   name:
-    de: Batterieeingangs-Code (R24)
-    en: Battery input code (R24)
+    de: Batterieeingänge
+    en: Battery inputs
   description:
-    de: "Kennung des Batterieeingangs, die das Gerät meldet."
-    en: "Code of the battery input the device reports."
+    de: "Anzahl der Batterieeingänge; meldet das Gerät keine, gilt der Wert des Hardwareprofils."
+    en: "Number of battery inputs; if the device reports none, the hardware profile value applies."
   addr: 24
-  not_reported: 65535
-  type: enum
-  enum:
-    0: one_input_default
-    1: one_input
-    2: two_inputs
+  not_reported:
+  - 65535
+  undefined_not_reported: true
+  type: u16
+  scale: 1
+  value_map:
+    0: 1
+    1: 1
+    2: 2
+  profile_fallback: battery_inputs
   entity_category: diagnostic
   category: diagnostic
   point: diagnostic
@@ -518,7 +535,7 @@ entries:
   source: "V105.8 registers.json inverter: R24 (TXT 349-358)"
   confidence: document_only
   default_enabled: true
-  notes: "Code for the number of battery inputs; says nothing about whether a battery is connected. Every code other than 0/1/2 is undefined (V105.8 range [0,4], live code 5): shown raw, no conflict, the profile applies. In V100.0 R24 was empty, R25-R29 were 'reserve SN byte' and R23 was the grid voltage class; R23-R34 were reassigned with V104.2. Live, FW 0x1175 returns R24=5 through logger and Waveshare gateway alike, so the value comes from the inverter; the firmware copies R22/R24 from internal sources (Codex), producer unproven. Undefined values carry no statement."
+  notes: "Code for the number of battery inputs; says nothing about whether a battery is connected. Every code other than 0/1/2 is undefined (V105.8 range [0,4], live code 5): not reported (no conflict, no own entity), the profile value applies. In V100.0 R24 was empty, R25-R29 were 'reserve SN byte' and R23 was the grid voltage class; R23-R34 were reassigned with V104.2. Live, FW 0x1175 returns R24=5 through logger and Waveshare gateway alike, so the value comes from the inverter; the firmware copies R22/R24 from internal sources (Codex), producer unproven. Undefined values carry no statement."
 - key: id_battery_input_code
   name:
     de: Batterieeingangs-Code (intern)
@@ -553,6 +570,10 @@ entries:
     0: three_phase
     1: split_phase
     2: two_phase_60
+  enum_labels:
+    'three_phase': "Three-phase"
+    'split_phase': "Split-phase"
+    'two_phase_60': "Two-phase 60°"
   entity_category: diagnostic
   category: diagnostic
   point: diagnostic
@@ -581,6 +602,10 @@ entries:
     0: eu
     1: ul
     2: jp
+  enum_labels:
+    'eu': "EU"
+    'ul': "UL"
+    'jp': "JP"
   entity_category: diagnostic
   category: diagnostic
   point: diagnostic
@@ -651,6 +676,9 @@ entries:
     de: "Protokollversion der Signalverarbeitung; bestimmt, wie genau Energiezähler aufgelöst werden."
     en: "Protocol version of the signal processor; decides the resolution of the energy counters."
   addr: 65
+  not_reported:
+  - 0
+  - 65535
   type: raw
   entity_category: diagnostic
   category: diagnostic
@@ -745,6 +773,11 @@ entries:
     1: B
     2: C
     3: void
+  enum_labels:
+    'A': "A"
+    'B': "B"
+    'C': "C"
+    'void': "Void"
   entity_category: diagnostic
   category: settings
   point: parallel
@@ -809,6 +842,13 @@ entries:
     3: alarm
     4: fault
     5: activating
+  enum_labels:
+    'standby': "Standby"
+    'self_check': "Self-check"
+    'normal': "Normal"
+    'alarm': "Alarm"
+    'fault': "Fault"
+    'activating': "Activating"
   device_class: enum
   entity_category: diagnostic
   category: status
@@ -839,6 +879,9 @@ entries:
   enum:
     0: 'off'
     1: 'on'
+  enum_labels:
+    'off': "Off"
+    'on': "On"
   entity_category: diagnostic
   category: status
   point: diagnostic
@@ -1265,7 +1308,7 @@ entries:
 - key: alarm_parallel_comm
   name:
     de: Warnung Parallel-Kommunikation
-    en: Parallel communication quality
+    en: Parallel communication warning
   description:
     de: "Warnung bei schlechter Verbindung zwischen parallel betriebenen Geräten."
     en: "Warning for a poor link between inverters running in parallel."
@@ -6004,6 +6047,9 @@ entries:
   enum:
     0: 'off'
     1: 'on'
+  enum_labels:
+    'off': "Off"
+    'on': "On"
   entity_category: diagnostic
   category: settings
   point: diagnostic
@@ -6030,6 +6076,9 @@ entries:
   enum:
     0: lead
     1: lithium
+  enum_labels:
+    'lead': "Lead"
+    'lithium': "Lithium"
   entity_category: diagnostic
   category: battery
   point: battery
@@ -6082,6 +6131,10 @@ entries:
     0: generator
     1: smart_load
     2: ac_coupled
+  enum_labels:
+    'generator': "Generator"
+    'smart_load': "Smart Load"
+    'ac_coupled': "AC coupled"
   entity_category: diagnostic
   category: settings
   point: gen_port
@@ -6138,6 +6191,11 @@ entries:
     1: 20_percent
     2: 30_percent
     3: 50_percent
+  enum_labels:
+    '0_percent': "0 %"
+    '20_percent': "20 %"
+    '30_percent': "30 %"
+    '50_percent': "50 %"
   entity_category: diagnostic
   category: settings
   point: gen_port

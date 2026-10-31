@@ -191,8 +191,8 @@ def test_real_sensor_handlers_for_numbers_enums_and_energy() -> None:
         volt._update_state(message({"battery_voltage": 0}))
         assert volt.native_value == "0"
         enum = make_sensor(hass, comps["operating_state"])
-        enum._update_state(message({"operating_state": "normal"}))
-        assert enum.native_value == "normal"
+        enum._update_state(message({"operating_state": "Normal"}))
+        assert enum.native_value == "Normal"
         enum._update_state(message({"operating_state": None}))  # the publisher maps unknown_99
         assert enum.native_value is None  # to null, so the old state cannot stay
         energy_key = next(k for k in comps if k.startswith("battery_energy_charge_total_"))

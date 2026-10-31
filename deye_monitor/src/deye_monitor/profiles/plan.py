@@ -41,6 +41,19 @@ def template_selection(
     )
 
 
+def unreported_entries(profile: Profile, words: Mapping[int, int]) -> dict[str, int]:
+    """Entries that declare a not-reported word and read exactly that word: key -> raw word.
+    Per field, never global; an address that was not read says nothing."""
+    out: dict[str, int] = {}
+    for e in profile.entries:
+        if e.internal or not e.declares_not_reported or e.addr is None:
+            continue
+        word = words.get(e.addr)
+        if word is not None and e.is_not_reported(word):
+            out[e.key] = word
+    return out
+
+
 def selection_problems(profile: Profile, selected_keys: Collection[str]) -> dict[str, str]:
     by_key = {e.key: e for e in profile.entries}
     rejected: dict[str, str] = {}
@@ -111,6 +124,7 @@ def build_read_plan(
     max_read_registers: int,
     energy_auto: bool,
     max_gap: int = 0,
+    unreported: Collection[str] = (),
     poll: PollConfig | None = None,
     response_time_s: float = 0.25,
     gap_s: float = 0.05,
@@ -120,7 +134,9 @@ def build_read_plan(
     ``features`` are accepted for the call contract of the UI backend; entry selection is
     explicit (``selected_keys``), the template is applied by the caller. ``max_gap`` allows
     bridging up to that many addresses between needed ones, but only when every bridged address
-    is known to the profile; the default reads exactly the needed words.
+    is known to the profile; the default reads exactly the needed words. ``unreported`` are
+    entries the device does not report (``unreported_entries``): they are not read any more; a
+    mandatory entry or the R65 dependency of the automatic energy resolution stays.
     """
     del features
     if not 1 <= max_read_registers <= MAX_REGISTERS_PER_READ:
@@ -135,7 +151,7 @@ def build_read_plan(
 
     by_key = {e.key: e for e in profile.entries}
     mandatory = frozenset(e.key for e in profile.entries if e.mandatory)
-    keys = set(selected_keys) | mandatory
+    keys = (set(selected_keys) - set(unreported)) | mandatory
     r65_required = energy_auto and any(by_key[k].scale_source for k in selected_keys)
     if r65_required:
         keys.add(profile.energy_resolution_key)

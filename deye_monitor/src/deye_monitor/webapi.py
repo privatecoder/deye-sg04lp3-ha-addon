@@ -299,6 +299,7 @@ def status_view(inv: InverterRuntime, bus_load: float | None) -> dict[str, Any]:
         "serial_matches": d["serial_matches"],
         "identity": d["identity"],
         "capability_conflicts": d["capability_conflicts"],
+        "unreported": d["unreported"],
         "energy": d["energy"],
         "hints": hints,
         "error_counters": {
@@ -581,6 +582,7 @@ class WebApi:
                 "serial_matches": None,
                 "identity": {},
                 "capability_conflicts": [],
+                "unreported": {},
                 "energy": {},
                 "hints": [],
                 "error_counters": {},

@@ -122,6 +122,7 @@ code { font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; background: v
 .icon-btn:hover { background: var(--bg); }
 
 .chip { display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .8rem; font-weight: 500; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+.sensor.unreported .sensor-main { opacity: 0.55; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .chip.prefilled { background: var(--info-soft); color: var(--primary); border-color: transparent; }
 .chip.match { background: var(--ok-soft); color: var(--ok); border-color: transparent; }

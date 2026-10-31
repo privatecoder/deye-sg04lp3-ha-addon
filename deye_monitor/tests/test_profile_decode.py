@@ -131,9 +131,10 @@ def test_r22_and_r24(p: Profile) -> None:
     assert d(p, "mppt_count", {22: 0x0203}) == 2
     assert d(p, "phase_count", {22: 0x0203}) == 3
     assert d(p, "mppt_count", {22: 0x0503}) == 5
-    assert d(p, "battery_input_code", {24: 0}) == "one_input_default"
-    assert d(p, "battery_input_code", {24: 2}) == "two_inputs"
-    assert d(p, "battery_input_code", {24: 4}) == "unknown_4"
+    assert d(p, "battery_input_code", {24: 0}) == 1
+    assert d(p, "battery_input_code", {24: 1}) == 1
+    assert d(p, "battery_input_code", {24: 2}) == 2
+    assert d(p, "battery_input_code", {24: 4}) is None  # undefined code: not reported
 
 
 def test_status_words_and_bits(p: Profile) -> None:
@@ -175,8 +176,8 @@ def test_hhmm_enum_raw(p: Profile) -> None:
     assert d(p, "gen_on_grid_input", {189: 0x0301}) is True
     assert d(p, "tou_weekdays", {146: 0b1111_1110}) == 0b1111111
     assert d(p, "tou_slot1_soc_raw", {166: 0x1234}) == 0x1234  # R166-R171: raw only
-    assert d(p, "fw_comm_version", {17: 0x1000, 18: 0x0070}) == "0x10000070"  # shown as hex
-    assert d(p, "fw_main_version", {15: 0x1175}) == "0x1175"
+    assert d(p, "fw_comm_version", {17: 0x1000, 18: 0x0070}) == "10000070"  # shown as hex
+    assert d(p, "fw_main_version", {15: 0x1175}) == "1175"
     assert d(p, "id_fw_main_version", {15: 0x1175}) == 0x1175  # the internal key stays numeric
 
 
@@ -238,7 +239,9 @@ def test_every_entry_decodes_to_something_for_zero_words(p: Profile) -> None:
     for e in p.entries:
         words = dict.fromkeys(e.addresses, 0)
         value = decode(e, words, energy_resolution=0.1)
-        if e.type != "ascii":
+        if e.is_not_reported(0):  # a declared sentinel (R65 = 0): unknown, never a value
+            assert value is None, e.key
+        elif e.type != "ascii":
             assert value is not None, e.key
         else:
             assert value is None
@@ -277,6 +280,10 @@ def test_not_reported_words_are_unknown_per_field(p: Profile) -> None:
     assert d(p, "mppt_count", {22: 0xFFFF}) is None
     assert d(p, "phase_count", {22: 0xFFFF}) is None
     assert d(p, "battery_input_code", {24: 0xFFFF}) is None
+    assert d(p, "battery_input_code", {24: 5}) is None  # undefined code
+    assert d(p, "dsp_protocol_version", {65: 0xFFFF}) is None
+    assert d(p, "dsp_protocol_version", {65: 0x0104}) == 0x0104
+    assert d(p, "battery_soc", {588: 0xFFFF}) == 65535  # no global 0xFFFF rule
     assert d(p, "mppt_count", {22: 0x0203}) == 2 and d(p, "phase_count", {22: 0x0203}) == 3
     assert d(p, "device_type", {0: 0x0500}) == "three_phase_lv_hybrid"
     assert d(p, "device_type", {0: 0x0005}) == "three_phase_lv_hybrid"
