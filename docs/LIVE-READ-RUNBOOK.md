@@ -68,7 +68,7 @@ Do not start an additional debug app or Modbus console in parallel. Local poller
 
 ### 3.1 First start: "Please choose sensors"
 
-As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 57 sensors and 29 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device. 
+As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 59 sensors and 29 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device. 
 
 1. Start the app (the app options stay empty except `instance_id`) and create the connection and inverter in the setup wizard of the web interface (stage 1, section 4).
 2. In the web interface (sidebar **Deye Monitor**) the inverter's card shows **"Please choose sensors"** after identification. Open **"Choose now"** there (or **Set up sensors**).

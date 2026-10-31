@@ -186,7 +186,7 @@ wheels = [
 
 [[package]]
 name = "deye-monitor"
-version = "0.2.7"
+version = "0.2.8"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

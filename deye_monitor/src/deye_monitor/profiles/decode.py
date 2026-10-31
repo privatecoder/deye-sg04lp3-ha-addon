@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 
+from deye_monitor.profiles.alarms import format_active
 from deye_monitor.profiles.schema import Entry
 
 Value = int | float | str | bool | None
@@ -75,6 +76,9 @@ def decode(
     t = entry.type
     if t == "ascii":
         return _ascii(words)
+    if t == "alarms":
+        assert entry.alarm_kind is not None
+        return format_active(entry.alarm_kind, words)
     if t in ("u32", "s32"):
         raw = (words[1] << 16) | words[0]  # words are ordered low, high
         if entry.display == "hex":

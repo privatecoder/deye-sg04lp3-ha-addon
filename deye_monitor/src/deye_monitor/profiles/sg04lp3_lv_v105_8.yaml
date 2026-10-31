@@ -1306,8 +1306,8 @@ entries:
     de: Warnung Batteriekommunikation (W31)
     en: Battery communication warning (W31)
   description:
-    de: "Warnung W31: Lithium-Batterie fehlt bzw. keine Kommunikation mit dem BMS (Dokument: Lithium battery missing)."
-    en: "Warning W31: lithium battery missing / no communication with the BMS (document: lithium battery missing alarm)."
+    de: "Warnung W31: Kommunikation mit dem BMS der Batterie gestört (Deye-Alarmliste: Battery_comm_warn)."
+    en: "Warning W31: battery (BMS) communication abnormal (Deye alarm list: Battery_comm_warn)."
   addr: 554
   type: bitfield
   mask: 16384
@@ -1326,7 +1326,7 @@ entries:
   source: "V105.8 registers.json inverter: R554 (TXT 3463-3474)"
   confidence: document_only
   default_enabled: true
-  notes: Documented bit 14 of the second alarm word (the 31st warning bit, W31 in the Deye cloud, shown there as battery communication warning). The W number is inferred from the bit position. A previously stored cause may persist.
+  notes: Bit 14 of the second alarm word is W31 \"Battery_comm_warn\" in the Deye alarm list (Wn = bit n-1). A previously stored cause may persist.
 - key: alarm_parallel_comm
   name:
     de: Warnung Parallel-Kommunikation
@@ -1353,6 +1353,82 @@ entries:
   confidence: document_only
   default_enabled: true
   notes: Documented bit 15. A previously stored cause may persist.
+- key: alarm_meter_comm
+  name:
+    de: Warnung Zählerkommunikation (W4)
+    en: Meter communication warning (W4)
+  description:
+    de: "Warnung W4: Kommunikation mit dem Zähler gestört (Deye-Alarmliste: Meter Comm Fail)."
+    en: "Warning W4: meter communication failure (Deye alarm list: Meter Comm Fail)."
+  addr: 553
+  type: bitfield
+  mask: 8
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: status
+  tags:
+  - fault
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "Deye alarm list 5-12 kW: W4; V105.8 registers.json inverter: R553"
+  confidence: document_only
+  default_enabled: false
+  notes: Bit 3 of the first alarm word (Wn = bit n-1). Off by default, as most installations have no meter.
+- key: active_warnings
+  name:
+    de: Aktive Warnungen
+    en: Active warnings
+  description:
+    de: "Aktive Warnungen mit Code und Name, kommagetrennt; \"none\", wenn keine aktiv ist. Das Attribut \"alarms\" nennt Code, Name und Abhilfe."
+    en: "Active warnings with code and name, comma-separated; \"none\" when none is active. The attribute \"alarms\" lists code, name and remedy."
+  addrs: [553, 554]
+  type: alarms
+  alarm_kind: warnings
+  entity_category: diagnostic
+  category: status
+  point: diagnostic
+  group: status
+  tags:
+  - fault
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "Deye alarm list 5-12 kW (alarms.yaml); V105.8 registers.json inverter: R553-R554"
+  confidence: document_only
+  default_enabled: true
+  notes: Derived view of the alarm words (Wn = bit n-1 over R553/R554, Fn = bit n-1 over R555-R558); bits the list does not name show their code only.
+- key: active_faults
+  name:
+    de: Aktive Fehler
+    en: Active faults
+  description:
+    de: "Aktive Fehler mit Code und Name, kommagetrennt; \"none\", wenn keine aktiv ist. Das Attribut \"alarms\" nennt Code, Name und Abhilfe."
+    en: "Active faults with code and name, comma-separated; \"none\" when none is active. The attribute \"alarms\" lists code, name and remedy."
+  addrs: [555, 556, 557, 558]
+  type: alarms
+  alarm_kind: faults
+  entity_category: diagnostic
+  category: status
+  point: diagnostic
+  group: status
+  tags:
+  - fault
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "Deye alarm list 5-12 kW (alarms.yaml); V105.8 registers.json inverter: R555-R558"
+  confidence: document_only
+  default_enabled: true
+  notes: Derived view of the alarm words (Wn = bit n-1 over R553/R554, Fn = bit n-1 over R555-R558); bits the list does not name show their code only.
 - key: fault_f13
   name:
     de: Fehler F13

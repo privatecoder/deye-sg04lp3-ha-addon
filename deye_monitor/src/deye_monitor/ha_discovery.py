@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from deye_monitor import __version__
 from deye_monitor.config import PollConfig
+from deye_monitor.profiles.alarms import active_items
 from deye_monitor.profiles.decode import Value
 from deye_monitor.profiles.schema import Entry, Profile
 
@@ -232,6 +233,11 @@ def inverter_component(
             comp["state_class"] = entry.state_class
         if entry.unit and entry.is_numeric and not entry.scale_source:
             comp["suggested_display_precision"] = _decimals(entry.scale)
+    if entry.type == "alarms":
+        comp["json_attributes_topic"] = comp["state_topic"]
+        comp["json_attributes_template"] = (
+            f"{{{{ {{'alarms': value_json.get('{entry.key}{ALARM_LIST_SUFFIX}')}} | tojson }}}}"
+        )
     if entry.profile_fallback and entry.platform == "sensor":
         # ``source`` tells a device value from the hardware profile's value (the device left it out)
         comp["json_attributes_topic"] = comp["state_topic"]
@@ -301,6 +307,7 @@ R65_DIAGNOSTICS: Final = (
 )
 ENERGY_SOURCES: Final = {"override": "user choice", "r65": "R65"}
 CONFLICT_LIST_KEY: Final = "capability_conflict_list"
+ALARM_LIST_SUFFIX: Final = "_list"
 _TEXT_LIMIT: Final = 120
 _MAX_CONFLICTS: Final = 20
 
@@ -757,6 +764,10 @@ def state_payload(
             continue
         body[key], flag = clean_value(entry, value)
         replaced += flag
+        if entry.type == "alarms":
+            body[f"{key}{ALARM_LIST_SUFFIX}"] = (
+                None if body[key] is None else active_items(body[key])
+            )
     if profile_keys:
         body["sources"] = {k: "profile" for k in sorted(profile_keys) if k in values}
     return encode(body), replaced

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.8
+
+Named warnings and faults from the Deye alarm list (5-12 kW).
+
+- **Active warnings / Active faults**: two text sensors per inverter (default on) with the active
+  codes and names, e.g. `F29 Parallel CANBus fault, F41 Parallel system stop`, `none` when nothing
+  is set. The attribute `alarms` carries `code`, `name` and a short `remedy`. Names and remedies are
+  in `profiles/alarms.yaml` (W2, W3, W4, W31, W32, F1-F64); an unnamed bit shows its code only.
+- **New binary sensor** "Meter communication warning (W4)" (R553 bit 3), off by default.
+- **W31** is now named from the source (Battery_comm_warn); the "inferred" note is gone.
+- The existing per-bit entities (F13, F29, F41, ...) are unchanged.
+
 ## 0.2.7
 
 Totals over all inverters of the installation (live context: four SG04LP3 in off-grid parallel with

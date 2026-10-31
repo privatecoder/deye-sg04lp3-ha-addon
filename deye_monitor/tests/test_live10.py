@@ -23,6 +23,7 @@ def test_warning_w31_is_decoded_from_the_second_alarm_word() -> None:
     e = PROFILE.entry("alarm_battery_missing")
     assert e.addr == 554 and e.mask == 1 << 14  # the 31st warning bit
     assert "W31" in e.name.en and "communication" in str(e.name.en).lower()
+    assert "inferred" not in (e.notes or "") and "Battery_comm_warn" in (e.notes or "")
     assert decode(e, {554: 1 << 14}) is True
     assert decode(e, {554: 1 << 15}) is False  # bit 15 is the parallel communication warning
 

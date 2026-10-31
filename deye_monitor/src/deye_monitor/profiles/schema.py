@@ -38,7 +38,9 @@ MeasurementPoint = Literal[
     "tou",
     "diagnostic",
 ]
-EntryType = Literal["u16", "s16", "u32", "s32", "ascii", "bitfield", "enum", "hhmm", "raw"]
+EntryType = Literal[
+    "u16", "s16", "u32", "s32", "ascii", "bitfield", "enum", "hhmm", "raw", "alarms"
+]
 SupportStatus = Literal["supported", "placeholder", "unsupported_for_profile", "unverified"]
 Release = Literal["confirmed", "profile_dependent", "unresolved"]
 Platform = Literal["sensor", "binary_sensor"]
@@ -189,6 +191,7 @@ class Entry(_Model):
     enum_labels: dict[str, str] | None = None
     # shown with the hardware profile's value (source ``profile``) while the device reports none
     profile_fallback: ProfileFallback | None = None
+    alarm_kind: Literal["warnings", "faults"] | None = None  # alarms entries: which list
     display: Literal["hex"] | None = None  # raw words shown as hex digits (no prefix)
     unit: str | None = None
     device_class: str | None = None
@@ -321,9 +324,11 @@ class Entry(_Model):
         wide = self.type in ("u32", "s32")
         if wide and self.low is None:
             out.append(f"{self.type} needs explicit low and high")
-        if self.type == "ascii" and self.addrs is None:
-            out.append("ascii needs addrs")
-        if not wide and self.type != "ascii" and self.addr is None:
+        if self.type in ("ascii", "alarms") and self.addrs is None:
+            out.append(f"{self.type} needs addrs")
+        if (self.type == "alarms") != (self.alarm_kind is not None):
+            out.append("alarm_kind is required for (and only for) type alarms")
+        if not wide and self.type not in ("ascii", "alarms") and self.addr is None:
             out.append(f"{self.type} needs addr")
         if self.mask is not None:
             if self.addr is None:
@@ -475,7 +480,7 @@ class Profile(_Model):
         twins and may overlap."""
         words: dict[int, list[Entry]] = {}
         for e in self.entries:
-            if not e.internal:
+            if not e.internal and e.type != "alarms":  # a derived text view of the alarm words
                 for a in e.addresses:
                     words.setdefault(a, []).append(e)
         out: list[str] = []

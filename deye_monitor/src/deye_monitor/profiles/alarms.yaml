@@ -1,0 +1,212 @@
+# Deye alarm list for SUN-5/6/8/10/12K-SG04LP3 (vendor document "Fault List" 5-12 kW): names are
+# the document's, shortened and spelled out; remedies are short English summaries of its steps.
+# Wn = bit (n-1) over R553/R554, Fn = bit (n-1) over R555-R558.
+warnings:
+  2:
+    name: "Fan warning"
+    remedy: "Check the fan status and its connection; contact support if it persists."
+  3:
+    name: "Grid phase wrong"
+    remedy: "Check the grid phase sequence and wiring; try another grid type (0, 240/120)."
+  4:
+    name: "Meter communication fail"
+    remedy: "Check that the meter communicates and its wiring is correct; contact support if it stays silent."
+  31:
+    name: "Battery communication warning"
+    remedy: "Check the BMS connection is stable and the BMS data is plausible."
+  32:
+    name: "Parallel communication warning"
+    remedy: "Check the parallel communication cable (do not bundle it with other cables) and the parallel DIP switch."
+faults:
+  1:
+    name: "DC inversed failure"
+    remedy: "Check the PV input polarity."
+  2:
+    name: "DC insulation failure"
+    remedy: "Check PV grounding and the PV-to-ground impedance."
+  3:
+    name: "GFDI failure"
+    remedy: "Check PV grounding, PV-to-ground impedance and leakage current."
+  4:
+    name: "GFDI ground failure"
+    remedy: "Check the PV grounding."
+  5:
+    name: "EEPROM read failure"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  6:
+    name: "EEPROM write failure"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  7:
+    name: "DC/DC soft-start fault"
+    remedy: "BUS voltage cannot be built from PV or battery; restart the inverter, contact support if it persists."
+  8:
+    name: "GFDI relay failure"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  9:
+    name: "IGBT failure"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  10:
+    name: "Auxiliary power board failure"
+    remedy: "Check the inverter switch is on; restart 3 times and restore factory settings."
+  11:
+    name: "AC main contactor failure"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  12:
+    name: "AC slave contactor failure"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  13:
+    name: "Grid mode changed"
+    remedy: "Normally clears itself (grid type/frequency or battery mode changed); else switch DC and AC off for one minute."
+  14:
+    name: "DC overcurrent fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  15:
+    name: "SW AC overcurrent fault"
+    remedy: "Check backup and common load power are within range; restart."
+  16:
+    name: "GFCI failure"
+    remedy: "Check the PV cable grounding; restart 2-3 times."
+  17:
+    name: "Tz PV overcurrent fault"
+    remedy: "Check the PV connection and stability; restart 3 times."
+  18:
+    name: "HW AC overcurrent fault"
+    remedy: "Check backup and common load power are within range; restart."
+  19:
+    name: "Tz integ fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  20:
+    name: "Tz DC overcurrent fault"
+    remedy: "Check PV and battery connections; in off-grid reduce the startup load; switch DC and AC off for one minute."
+  21:
+    name: "Tz HV overcurrent fault"
+    remedy: "Check PV input current and battery current settings; restart 2-3 times."
+  22:
+    name: "Tz emergency stop fault"
+    remedy: "The inverter is being remotely shut down."
+  23:
+    name: "Tz GFCI overcurrent fault"
+    remedy: "Check the PV cable grounding; restart 2-3 times."
+  24:
+    name: "DC insulation fault (PV isolation too low)"
+    remedy: "Check PV connections and the inverter PE cable grounding."
+  25:
+    name: "DC feedback fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  26:
+    name: "Bus unbalance fault"
+    remedy: "Wait and re-check; large load difference between phases or DC leakage can cause it; restart 2-3 times."
+  27:
+    name: "DC insulation fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  28:
+    name: "DCI overcurrent M1 fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  29:
+    name: "Parallel CANBus fault"
+    remedy: "Check the parallel cable and the inverter addresses; it clears once all inverters are on."
+  30:
+    name: "AC main contactor fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  31:
+    name: "AC slave contactor fault"
+    remedy: "Check the grid orientation; restart 3 times and restore factory settings."
+  32:
+    name: "DCI overcurrent M2 fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  33:
+    name: "AC overcurrent fault"
+    remedy: "Check whether the grid current is too large; restart 3 times."
+  34:
+    name: "AC overload fault"
+    remedy: "Check the backup load is within the allowed power range."
+  35:
+    name: "AC no utility fault"
+    remedy: "Check grid voltage, frequency and connection."
+  36:
+    name: "AC grid phase sequence fault"
+    remedy: "Check the grid phase."
+  37:
+    name: "AC voltage unbalance fault"
+    remedy: "Check for AC overcurrent; restart the inverter."
+  38:
+    name: "Parallel system stop 1"
+    remedy: "Check the parallel connection."
+  39:
+    name: "INT AC overcurrent fault"
+    remedy: "Restart the inverter."
+  40:
+    name: "INT DC overcurrent fault"
+    remedy: "Restart the inverter."
+  41:
+    name: "Parallel system stop"
+    remedy: "One inverter in the parallel system has stopped, so all report this; check each inverter's status."
+  42:
+    name: "Parallel version fault"
+    remedy: "Check all inverters run the same software version; contact support to upgrade."
+  43:
+    name: "AC VW overvoltage fault"
+    remedy: "Grid voltage out of range; check the voltage and AC cabling."
+  44:
+    name: "AC VW undervoltage fault"
+    remedy: "Grid voltage out of range; check the voltage and AC cabling."
+  45:
+    name: "AC UV overvoltage fault"
+    remedy: "Grid voltage out of range; check the voltage and AC cabling."
+  46:
+    name: "AC UV undervoltage fault"
+    remedy: "Grid voltage out of range; check the voltage and AC cabling."
+  47:
+    name: "AC overfrequency fault"
+    remedy: "Grid frequency out of range; check the frequency and AC cabling."
+  48:
+    name: "AC underfrequency fault"
+    remedy: "Grid frequency out of range; check the frequency and AC cabling."
+  49:
+    name: "AC U grid current DC high fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  50:
+    name: "AC V grid current DC high fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  51:
+    name: "AC W grid current DC high fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  52:
+    name: "AC A inductor current DC high fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  53:
+    name: "AC B inductor current DC high fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  54:
+    name: "Battery voltage high fault"
+    remedy: "Check the battery terminal voltage; restart 3 times and restore factory settings."
+  55:
+    name: "DC voltage high fault (BUS)"
+    remedy: "Check the battery voltage and the PV input voltage are within range."
+  56:
+    name: "DC voltage low fault (battery)"
+    remedy: "Check the battery voltage; charge the battery from PV or grid."
+  57:
+    name: "AC backfeed fault"
+    remedy: "Restart the inverter 3 times and restore factory settings; contact support if it persists."
+  58:
+    name: "BMS communication fault"
+    remedy: "Battery and inverter lost communication while BMS_Err-Stop is active; check the link or disable BMS_Err-Stop on the LCD."
+  59:
+    name: "AC V grid current high fault"
+    remedy: "Check the inverter current is not too high; restart and restore factory settings."
+  60:
+    name: "Generator voltage or frequency fault"
+    remedy: "Check the generator voltage and frequency, then restart."
+  61:
+    name: "Button manual OFF"
+    remedy: "Check the inverter switch is on; restart and restore factory settings."
+  62:
+    name: "DRMs0 stop"
+    remedy: "DRM is for the Australian market only; check whether DRM is active."
+  63:
+    name: "Arc fault"
+    remedy: "ARC detection is for the US market only; check the PV cabling."
+  64:
+    name: "Heatsink high temperature fault"
+    remedy: "Check the ambient temperature; switch off for 10 minutes and restart."
