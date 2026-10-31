@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.10
+
+- **Fix**: with no inverters configured the plant page showed the text `null` below "Add
+  inverter". The page handed a missing totals section to the native DOM `append`, which prints
+  it; it now goes through the `append` helper that skips empty values. No other view had the
+  pattern. New browser tests check that no page shows `null` or `undefined`.
+
 ## 0.2.9
 
 Small fixes from the 0.2.8 field check.

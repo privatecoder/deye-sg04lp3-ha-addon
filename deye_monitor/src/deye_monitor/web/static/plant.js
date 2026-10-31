@@ -1,7 +1,7 @@
 // "Set up plant": connections and inverters, edited here (no YAML, no app options).
 
 import { t } from './i18n.js';
-import { h, modal, toast, busy } from './ui.js';
+import { h, append, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant } from './state.js';
 import {
   endpointForm, inverterForm, testPanel, connectionTest, connectionUsers, routeChecks, savedInverterChecks, loadSerialDevices, transportLabel, endpointTarget,
@@ -253,7 +253,7 @@ export function plantView() {
     signature = JSON.stringify([plant, state.lang]);
     root.append(h('h1', {}, t('plant.title')), h('p', {}, t('plant.intro')), ...noticeBanners(plant.notices));
     if (!canEdit()) root.append(h('p', { class: 'banner info' }, t('overview.readonly')));
-    root.append(
+    append(root, [
       h('section', { class: 'plant-section', 'aria-labelledby': 'plant-eps' },
         h('h2', { id: 'plant-eps' }, t('plant.endpoints')),
         h('p', { class: 'help' }, t('plant.endpoints_intro')),
@@ -266,7 +266,7 @@ export function plantView() {
         plant.inverters.length ? h('div', { class: 'cards' }, plant.inverters.map(inverterCard)) : h('p', { class: 'muted' }, plant.endpoints.length ? t('plant.inverters_empty') : t('plant.inverters_need_endpoint')),
         h('div', { class: 'actions left' },
           h('button', { class: 'btn primary', id: 'add-inverter', type: 'button', disabled: !canEdit() || plant.endpoints.length === 0, onClick: addInverter }, t('plant.add_inverter')))),
-      plant.inverters.length ? totalsSection(plant) : null);
+      plant.inverters.length ? totalsSection(plant) : null]);
   }
 
   async function onData() {

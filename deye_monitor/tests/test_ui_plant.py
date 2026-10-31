@@ -573,3 +573,32 @@ async def test_check_connection_tests_every_route_with_its_own_address(
             routes.nth(1).locator(".test-result.fail")
         ).to_be_visible()  # visible although the primary works
         await expect(routes.nth(1)).to_contain_text("2 Versuche")
+
+
+async def no_stray_text(page: Page) -> None:
+    await expect(page.locator("#view h1")).to_be_visible()
+    text = await page.evaluate("document.body.innerText")
+    assert "null" not in text
+    assert "undefined" not in text
+
+
+@pytest.mark.parametrize("endpoints", [False, True])
+async def test_the_plant_page_without_inverters_shows_no_stray_null(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoints: bool
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        if endpoints:
+            await seed(rig, inverter=False)
+        s = await open_page(browser, url + "#/plant")
+        await expect(s.page.locator("#add-inverter")).to_be_visible()
+        await no_stray_text(s.page)
+
+
+async def test_the_overview_without_inverters_shows_no_stray_null(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await seed(rig, inverter=False)
+        s = await open_page(browser, url)
+        await expect(s.page.locator("section.empty")).to_be_visible()
+        await no_stray_text(s.page)
