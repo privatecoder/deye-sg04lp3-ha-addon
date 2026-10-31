@@ -5,7 +5,7 @@ import { h, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant } from './state.js';
 import {
   endpointForm, inverterForm, testPanel, connectionTest, connectionUsers, routeChecks, savedInverterChecks, loadSerialDevices, transportLabel, endpointTarget,
-  saveEndpoint, saveInverter, deleteEndpoint, deleteInverter, existingEndpointIds, existingInverterIds,
+  saveEndpoint, saveInverter, saveTotals, deleteEndpoint, deleteInverter, existingEndpointIds, existingInverterIds,
 } from './plantforms.js';
 
 export function noticeBanners(notices) {
@@ -202,6 +202,35 @@ export function plantView() {
     (buttons.find((b) => b.textContent === opener.text && !b.disabled) || buttons.find((b) => !b.disabled) || article).focus?.();
   }
 
+  // "Plant (totals)": which inverters the totals add up (default: all).
+  function totalsSection(plant) {
+    const totals = plant.totals || { members: [], allow_single: false };
+    const members = new Set(totals.members);
+    const boxes = plant.inverters.map((inv) => h('label', { class: 'check', 'data-member': inv.id },
+      h('input', { type: 'checkbox', value: inv.id, checked: members.has(inv.id), disabled: !canEdit() }), ` ${inv.name} (${inv.id})`));
+    const single = h('input', { type: 'checkbox', id: 'totals-single', checked: totals.allow_single, disabled: !canEdit() });
+    const message = h('div');
+    const button = h('button', { class: 'btn primary', id: 'save-totals', type: 'button', disabled: !canEdit() }, t('plant.totals_save'));
+    button.addEventListener('click', async () => {
+      const chosen = boxes.map((b) => b.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
+      busy(button, true);
+      const result = await saveTotals(chosen, single.checked, { message });
+      busy(button, false);
+      if (result) {
+        render();
+        toast(t('plant.totals_saved'));
+      }
+    });
+    return h('section', { class: 'plant-section', id: 'plant-totals', 'aria-labelledby': 'plant-totals-title' },
+      h('h2', { id: 'plant-totals-title' }, t('plant.totals')),
+      h('p', { class: 'help' }, t('plant.totals_intro')),
+      h('div', { class: 'checks' }, boxes),
+      h('label', { class: 'check' }, single, ` ${t('plant.totals_single')}`),
+      h('p', { class: 'note' }, totals.active ? t('plant.totals_active', { n: totals.members.length }) : t('plant.totals_inactive')),
+      message,
+      h('div', { class: 'actions left' }, button));
+  }
+
   async function around(run) {
     const opener = describeOpener(document.activeElement);
     await run();
@@ -236,7 +265,8 @@ export function plantView() {
         h('p', { class: 'help' }, t('plant.inverters_intro')),
         plant.inverters.length ? h('div', { class: 'cards' }, plant.inverters.map(inverterCard)) : h('p', { class: 'muted' }, plant.endpoints.length ? t('plant.inverters_empty') : t('plant.inverters_need_endpoint')),
         h('div', { class: 'actions left' },
-          h('button', { class: 'btn primary', id: 'add-inverter', type: 'button', disabled: !canEdit() || plant.endpoints.length === 0, onClick: addInverter }, t('plant.add_inverter')))));
+          h('button', { class: 'btn primary', id: 'add-inverter', type: 'button', disabled: !canEdit() || plant.endpoints.length === 0, onClick: addInverter }, t('plant.add_inverter')))),
+      plant.inverters.length ? totalsSection(plant) : null);
   }
 
   async function onData() {

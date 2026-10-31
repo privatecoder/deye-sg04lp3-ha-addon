@@ -18,7 +18,7 @@ from deye_monitor.ha_discovery import (
     INVERTER_DIAGNOSTICS,
     R65_DIAGNOSTICS,
     app_components,
-    firmware_text,
+    firmware_board,
     inverter_diagnostic_components,
     inverter_diagnostic_values,
 )
@@ -187,7 +187,7 @@ def full_diag(**over: Any) -> dict[str, Any]:
 def test_every_contract_field_is_derived_and_unknown_is_null() -> None:
     v = inverter_diagnostic_values(full_diag())
     assert v["path"] == "primary:gw1" and v["serial"] == A
-    assert v["firmware"] == "MCU1: 1000-0070 / MCU2: ????-1001-????"
+    assert v["firmware_mcu1"] == "1000-0070" and v["firmware_mcu2"] == "????-1001-????"
     assert "role" not in v
     assert v["r65_raw"] == 0x0104 and v["r65_status"] == "ok"
     assert v["energy_resolution"] == 0.1 and v["energy_source"] == "R65"
@@ -262,7 +262,9 @@ def test_inverter_device_has_diagnostic_entities_for_every_contract_field() -> N
     assert comps["diag_last_success"]["device_class"] == "timestamp"
     assert comps["diag_transport_timeouts"]["state_class"] == "total_increasing"
     assert comps["diag_state"]["options"] == list(states)
-    assert comps["diag_firmware"]["name"] == "Firmware"
+    assert comps["diag_firmware_mcu1"]["name"] == "Firmware MCU1"
+    assert comps["diag_firmware_mcu2"]["name"] == "Firmware MCU2"
+    assert "diag_firmware" not in comps
     assert "diag_role" not in comps  # the parallel role duplicates the inverter's own entities
     assert not [
         k
@@ -282,13 +284,13 @@ def test_the_app_device_keeps_only_app_wide_entities() -> None:
 
 def test_firmware_is_shown_like_the_deye_cloud() -> None:
     words = {14: 0x2005, 15: 0x1175, 16: 0x1807, 17: 0x1001, 18: 0xC070}
-    assert firmware_text(words) == "MCU1: 1001-C070 / MCU2: 2005-1175-1807"
-    assert firmware_text({15: 0x1175, 17: 0x1001, 18: 0xC070}) == (
-        "MCU1: 1001-C070 / MCU2: ????-1175-????"
-    )
-    assert firmware_text({}) is None and firmware_text(None) is None
+    assert firmware_board(words, "mcu1") == "1001-C070"
+    assert firmware_board(words, "mcu2") == "2005-1175-1807"
+    partial = {15: 0x1175, 17: 0x1001, 18: 0xC070}
+    assert firmware_board(partial, "mcu2") == "????-1175-????"
+    assert firmware_board({}, "mcu1") is None and firmware_board(None, "mcu2") is None
     out = inverter_diagnostic_values({"identity": {"firmware_words": words}})
-    assert out["firmware"] == "MCU1: 1001-C070 / MCU2: 2005-1175-1807"
+    assert out["firmware_mcu1"] == "1001-C070" and out["firmware_mcu2"] == "2005-1175-1807"
 
 
 async def test_required_energy_diagnostics_are_not_discarded(tmp_path: Path) -> None:
@@ -352,7 +354,8 @@ async def test_device_layer_tracks_r65_serial_and_cooldown(tmp_path: Path) -> No
         assert d["r65"] == {"raw": 0x0104, "last_read_ok": False}
         values = inverter_diagnostic_values(d)
         assert values["r65_status"] == "failed" and values["serial"] == A
-        assert values["firmware"] == "MCU1: 1000-0070 / MCU2: 002B-1001-0031"
+        assert values["firmware_mcu1"] == "1000-0070"
+        assert values["firmware_mcu2"] == "002B-1001-0031"
 
 
 # -- T8-05: jitter ------------------------------------------------------------------------------

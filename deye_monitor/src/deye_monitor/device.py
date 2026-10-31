@@ -641,21 +641,30 @@ class InverterRuntime:
         self._due[IDENTITY_GROUP] = now + self.cfg.poll_identity_s
         self._emit(IDENTITY_GROUP, route, read)
 
-    def _parallel_slave(self, words: Mapping[int, int]) -> bool:
-        """The device itself says: parallel operation on, and this unit is not the master (R336).
-        Never derived from names or manual flags; unknown means no."""
+    def _parallel_role(self, words: Mapping[int, int]) -> str | None:
+        """The device itself says (R336, never names or manual flags): ``slave`` (parallel on and
+        not the master), ``other`` (master or standalone) or ``None`` when the role word is missing
+        or cannot be decoded. Unknown is not "not a slave"."""
         enable = decode(self.profile.entry("parallel_enable"), words)
         master = decode(self.profile.entry("parallel_master"), words)
-        return enable is True and master is False
+        if not isinstance(enable, bool) or not isinstance(master, bool):
+            return None
+        return "slave" if enable and not master else "other"
 
     async def _check_parallel_slave(
         self, route: Route, words: Mapping[int, int], token: int
     ) -> None:
         """Only the parallel master has the battery and its BMS: a slave reports garbage for the
         battery temperature (R586) and zeros for the BMS block. On a slave those entries are
-        inactive (not polled, no entity); an all-zero BMS block on the master stays visible."""
+        inactive (not polled, no entity); an all-zero BMS block on the master stays visible.
+
+        An unknown role (R336 missing or undecodable in this pass) keeps the established verdict
+        untouched and infers nothing; only a valid master/standalone role clears it."""
+        role = self._parallel_role(words)
+        if role is None:
+            return
         inactive: dict[str, str] = {}
-        if self._parallel_slave(words):
+        if role == "slave":
             inactive = {
                 e.key: INACTIVE_SLAVE_TEMPERATURE
                 for e in self.profile.entries
@@ -677,18 +686,27 @@ class InverterRuntime:
     async def _bms_block_silent(
         self, route: Route, addresses: list[int], token: int
     ) -> bool | None:
-        """Read the BMS block once; ``None`` when no verdict is possible."""
-        if not addresses or addresses[-1] - addresses[0] + 1 > route.max_read_registers:
+        """Read the BMS block (in chunks that fit the route's read limit) and tell whether every
+        word is zero; ``None`` when no verdict is possible."""
+        if not addresses or route.max_read_registers < 1:
             return None
-        outcome, epoch = await self._read(route, addresses[0], addresses[-1] - addresses[0] + 1)
-        if token != self._token():
-            return None
-        if epoch != route.verified_epoch:
-            self._connection_unidentified("connection changed")
-            return None
-        if isinstance(outcome, Exception):
-            return None
-        return all(outcome[a - addresses[0]] == 0 for a in addresses)
+        words: dict[int, int] = {}
+        pending = list(addresses)
+        while pending:
+            start = pending[0]
+            span = [a for a in pending if a - start < route.max_read_registers]
+            count = span[-1] - start + 1
+            outcome, epoch = await self._read(route, start, count)
+            if token != self._token():
+                return None
+            if epoch != route.verified_epoch:
+                self._connection_unidentified("connection changed")
+                return None
+            if isinstance(outcome, Exception):
+                return None
+            words.update({a: outcome[a - start] for a in span})
+            pending = pending[len(span) :]
+        return all(words[a] == 0 for a in addresses)
 
     def _identity_key(self, words: Mapping[int, int], serial: str) -> list[Any]:
         return [serial, words.get(15), words.get(17), words.get(18), self.profile.revision]

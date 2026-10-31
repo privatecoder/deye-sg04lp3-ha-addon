@@ -43,6 +43,7 @@ from deye_monitor.selection import (
     specs_from_config,
 )
 from deye_monitor.store import JsonStore
+from deye_monitor.totals import PlantSeries, PlantTotals, TotalsMember, known_series
 from deye_monitor.webapi import WebApi
 
 log = logging.getLogger("deye_monitor")
@@ -118,10 +119,11 @@ def build_publisher(
     ns = Namespace(instance_id, mqtt.discovery_prefix, mqtt.topic_prefix)
     settings = settings or PublisherSettings()
     invs = runtime.inverters
+    store = open_discovery_store(data_dir(directory) / "discovery.json")
     return MqttPublisher(
         ns,
         [InverterInfo(i.id, i.name, invs[i.id].profile, i.poll) for i in cfg.inverters],
-        open_discovery_store(data_dir(directory) / "discovery.json"),
+        store,
         factory or aiomqtt_factory(ns, mqtt, settings),
         birth_topic=mqtt.birth_topic,
         selections={i: (r.selection, r.selection_revision) for i, r in invs.items()},
@@ -129,7 +131,47 @@ def build_publisher(
         serial_of=lambda i: invs[i].seen_serial,
         request_refresh=lambda i: invs[i].request_refresh(),
         diagnostics_of=lambda i: invs[i].diagnostics(),
+        totals=build_totals(cfg, runtime, ns, store, directory),
         settings=settings,
+    )
+
+
+def _parallel_role(runtime: Runtime, inverter_id: str) -> str | None:
+    """``master`` / ``slave`` as the device reports it (R336); ``None`` if it did not say."""
+    role = runtime.inverters[inverter_id].identity_info.get("role")
+    if not isinstance(role, Mapping) or role.get("parallel_enable") is not True:
+        return None
+    master = role.get("master")
+    return None if not isinstance(master, bool) else ("master" if master else "slave")
+
+
+def build_totals(
+    cfg: AppConfig,
+    runtime: Runtime,
+    ns: Namespace,
+    store: JsonStore,
+    directory: Path | None,
+) -> PlantTotals | None:
+    """The plant totals of the configured members, or ``None`` while the plant device does not
+    exist (fewer than two members, unless a single one is enabled)."""
+    if not cfg.totals.active(cfg.inverters):
+        return None
+    members = set(cfg.totals.members(cfg.inverters))
+    invs = runtime.inverters
+    entry = store.data.get("devices", {}).get(ns.discovery_topic(ns.app_device_id), {})
+    known = known_series([*entry.get("components", {}), *entry.get("retired", {})])
+    return PlantTotals(
+        [
+            TotalsMember(i.id, i.name, invs[i.id].profile, i.poll)
+            for i in cfg.inverters
+            if i.id in members
+        ],
+        PlantSeries(data_dir(directory), known),
+        keys_of=lambda i: (
+            invs[i].selection - frozenset(invs[i].unreported) - frozenset(invs[i].inactive)
+        ),
+        role_of=lambda i: _parallel_role(runtime, i),
+        member_series_of=lambda i: invs[i].energy.series,
     )
 
 

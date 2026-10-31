@@ -131,6 +131,11 @@ class Namespace:
     def group_topic(self, inverter_id: str, group: str) -> str:
         return f"{self.state_prefix}/{self.instance}/{inverter_id}/{group}"
 
+    @property
+    def plant_state_topic(self) -> str:
+        """Plant totals (below the reserved ``app`` id, so no inverter topic can collide)."""
+        return f"{self.state_prefix}/{self.instance}/{APP_DEVICE_SUFFIX}/plant"
+
     def inverter_diagnostics_topic(self, inverter_id: str) -> str:
         """Per-inverter diagnostics (a name no profile group can have)."""
         return self.group_topic(inverter_id, "diagnostics")
@@ -271,7 +276,8 @@ INVERTER_DIAGNOSTICS: Final = (
     InverterDiagnostic("reason", "State reason"),
     InverterDiagnostic("path", "Connection path"),
     InverterDiagnostic("serial", "Bound serial number"),
-    InverterDiagnostic("firmware", "Firmware"),
+    InverterDiagnostic("firmware_mcu1", "Firmware MCU1"),
+    InverterDiagnostic("firmware_mcu2", "Firmware MCU2"),
     InverterDiagnostic("energy_resolution", "Energy resolution", "number", precision=1),
     InverterDiagnostic("energy_source", "Energy resolution source"),
     InverterDiagnostic("energy_status", "Energy confirmation"),
@@ -312,25 +318,20 @@ def _number(value: object) -> int | float | None:
     return value if math.isfinite(value) else None
 
 
-def firmware_text(words: object) -> str | None:
-    """Firmware as the Deye cloud shows it: ``MCU1: 1001-C070 / MCU2: 2005-1175-1807``.
-    MCU1 is the communication/HMI board (R17-R18), MCU2 the control board (R14-R15-R16)."""
+def firmware_board(words: object, board: str) -> str | None:
+    """One firmware board as the Deye cloud shows it: MCU1 ``1001-C070`` (communication/HMI board,
+    R17-R18), MCU2 ``2005-1175-1807`` (control board, R14-R15-R16)."""
     if not isinstance(words, Mapping):
         return None
-
-    def board(addrs: tuple[int, ...]) -> str | None:
-        values = [words.get(a) for a in addrs]
-        if not any(isinstance(w, int) and not isinstance(w, bool) for w in values):
-            return None
-        return "-".join(
-            f"{w:04X}" if isinstance(w, int) and not isinstance(w, bool) else "????" for w in values
-        )
-
-    parts = [f"{name}: {text}" for name, addrs in _FIRMWARE_BOARDS if (text := board(addrs))]
-    return " / ".join(parts) or None
+    values = [words.get(a) for a in _FIRMWARE_BOARDS[board]]
+    if not any(isinstance(w, int) and not isinstance(w, bool) for w in values):
+        return None
+    return "-".join(
+        f"{w:04X}" if isinstance(w, int) and not isinstance(w, bool) else "????" for w in values
+    )
 
 
-_FIRMWARE_BOARDS: Final = (("MCU1", (17, 18)), ("MCU2", (14, 15, 16)))
+_FIRMWARE_BOARDS: Final = {"mcu1": (17, 18), "mcu2": (14, 15, 16)}
 
 
 def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -351,7 +352,9 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     path, endpoint = _text(diag.get("active_path")), _text(diag.get("endpoint"))
     out["path"] = f"{path}:{endpoint}" if path and endpoint else path
     out["serial"] = _text(diag.get("bound_serial"))
-    out["firmware"] = firmware_text(sub("identity").get("firmware_words"))
+    words = sub("identity").get("firmware_words")
+    out["firmware_mcu1"] = firmware_board(words, "mcu1")
+    out["firmware_mcu2"] = firmware_board(words, "mcu2")
     r65 = sub("r65")
     out["r65_raw"] = _number(r65.get("raw"))
     ok = r65.get("last_read_ok")
@@ -414,6 +417,65 @@ def app_components(ns: Namespace) -> dict[str, dict[str, Any]]:
         if diag.state_class:
             comp["state_class"] = diag.state_class
         out[diag.key] = comp
+    return out
+
+
+def plant_components(
+    ns: Namespace, series: str, expire: Mapping[str, int]
+) -> dict[str, dict[str, Any]]:
+    """Plant totals on the app device (``expire``: seconds per metric key). Energy totals carry the
+    plant series in key, unique id, entity id and the template guard, like the inverter counters."""
+    from deye_monitor.totals import METRICS  # local: totals imports this module's siblings
+
+    device_id = ns.app_device_id
+    heartbeat = math.ceil(3 * APP_HEARTBEAT_S)
+    out: dict[str, dict[str, Any]] = {}
+    for m in METRICS:
+        energy = m.kind == "energy"
+        ckey = f"{m.key}_{check_series(series)}" if energy else m.key
+        comp: dict[str, Any] = {
+            "platform": "sensor",
+            "unique_id": f"{device_id}_{ckey}",
+            "default_entity_id": f"sensor.{device_id}_{ckey}",
+            "name": m.name + (f" ({series})" if energy else ""),
+            "state_topic": ns.plant_state_topic,
+            "value_template": _template(m.key, "sensor", series if energy else None),
+            "expire_after": max(expire.get(m.key, heartbeat), heartbeat),
+            "unit_of_measurement": m.unit,
+        }
+        if m.device_class:
+            comp["device_class"] = m.device_class
+        if m.state_class:
+            comp["state_class"] = m.state_class
+        if m.precision is not None:
+            comp["suggested_display_precision"] = m.precision
+        out[ckey] = comp
+    diagnostics = (
+        ("plant_members", "Plant members", True),
+        ("plant_members_stale", "Plant stale members", True),
+        ("plant_master", "Plant master", False),
+        ("energy_series", "Plant energy series", False),
+    )
+    for key, name, number in diagnostics:
+        ckey = "plant_energy_series" if key == "energy_series" else key
+        comp = {
+            "platform": "sensor",
+            "unique_id": f"{device_id}_{ckey}",
+            "default_entity_id": f"sensor.{device_id}_{ckey}",
+            "name": name,
+            "state_topic": ns.plant_state_topic,
+            "value_template": _template(key, "sensor"),
+            "expire_after": heartbeat,
+            "entity_category": "diagnostic",
+        }
+        if number:
+            comp["state_class"] = "measurement"
+            list_key = f"{key}_list"
+            comp["json_attributes_topic"] = comp["state_topic"]
+            comp["json_attributes_template"] = (
+                f"{{{{ {{'members': value_json.get('{list_key}')}} | tojson }}}}"
+            )
+        out[ckey] = comp
     return out
 
 

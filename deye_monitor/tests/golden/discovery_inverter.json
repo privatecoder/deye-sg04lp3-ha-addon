@@ -155,20 +155,35 @@
    "unique_id": "deye_ab12cd34_deye1_diag_energy_status",
    "value_template": "{{ value_json.get('energy_status') if value_json is mapping else none }}"
   },
-  "diag_firmware": {
+  "diag_firmware_mcu1": {
    "availability": [
     {
      "topic": "deye/ab12cd34/status"
     }
    ],
-   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_firmware",
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_firmware_mcu1",
    "entity_category": "diagnostic",
    "expire_after": 90,
-   "name": "Firmware",
+   "name": "Firmware MCU1",
    "platform": "sensor",
    "state_topic": "deye/ab12cd34/deye1/diagnostics",
-   "unique_id": "deye_ab12cd34_deye1_diag_firmware",
-   "value_template": "{{ value_json.get('firmware') if value_json is mapping else none }}"
+   "unique_id": "deye_ab12cd34_deye1_diag_firmware_mcu1",
+   "value_template": "{{ value_json.get('firmware_mcu1') if value_json is mapping else none }}"
+  },
+  "diag_firmware_mcu2": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    }
+   ],
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_firmware_mcu2",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Firmware MCU2",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/diagnostics",
+   "unique_id": "deye_ab12cd34_deye1_diag_firmware_mcu2",
+   "value_template": "{{ value_json.get('firmware_mcu2') if value_json is mapping else none }}"
   },
   "diag_last_success": {
    "availability": [
@@ -428,6 +443,6 @@
  },
  "origin": {
   "name": "Deye SG04LP3 Monitor",
-  "sw_version": "0.2.6"
+  "sw_version": "0.2.7"
  }
 }

@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.2.7
+
+Totals over all inverters of the installation (live context: four SG04LP3 in off-grid parallel with
+one shared battery bank).
+
+- **Plant totals on the app device** "Deye Monitor": PV, battery, load and inverter output power;
+  PV, battery charge/discharge and load energy (`total_increasing`, usable in the Home Assistant
+  Energy dashboard); optional "today" sums (measurement only). A member with a missing or stale
+  value makes the total unknown, never a partial sum.
+- **Plant energy series** (`g<n>`, never reused, persisted in `/data/plant-totals.json`): a new
+  series starts when the membership changes or any member starts a new energy series, so the plant
+  total never drops or jumps. Discovery cleanup retires old series like inverter series.
+- **Battery state from the master only**: plant battery SOC and BMS SOC, voltage, current (bank) and
+  temperature come from the member that reports itself as parallel master (R336); unknown without
+  one. Battery power is also shown from the master's BMS bank view next to the sum of the members'.
+- **Membership**: the section "Plant (totals)" on the plant page (checkbox per inverter, default
+  all; stored in the plant file). Fewer than two members: no plant entities unless enabled.
+  Overview: new plant card with totals and member status. Diagnostics: members, stale members,
+  master, series.
+- **Profile (cloud export findings)**: R216 is now `bms_current`, "BMS current (bank)": signed, 1 A,
+  positive = charging (opposite to R591), default sensor. The former raw entry `bms_current_raw`
+  is gone (a saved selection that contained it is reported and cleaned like any obsolete key). The
+  warning bit R554 bit 14 is named "Battery communication warning (W31)" (the key stays
+  `alarm_battery_missing`); the W number is inferred from the bit position.
+- **Firmware as two diagnostics**: "Firmware MCU1" (`1001-C070`, R17-R18) and "Firmware MCU2"
+  (`2005-1175-1807`, R14-R16) replace "Firmware". "Main firmware version" (R15) is part of MCU2 and
+  no longer a default sensor (still selectable).
+- **Fix (review 13, R13-01)**: a pass in which R336 cannot be read no longer clears a confirmed
+  parallel-slave verdict (and no longer emits the slave's invalid battery temperature). The role is
+  tri-state (slave / master or standalone / unknown); unknown keeps the verdict and infers no slave
+  at the first start; a valid master/standalone clears it, a valid slave checks the BMS block again.
+- The BMS all-zero check reads in chunks when the endpoint's read limit is smaller than the block.
+
 ## 0.2.6
 
 The Modbus address depends on the connection type (field finding: four SG04LP3 in parallel).

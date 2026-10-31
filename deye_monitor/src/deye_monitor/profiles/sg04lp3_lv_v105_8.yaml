@@ -287,7 +287,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R15 (TXT 289-298)"
   confidence: firmware_initial_value_and_public_copy_verified_29_images
-  default_enabled: true
+  default_enabled: false
   notes: "Bit 12-15: F marks an internal test build; bits 0-11 sequential version. Used as capability cache key, not as a\
     \ support bit."
 - key: id_fw_main_version
@@ -1303,11 +1303,11 @@ entries:
   notes: Documented bit 2 (grid phase error). A previously stored cause may persist.
 - key: alarm_battery_missing
   name:
-    de: Warnung Lithium-Batterie fehlt
-    en: Lithium battery missing
+    de: Warnung Batteriekommunikation (W31)
+    en: Battery communication warning (W31)
   description:
-    de: "Warnung, wenn eine Lithium-Batterie erwartet, aber nicht erkannt wird."
-    en: "Warning when a lithium battery is expected but not detected."
+    de: "Warnung W31: Lithium-Batterie fehlt bzw. keine Kommunikation mit dem BMS (Dokument: Lithium battery missing)."
+    en: "Warning W31: lithium battery missing / no communication with the BMS (document: lithium battery missing alarm)."
   addr: 554
   type: bitfield
   mask: 16384
@@ -1326,7 +1326,7 @@ entries:
   source: "V105.8 registers.json inverter: R554 (TXT 3463-3474)"
   confidence: document_only
   default_enabled: true
-  notes: Documented bit 14. A previously stored cause may persist.
+  notes: Documented bit 14 of the second alarm word (the 31st warning bit, W31 in the Deye cloud, shown there as battery communication warning). The W number is inferred from the bit position. A previously stored cause may persist.
 - key: alarm_parallel_comm
   name:
     de: Warnung Parallel-Kommunikation
@@ -2015,21 +2015,24 @@ entries:
   source: "V105.8 registers.json inverter: R215 (TXT 1665-1672)"
   confidence: document_only
   default_enabled: true
-- key: bms_current_raw
+- key: bms_current
   name:
-    de: BMS Strom roh
-    en: BMS current raw
+    de: BMS Strom (Bank)
+    en: BMS current (bank)
   description:
-    de: "Batteriestrom laut BMS als Rohzahl; Einheit und Richtung sind nicht bestätigt."
-    en: "Battery current according to the BMS as a raw number; unit and direction are not confirmed."
+    de: "Batteriestrom der gesamten Batteriebank laut BMS; positiv = Laden (umgekehrt zum Batteriestrom des Wechselrichters)."
+    en: "Current of the whole battery bank according to the BMS; positive = charging (opposite to the inverter's battery current)."
   addr: 216
-  type: raw
+  type: s16
+  scale: 1
+  unit: A
+  device_class: current
+  state_class: measurement
   category: battery
   point: bms
   group: settings
   tags:
   - bms
-  - raw
   requires:
     all_of:
     - feature: battery
@@ -2039,11 +2042,11 @@ entries:
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: unresolved
-  source: "V105.8 registers.json inverter: R216 (TXT 1672-1679)"
-  confidence: unresolved
-  default_enabled: false
-  notes: "Unit is 1 A in the source but no sign convention is given: raw only."
+  release: profile_dependent
+  source: "V105.8 registers.json inverter: R216 (TXT 1672-1679); Deye cloud day export 31.10.2026"
+  confidence: field_evidence
+  default_enabled: true
+  notes: "Signed, 1 A. Bank total on a parallel master, positive = charging (R591 of the inverter is negative while charging). The cloud export matches the sum of the units' battery currents in magnitude and with opposite sign. Slaves report 0."
 - key: bms_temperature
   name:
     de: BMS Temperatur

@@ -1,6 +1,6 @@
 [project]
 name = "deye-monitor"
-version = "0.2.6"
+version = "0.2.7"
 description = "Read-only Home Assistant app for Deye SUN-xK-SG04LP3 inverters"
 requires-python = ">=3.14,<3.15"
 license = { text = "MIT" }

@@ -231,6 +231,21 @@ Change contract (Review 9): A proposed generation is *provisional* until the dur
 
 `/data/selection.json` with `schema_version` and monotonic `revision`; migration with stable keys, unknown/obsolete keys are reported and discarded. New selection: validate → adopt (runtime/publisher) → durably accept as a two-slot document (`selection.a.json`/`selection.b.json`, each complete with sequence and checksum, atomic tmp + fsync + rename into the slot that does not hold the newest valid state); success is reported only afterwards, any error (adoption or persistence) rolls back the adoption and leaves the accepted state intact; if rollback is not possible, the inverters are locked (`selection_recovery_required`). On load, the newest fully valid slot applies. The revision is bound to plan, cycle and publish job: responses of an old plan are no longer published after an entity is removed/redefined. The discovery inventory (`/data/discovery.json`) is reconciled with the revision; removed components are taken out of the device discovery in a targeted way without deleting others; a restart in any transition is idempotent.
 
+### 9.7 Plant totals (0.2.7)
+
+Totals over the member inverters live on the app device (`deye_<instance>_app_plant_*`, state topic
+`<prefix>/<instance>/app/plant`). Members: every inverter except `totals.exclude` in the plant file
+(default all; `allow_single` keeps the device for one member; fewer than two members: no plant
+entities, they are retired by the normal cleanup). Computation (`totals.py`): newest value per
+member, stale after 3 poll intervals of its group, any missing/stale/`null` member value makes the
+total `null` (never a partial sum); members without PV entries add 0 to PV. Energy totals are sums of
+the members' total counters; the plant series `g<n>` (`/data/plant-totals.json`: generation +
+signature of members and their own series) advances when the membership or any member series
+changes and is never reused (after a lost file it continues after the highest series in the discovery
+inventory). Battery state comes from the single member whose R336 says parallel master. Battery
+power per member is battery voltage x battery current (positive = discharging); the BMS bank view is
+`-(BMS voltage x BMS current)` because R216 is positive while charging.
+
 ## 10. Write layer (T13+, after acceptance of the read part)
 
 Framework: per inverter `allow_writes: false` (default); without enablement, behavior exactly as in §1. Before implementation, a separate write contract is accepted that satisfies at least REVIEW2 DR2-09 through DR2-13:

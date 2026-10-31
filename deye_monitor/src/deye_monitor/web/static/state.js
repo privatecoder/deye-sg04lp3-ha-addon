@@ -10,6 +10,7 @@ export const state = {
   catalog: null,
   plant: null,
   inverters: [],
+  totals: { active: false },
   revision: 0,
   actionCounter: 0,
   serverNow: null,
@@ -68,6 +69,7 @@ export async function loadCatalog() {
 export async function loadInverters() {
   const data = await api('GET', 'api/inverters');
   state.inverters = data.inverters;
+  state.totals = data.totals || { active: false };
   state.revision = data.revision;
   state.plantRevision = data.plant_revision;
   state.serverNow = data.now;

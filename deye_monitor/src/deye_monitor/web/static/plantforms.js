@@ -666,3 +666,7 @@ export const deleteEndpoint = (id, { message, onLoaded = null }) =>
 
 export const deleteInverter = (id, removeBinding, { message, onLoaded = null }) =>
   plantCall('POST', `api/plant/inverters/${id}/delete`, { confirm: true, remove_binding: removeBinding }, { message, onLoaded });
+
+// The "Plant (totals)" setting: the inverters whose values the plant totals add up.
+export const saveTotals = (members, allowSingle, { message }) =>
+  plantCall('PUT', 'api/plant/totals', { members, allow_single: allowSingle }, { message });

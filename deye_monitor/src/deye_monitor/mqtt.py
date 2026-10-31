@@ -50,6 +50,7 @@ from deye_monitor.ha_discovery import (
     inverter_component,
     inverter_diagnostic_components,
     inverter_diagnostic_values,
+    plant_components,
     state_payload,
     timestamp,
 )
@@ -63,6 +64,7 @@ from deye_monitor.mqtt_discovery import (
 from deye_monitor.profiles.decode import Value
 from deye_monitor.profiles.schema import Entry, Profile
 from deye_monitor.store import JsonStore
+from deye_monitor.totals import METRICS, PlantTotals
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +104,7 @@ class InverterInfo:
 
 
 STOP_RESERVE_S = 5.0
+PLANT_MIN_INTERVAL_S = 1.0  # plant totals are published at most this often
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +265,7 @@ class MqttPublisher:
         clock: Callable[[], float] = time.monotonic,
         rand: Callable[[], float] = random.random,
         diagnostics_of: Callable[[str], Mapping[str, Any] | None] | None = None,
+        totals: PlantTotals | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
     ) -> None:
         self.ns = ns
@@ -278,6 +282,8 @@ class MqttPublisher:
         self._purges: list[str | None] = []
         self._last_app_publish = -1e18
         self._settle_due: float | None = None  # the extra refresh after a discovery change
+        self.totals = totals
+        self._last_plant_publish = -1e18
         self._inv: dict[str, _Inverter] = {}
         for info in inverters:
             keys, revision = (selections or {}).get(info.id, (frozenset(), 0))
@@ -328,12 +334,19 @@ class MqttPublisher:
             rec.series = snapshot.energy_series  # a new series: the discovery follows first
             rec.known.add(rec.series)
             self._discovery_dirty = True
+            if self.totals is not None and inverter_id in self.totals.members:
+                self.totals.drop_energy(inverter_id)  # counters of the old series are void
+                self.totals.sync_series()  # the plant starts a new series too
         old = self._slots.get((inverter_id, snapshot.group))
         if old is not None and old.snapshot.cycle_id > snapshot.cycle_id:
             self.dropped_stale += 1
             return
         rec.epoch = snapshot.lifecycle_epoch
         self._slots[(inverter_id, snapshot.group)] = _Slot(snapshot, dict(values))
+        if self.totals is not None and not snapshot.failed:
+            self.totals.update(inverter_id, values, self._clock())
+        elif self.totals is not None:
+            self.totals.drop(inverter_id)  # a failed read: every value is unknown
         self._wake.set()
 
     def on_availability(self, inverter_id: str, state: InverterState, reason: str) -> None:
@@ -341,6 +354,8 @@ class MqttPublisher:
         if rec is None:
             return
         rec.state, rec.reason = state, reason
+        if self.totals is not None:
+            self.totals.set_online(inverter_id, state is InverterState.RUNNING)
         if state is not InverterState.RUNNING:
             rec.fresh = False  # online again only after a fresh measurement
             self._drop_slots(inverter_id)
@@ -437,6 +452,8 @@ class MqttPublisher:
     def _drop_slots(self, inverter_id: str) -> None:
         for key in [k for k in self._slots if k[0] == inverter_id]:
             del self._slots[key]
+        if self.totals is not None:
+            self.totals.drop(inverter_id)
 
     def _check_serial(self, rec: _Inverter) -> None:
         if self._serial_of is None:
@@ -462,6 +479,12 @@ class MqttPublisher:
         known = active | series(entry.get("retired", {}))
         return (next(iter(active)) if active else None), known
 
+    def totals_view(self) -> dict[str, Any]:
+        """Plant totals and member status for the web interface (``active`` false without them)."""
+        if self.totals is None:
+            return {"active": False}
+        return self.totals.view(self._clock())
+
     def diagnostics(self) -> dict[str, Any]:
         return {
             "connected": self.connected,
@@ -483,7 +506,11 @@ class MqttPublisher:
         ns = self.ns
         app_meta = DeviceMeta(ns.app_device_id, "Deye Monitor", "app")
         states = tuple(s.value for s in InverterState)
-        targets = {ns.discovery_topic(ns.app_device_id): DeviceTarget(app_meta, app_components(ns))}
+        app_comps = app_components(ns)
+        if self.totals is not None:
+            expire = {m.key: self.totals.expire_after(m) for m in METRICS}
+            app_comps.update(plant_components(ns, self.totals.series.series, expire))
+        targets = {ns.discovery_topic(ns.app_device_id): DeviceTarget(app_meta, app_comps)}
         for inverter_id, rec in self._inv.items():
             components: dict[str, dict[str, Any]] = {}
             for key in sorted(rec.keys - rec.dropped):
@@ -549,6 +576,8 @@ class MqttPublisher:
         publish = self._make_publish(conn)
         self._engine = DiscoveryEngine(self.ns, self._store, publish)
         self._slots.clear()  # old measurements are never replayed
+        if self.totals is not None:
+            self.totals.clear()
         self._birth.clear()
         self._consumer_error = None
         self.sessions += 1
@@ -671,6 +700,11 @@ class MqttPublisher:
                 wait = min(wait, max(0.0, gap - self._clock()))
             if self._settle_due is not None:
                 wait = min(wait, max(0.0, self._settle_due - self._clock()))
+            if self.totals is not None:
+                due = self._last_plant_publish + (
+                    PLANT_MIN_INTERVAL_S if self.totals.dirty else self.settings.heartbeat_s
+                )
+                wait = min(wait, max(0.0, due - self._clock()))
             with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(wait):
                     await self._wake.wait()
@@ -680,6 +714,8 @@ class MqttPublisher:
         if self._birth.is_set():
             self._birth.clear()
             self._slots.clear()  # HA is (re)starting: only fresh cycles from now on
+            if self.totals is not None:
+                self.totals.clear()
             await self._sync(replay=True, birth=True)
             self._refresh_all()
             return True
@@ -702,10 +738,28 @@ class MqttPublisher:
             key = min(self._slots, key=lambda k: (self._slots[k].snapshot.cycle_id, k))
             await self._publish_slot(publish, self._slots.pop(key), key[0])
             return True
+        if self._plant_due():
+            await self._publish_plant(publish)
+            return True
         if self._app_due():
             await self._publish_app(publish)
             return True
         return False
+
+    def _plant_due(self) -> bool:
+        if self.totals is None:
+            return False
+        now = self._clock()
+        if now >= self._last_plant_publish + self.settings.heartbeat_s:
+            return True
+        return self.totals.dirty and now >= self._last_plant_publish + PLANT_MIN_INTERVAL_S
+
+    async def _publish_plant(self, publish: Callable[[str, bytes, bool], Any]) -> None:
+        assert self.totals is not None
+        self.totals.dirty = False
+        self._last_plant_publish = self._clock()
+        body = {"timestamp": timestamp(time.time()), **self.totals.payload(self._clock())}
+        await publish(self.ns.plant_state_topic, encode(body), False)
 
     def _app_due(self) -> bool:
         now = self._clock()

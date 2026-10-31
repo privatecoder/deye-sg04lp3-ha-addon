@@ -234,8 +234,7 @@ DIAGNOSTICS = {
     "remote_run_enable",
     "parallel_sn",
     "parallel_master",
-    "fw_main_version",
-}
+}  # fw_main_version (R15) is part of the MCU2 diagnostic since 0.2.7
 
 
 def test_diagnostics_are_available_for_every_feature_combination(

@@ -33,6 +33,7 @@ from deye_monitor.config import (
     EndpointConfig,
     InverterConfig,
     PlantConfig,
+    TotalsConfig,
     Transport,
     plant_problems,
 )
@@ -389,6 +390,7 @@ class WebApi:
             r.add_post("/api/plant/inverters", self._inverter_create)
             r.add_put("/api/plant/inverters/{inverter}", self._inverter_update)
             r.add_post("/api/plant/inverters/{inverter}/delete", self._inverter_delete)
+            r.add_put("/api/plant/totals", self._totals_update)
             r.add_post("/api/plant/test", self._plant_test)
         return app
 
@@ -619,6 +621,11 @@ class WebApi:
             "selection": selection_view(sel, self.manager.plan(inverter_id, sel), bus_load),
         }
 
+    def _totals_view(self) -> dict[str, Any]:
+        if self._in_recovery() or self.publisher is None:
+            return {"active": False}
+        return self.publisher.totals_view()
+
     async def _inverters(self, request: web.Request) -> web.Response:
         return json_response(
             {
@@ -626,6 +633,7 @@ class WebApi:
                 "plant_revision": self.plant.revision if self.plant else None,
                 "now": self.runtime._wall(),  # server clock: the UI shows ages relative to it
                 "inverters": [self._inverter_view(i) for i in self.manager.specs],
+                "totals": self._totals_view(),
             }
         )
 
@@ -961,6 +969,12 @@ class WebApi:
             "revision": service.revision,
             "endpoints": endpoints,
             "inverters": inverters,
+            "totals": {
+                "exclude": list(plant.totals.exclude),
+                "allow_single": plant.totals.allow_single,
+                "members": list(plant.totals.members(plant.inverters)),
+                "active": plant.totals.active(plant.inverters),
+            },
             "notices": list(service.notices),
             "limits": {"endpoints": MAX_ENDPOINTS, "inverters": MAX_INVERTERS},
             "writes": "unavailable",
@@ -1033,7 +1047,10 @@ class WebApi:
             raise _validation_error(exc) from None
 
     def _plant_checked(
-        self, endpoints: list[EndpointConfig], inverters: list[InverterConfig]
+        self,
+        endpoints: list[EndpointConfig],
+        inverters: list[InverterConfig],
+        totals: TotalsConfig | None = None,
     ) -> PlantConfig:
         if len(endpoints) > MAX_ENDPOINTS or len(inverters) > MAX_INVERTERS:
             raise ChangeError("too_many", 422)
@@ -1044,7 +1061,11 @@ class WebApi:
                 422,
                 problems=[{"code": p.code, "params": p.params} for p in problems[:10]],
             )
-        return PlantConfig(endpoints=tuple(endpoints), inverters=tuple(inverters))
+        return PlantConfig(
+            endpoints=tuple(endpoints),
+            inverters=tuple(inverters),
+            totals=totals or self._plant_service().plant.totals,
+        )
 
     async def _plant_change(
         self,
@@ -1175,6 +1196,31 @@ class WebApi:
         return await self._plant_change(
             expected, build, forget=frozenset({inverter_id}) if forget else frozenset()
         )
+
+    async def _totals_update(self, request: web.Request) -> web.Response:
+        """The ``Plant (totals)`` setting: which inverters the totals add up."""
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        data = _object(body, required=["members"], optional=["allow_single"])
+        members = data["members"]
+        if not isinstance(members, list) or not all(isinstance(m, str) for m in members):
+            raise _field_error("members", "invalid")
+        flag = data.get("allow_single", False)
+        if not isinstance(flag, bool):
+            raise _field_error("allow_single", "invalid")
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            known = {i.id for i in plant.inverters}
+            if set(members) - known:
+                raise ChangeError("unknown_inverter", 404)
+            exclude = tuple(i.id for i in plant.inverters if i.id not in members)
+            return self._plant_checked(
+                list(plant.endpoints),
+                list(plant.inverters),
+                TotalsConfig(exclude=exclude, allow_single=flag),
+            )
+
+        return await self._plant_change(expected, build)
 
     async def _plant_test(self, request: web.Request) -> web.Response:
         """Read-only identity read of one connection (``probe``); the form values need not be

@@ -27,7 +27,7 @@ from typing import Any, Protocol, TypeVar
 
 from pydantic import ValidationError
 
-from deye_monitor.config import AppConfig, PlantConfig
+from deye_monitor.config import AppConfig, PlantConfig, TotalsConfig
 from deye_monitor.selection import (
     ChangeError,
     InverterSpec,
@@ -49,20 +49,27 @@ MAX_ENDPOINTS = 32
 MAX_INVERTERS = 32
 
 
+_BODY_KEYS = {"revision", "endpoints", "inverters"}
+
+
 def plant_to_body(plant: PlantConfig, revision: int) -> dict[str, Any]:
-    return {
+    body: dict[str, Any] = {
         "revision": revision,
         "endpoints": [e.model_dump(mode="json", exclude_none=True) for e in plant.endpoints],
         "inverters": [i.model_dump(mode="json", exclude_none=True) for i in plant.inverters],
     }
+    if plant.totals != TotalsConfig():  # the default is not stored: older slots stay identical
+        body["totals"] = plant.totals.model_dump(mode="json")
+    return body
 
 
 def plant_from_body(body: Mapping[str, Any]) -> PlantConfig | None:
     """The plant of a stored body, or ``None`` when it does not validate."""
     try:
-        return PlantConfig.model_validate(
-            {"endpoints": body.get("endpoints"), "inverters": body.get("inverters")}
-        )
+        data = {"endpoints": body.get("endpoints"), "inverters": body.get("inverters")}
+        if "totals" in body:
+            data["totals"] = body["totals"]
+        return PlantConfig.model_validate(data)
     except ValidationError:
         return None
 
@@ -83,7 +90,7 @@ def _valid_slot(doc: dict[str, Any]) -> bool:
     revision = body.get("revision")
     if not (isinstance(revision, int) and not isinstance(revision, bool) and revision >= 0):
         return False
-    if set(body) != {"revision", "endpoints", "inverters"}:
+    if set(body) - {"totals"} != _BODY_KEYS:
         return False
     return doc.get("checksum") == _checksum(seq, body) and plant_from_body(body) is not None
 

@@ -1,0 +1,336 @@
+{
+ "availability": [
+  {
+   "topic": "deye/ab12cd34/status"
+  }
+ ],
+ "availability_mode": "all",
+ "components": {
+  "app_version": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_app_version",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "App version",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_app_version",
+   "value_template": "{{ value_json.get('app_version') if value_json is mapping else none }}"
+  },
+  "inverters_configured": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverters_configured",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Inverters configured",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverters_configured",
+   "value_template": "{{ value_json.get('inverters_configured') if value_json is mapping else none }}"
+  },
+  "inverters_online": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_inverters_online",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Inverters online",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_inverters_online",
+   "value_template": "{{ value_json.get('inverters_online') if value_json is mapping else none }}"
+  },
+  "mqtt_reconnects": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_mqtt_reconnects",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "MQTT reconnects",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/diagnostics",
+   "unique_id": "deye_ab12cd34_app_mqtt_reconnects",
+   "value_template": "{{ value_json.get('mqtt_reconnects') if value_json is mapping else none }}"
+  },
+  "plant_battery_charge_energy_today": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_battery_charge_energy_today",
+   "expire_after": 90,
+   "name": "Plant battery charge today",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_app_plant_battery_charge_energy_today",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_battery_charge_energy_today') if value_json is mapping else none }}"
+  },
+  "plant_battery_charge_energy_total_g0": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_battery_charge_energy_total_g0",
+   "device_class": "energy",
+   "expire_after": 90,
+   "name": "Plant battery charge (g0)",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_battery_charge_energy_total_g0",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_battery_charge_energy_total') if value_json is mapping and value_json.get('energy_series') == 'g0' else none }}"
+  },
+  "plant_battery_discharge_energy_today": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_battery_discharge_energy_today",
+   "expire_after": 90,
+   "name": "Plant battery discharge today",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_app_plant_battery_discharge_energy_today",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_battery_discharge_energy_today') if value_json is mapping else none }}"
+  },
+  "plant_battery_discharge_energy_total_g0": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_battery_discharge_energy_total_g0",
+   "device_class": "energy",
+   "expire_after": 90,
+   "name": "Plant battery discharge (g0)",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_battery_discharge_energy_total_g0",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_battery_discharge_energy_total') if value_json is mapping and value_json.get('energy_series') == 'g0' else none }}"
+  },
+  "plant_battery_power": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_battery_power",
+   "device_class": "power",
+   "expire_after": 90,
+   "name": "Plant battery power",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_battery_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('plant_battery_power') if value_json is mapping else none }}"
+  },
+  "plant_battery_soc": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_battery_soc",
+   "device_class": "battery",
+   "expire_after": 90,
+   "name": "Plant battery SOC",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_battery_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('plant_battery_soc') if value_json is mapping else none }}"
+  },
+  "plant_bms_current": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_current",
+   "device_class": "current",
+   "expire_after": 90,
+   "name": "Plant BMS current (bank)",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_bms_current",
+   "unit_of_measurement": "A",
+   "value_template": "{{ value_json.get('plant_bms_current') if value_json is mapping else none }}"
+  },
+  "plant_bms_power": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_power",
+   "device_class": "power",
+   "expire_after": 90,
+   "name": "Plant battery power (BMS bank view)",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_bms_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('plant_bms_power') if value_json is mapping else none }}"
+  },
+  "plant_bms_soc": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_soc",
+   "device_class": "battery",
+   "expire_after": 90,
+   "name": "Plant BMS SOC",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_bms_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('plant_bms_soc') if value_json is mapping else none }}"
+  },
+  "plant_bms_temperature": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_temperature",
+   "device_class": "temperature",
+   "expire_after": 90,
+   "name": "Plant BMS temperature",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_app_plant_bms_temperature",
+   "unit_of_measurement": "°C",
+   "value_template": "{{ value_json.get('plant_bms_temperature') if value_json is mapping else none }}"
+  },
+  "plant_bms_voltage": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_voltage",
+   "device_class": "voltage",
+   "expire_after": 90,
+   "name": "Plant BMS voltage",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 2,
+   "unique_id": "deye_ab12cd34_app_plant_bms_voltage",
+   "unit_of_measurement": "V",
+   "value_template": "{{ value_json.get('plant_bms_voltage') if value_json is mapping else none }}"
+  },
+  "plant_energy_series": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_energy_series",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Plant energy series",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_energy_series",
+   "value_template": "{{ value_json.get('energy_series') if value_json is mapping else none }}"
+  },
+  "plant_inverter_power": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_inverter_power",
+   "device_class": "power",
+   "expire_after": 90,
+   "name": "Plant inverter output power",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_inverter_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('plant_inverter_power') if value_json is mapping else none }}"
+  },
+  "plant_load_energy_today": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_load_energy_today",
+   "expire_after": 90,
+   "name": "Plant load energy today",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_app_plant_load_energy_today",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_load_energy_today') if value_json is mapping else none }}"
+  },
+  "plant_load_energy_total_g0": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_load_energy_total_g0",
+   "device_class": "energy",
+   "expire_after": 90,
+   "name": "Plant load energy (g0)",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_load_energy_total_g0",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_load_energy_total') if value_json is mapping and value_json.get('energy_series') == 'g0' else none }}"
+  },
+  "plant_load_power": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_load_power",
+   "device_class": "power",
+   "expire_after": 90,
+   "name": "Plant load power",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_load_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('plant_load_power') if value_json is mapping else none }}"
+  },
+  "plant_master": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_master",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Plant master",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_master",
+   "value_template": "{{ value_json.get('plant_master') if value_json is mapping else none }}"
+  },
+  "plant_members": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_members",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "json_attributes_template": "{{ {'members': value_json.get('plant_members_list')} | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/app/plant",
+   "name": "Plant members",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_members",
+   "value_template": "{{ value_json.get('plant_members') if value_json is mapping else none }}"
+  },
+  "plant_members_stale": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_members_stale",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "json_attributes_template": "{{ {'members': value_json.get('plant_members_stale_list')} | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/app/plant",
+   "name": "Plant stale members",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_members_stale",
+   "value_template": "{{ value_json.get('plant_members_stale') if value_json is mapping else none }}"
+  },
+  "plant_pv_energy_today": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_pv_energy_today",
+   "expire_after": 90,
+   "name": "Plant PV energy today",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_app_plant_pv_energy_today",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_pv_energy_today') if value_json is mapping else none }}"
+  },
+  "plant_pv_energy_total_g0": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_pv_energy_total_g0",
+   "device_class": "energy",
+   "expire_after": 90,
+   "name": "Plant PV energy (g0)",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "unique_id": "deye_ab12cd34_app_plant_pv_energy_total_g0",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('plant_pv_energy_total') if value_json is mapping and value_json.get('energy_series') == 'g0' else none }}"
+  },
+  "plant_pv_power": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_pv_power",
+   "device_class": "power",
+   "expire_after": 90,
+   "name": "Plant PV power",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_pv_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('plant_pv_power') if value_json is mapping else none }}"
+  }
+ },
+ "device": {
+  "identifiers": [
+   "deye_ab12cd34_app"
+  ],
+  "manufacturer": "Deye",
+  "name": "Deye Monitor"
+ },
+ "origin": {
+  "name": "Deye SG04LP3 Monitor",
+  "sw_version": "0.2.7"
+ }
+}

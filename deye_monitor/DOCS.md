@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher (0.2.6, experimental).** The app validates its
+> **Status: device loop with MQTT publisher (0.2.7, experimental).** The app validates its
 > configuration, then connects to the configured endpoints (read-only, Modbus function code 03
 > only), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
@@ -10,7 +10,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.6 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.7 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -63,19 +63,47 @@ device loop and without the publisher.
 * **Diagnostics.** The app device carries only app-wide entities: app version, inverters
   configured and online, MQTT reconnects. Everything that belongs to one inverter is a diagnostic
   sensor of that inverter's own device (no name prefix; available while the inverter is offline):
-  state and reason, connection path and endpoint, bound serial number, firmware like the Deye
-  cloud (`MCU1: 1001-C070 / MCU2: 2005-1175-1807`: MCU1 = communication/HMI board R17-R18, MCU2 =
-  control board R14-R15-R16), energy resolution raw word and last reading (only while R65 is read
+  state and reason, connection path and endpoint, bound serial number, the firmware of both boards
+  like the Deye cloud (`Firmware MCU1` = `1001-C070`, communication/HMI board R17-R18, and
+  `Firmware MCU2` = `2005-1175-1807`, control board R14-R15-R16; the former "Main firmware
+  version" R15 is part of MCU2 and no longer a default sensor), energy resolution raw word and last reading (only while R65 is read
   and reported), effective energy resolution and its source (`user choice` or `R65`),
   confirmation/blocking state, current energy series, number of capability conflicts (the list is
   an attribute), bus utilisation, transport timeouts/frame errors/resyncs, cooldown and the time
   of the last successful read. Unknown values are `unknown` (`null`); updates are throttled to
   one message per 0.5 s.
+* **Plant totals.** With two or more inverters the app device also carries the totals over the
+  inverters ("Plant (totals)", below). They are computed from the newest value of each member; a
+  member whose value is missing, `null` or older than three poll intervals makes the total
+  `unknown` (never a partial sum). A member without PV inputs (none selected) adds 0 to the PV
+  totals.
+
+  | Sensor | Meaning |
+  | --- | --- |
+  | Plant PV power / load power / inverter output power | sums of PV1..n power, "Load power total" (equals the LOAD/UPS output on these units) and "Inverter output power total" |
+  | Plant battery power | sum of battery voltage x battery current of the members; **positive = discharging** |
+  | Plant PV energy, battery charge, battery discharge, load energy | sums of the members' total counters (`total_increasing`), name suffix `(g<n>)` |
+  | Plant ... today (PV, battery charge/discharge, load) | sums of the "today" counters, measurement only |
+  | Plant battery SOC, BMS SOC / voltage / current (bank) / temperature, battery power (BMS bank view) | from the parallel **master** only (R336), never averaged; `unknown` without exactly one master among the members. BMS current is positive while charging, so the bank-view power is negated to show discharging as positive |
+  | Plant members / stale members / master / energy series | diagnostics; the members are attributes |
+
+  **Energy dashboard.** Use the energy sensors with `(g<n>)`: *Plant PV energy* as solar
+  production, *Plant battery charge* and *Plant battery discharge* as the battery's "energy
+  going in" and "out", *Plant load energy* as individual device or house consumption. Do not use
+  the "today" sensors there. Every inverter counts its own battery, PV and load energy, so the sum
+  is the plant value; do not add the inverters' own sensors on top. A new plant series
+  (`g<n>`, never reused) starts when the membership changes or any member starts a new energy
+  series (resolution change, counter reset); the old plant energy entities are then retired, like
+  the inverter ones. The power sensors are for the live view (or for the Energy dashboard's
+  "power" options).
 * **Parallel slaves.** On a unit whose R336 says "parallel on, not master" the battery temperature
   (valid on the master only) and, when the BMS block R210-R219 reads entirely 0, the BMS entries
   are inactive: not polled, no entity, greyed in the selection with the reason; they become active
   again by themselves if the unit becomes master or leaves parallel mode. Never applied to
-  independent inverters or cascades.
+  independent inverters or cascades. A pass in which R336 cannot be read (missing or undecodable)
+  keeps the established verdict (no polling, no values, no entity restored); only a valid master or
+  standalone role clears it, a valid slave role checks the BMS block again (in chunks if the read
+  limit is smaller than the block). No slave is assumed while the role is unknown.
 * **"Only 0" hints.** Only physical measurements that should not be 0 in operation are watched
   (`observe_zero` in the profile; default by category). Alarm/fault words, flags, enums, counters
   and similar are healthy at 0 and never reported.
@@ -347,6 +375,15 @@ from the empty overview; the page **Set up plant** (top navigation) edits everyt
   readable and show the inverters as stopped. A running connection check is cancelled by a plant
   change.
   Removed inverters are taken out of the discovery through the existing cleanup ledger.
+
+### Plant (totals)
+
+On the "Set up plant" page, below "Inverters", the section **Plant (totals)** lists every inverter
+with a checkbox (default: all). Unchecked inverters are left out of the totals, so independent
+units can be excluded. The totals exist for two or more members; for a single member tick "Create
+the totals even for a single inverter". Saving restarts the polling like any plant change and
+starts a new plant energy series if the membership changed. The overview shows a **Plant total**
+card (totals and the status of every member).
 
 ### Using the web interface
 

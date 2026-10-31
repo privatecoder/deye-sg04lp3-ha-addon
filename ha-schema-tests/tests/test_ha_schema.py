@@ -32,7 +32,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
 
 GOLDEN = Path(__file__).resolve().parents[2] / "deye_monitor" / "tests" / "golden"
-DOCS = ("discovery_inverter.json", "discovery_app.json")
+DOCS = ("discovery_inverter.json", "discovery_app.json", "discovery_app_plant.json")
 
 
 def load(name: str) -> dict[str, Any]:
@@ -242,7 +242,8 @@ def test_inverter_diagnostics_render_numbers_text_timestamps_and_conflict_attrib
         "capability_conflict_list": [{"code": "mppt_count", "detail": "R22 = 1"}],
         "serial": None,
         "state": "running",
-        "firmware": "MCU1: 1001-C070 / MCU2: 2005-1175-1807",
+        "firmware_mcu1": "1001-C070",
+        "firmware_mcu2": "2005-1175-1807",
     }
 
     async def check(hass: HomeAssistant) -> None:
@@ -271,3 +272,37 @@ def test_inverter_diagnostics_render_numbers_text_timestamps_and_conflict_attrib
 def test_the_app_device_has_only_the_app_wide_entities() -> None:
     comps = load("discovery_app.json")["components"]
     assert set(comps) == {"app_version", "mqtt_reconnects", "inverters_online", "inverters_configured"}
+
+
+def test_plant_sensors_render_values_and_guard_the_energy_series() -> None:
+    effective(load("discovery_app_plant.json"))  # the root and platform schemas accept all
+    comps = load("discovery_app_plant.json")["components"]
+    body = {
+        "energy_series": "g0",
+        "plant_pv_power": 5200.0,
+        "plant_load_energy_total": 1234.5,
+        "plant_battery_soc": 61,
+        "plant_members": 4,
+        "plant_members_list": ["a", "b", "c", "d"],
+        "plant_master": "a",
+    }
+
+    async def check(hass: HomeAssistant) -> None:
+        power = make_sensor(hass, comps["plant_pv_power"])
+        power._update_state(message(body))
+        assert power.native_value == "5200.0"
+        energy = make_sensor(hass, comps["plant_load_energy_total_g0"])
+        energy._update_state(message(body))
+        assert energy.native_value == "1234.5"
+        energy._update_state(message({**body, "energy_series": "g1"}))  # another series: no value
+        assert energy.native_value is None
+        soc = make_sensor(hass, comps["plant_battery_soc"])
+        soc._update_state(message({**body, "plant_battery_soc": None}))
+        assert soc.native_value is None  # an unknown total stays unknown
+        members = make_sensor(hass, comps["plant_members"])
+        members._update_state(message(body))
+        tpl = Template(comps["plant_members"]["json_attributes_template"], hass)
+        rendered = json.loads(str(tpl.async_render_with_possible_json_value(json.dumps(body))))
+        assert rendered == {"members": ["a", "b", "c", "d"]}
+
+    run_in_ha(check)

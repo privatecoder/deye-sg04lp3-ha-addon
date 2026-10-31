@@ -440,17 +440,52 @@ def _v5_fallback_defaults(data: Any) -> Any:
     return {**data, "inverters": fixed}
 
 
+class TotalsConfig(_Model):
+    """Which inverters the plant totals add up (the ``Plant (totals)`` setting). Every inverter is
+    a member unless it is listed in ``exclude``; a new inverter is therefore a member right away."""
+
+    exclude: tuple[Id, ...] = ()
+    # the plant device normally exists for two or more members; this keeps it for a single one
+    allow_single: Annotated[bool, Field(strict=True)] = False
+
+    def members(self, inverters: Sequence[InverterConfig]) -> tuple[str, ...]:
+        return tuple(i.id for i in inverters if i.id not in self.exclude)
+
+    def active(self, inverters: Sequence[InverterConfig]) -> bool:
+        count = len(self.members(inverters))
+        return count >= 2 or (count == 1 and self.allow_single)
+
+
+def _prune_totals(data: Any) -> Any:
+    """Exclusions of inverters that no longer exist are dropped, so deleting an inverter never
+    leaves a stale entry behind."""
+    if not isinstance(data, dict):
+        return data
+    totals, inverters = data.get("totals"), data.get("inverters")
+    if isinstance(totals, TotalsConfig):
+        totals = totals.model_dump()
+    if not isinstance(totals, dict) or not isinstance(inverters, list | tuple):
+        return data
+    exclude = totals.get("exclude")
+    if not isinstance(exclude, list | tuple):
+        return data
+    ids = {i.get("id") if isinstance(i, dict) else getattr(i, "id", None) for i in inverters}
+    kept = [e for e in exclude if e in ids]
+    return {**data, "totals": {**totals, "exclude": kept}}
+
+
 class PlantConfig(_Model):
     """Connections and inverters: what the web interface edits and ``/data/plant.json`` stores.
     May be empty (a fresh installation)."""
 
     endpoints: tuple[EndpointConfig, ...] = ()
     inverters: tuple[InverterConfig, ...] = ()
+    totals: TotalsConfig = TotalsConfig()
 
     @model_validator(mode="before")
     @classmethod
     def _defaults(cls, data: Any) -> Any:
-        return _v5_fallback_defaults(data)
+        return _prune_totals(_v5_fallback_defaults(data))
 
     @model_validator(mode="after")
     def _domain(self) -> PlantConfig:
@@ -472,6 +507,7 @@ class AppConfig(_Model):
 
     endpoints: tuple[EndpointConfig, ...] = ()
     inverters: tuple[InverterConfig, ...] = ()
+    totals: TotalsConfig = TotalsConfig()
     mqtt: MqttConfig = MqttConfig()
     log_level: Literal["debug", "info", "warning", "error"] = "info"
     instance_id: str | None = None
@@ -503,12 +539,13 @@ class AppConfig(_Model):
 
     @property
     def plant(self) -> PlantConfig:
-        return PlantConfig(endpoints=self.endpoints, inverters=self.inverters)
+        return PlantConfig(endpoints=self.endpoints, inverters=self.inverters, totals=self.totals)
 
     def with_plant(self, plant: PlantConfig) -> AppConfig:
         return AppConfig(
             endpoints=plant.endpoints,
             inverters=plant.inverters,
+            totals=plant.totals,
             mqtt=self.mqtt,
             log_level=self.log_level,
             instance_id=self.instance_id,

@@ -6,7 +6,7 @@ The app is **read-only**: it sends only FC03 read accesses to inverters (see sec
 
 ## 1. Start prerequisites – tick these off first
 
-- [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.6` alone does not identify a state: note the commit/digest in the result sheet (section 10).
+- [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.7` alone does not identify a state: note the commit/digest in the result sheet (section 10).
 - [ ] The earlier re-verification findings N2-01 to N2-04 (energy namespace, isolated identity reset, restart after blocking, reconnect/confirmation states) were fixed in the fix rounds T7-Fix 2/3; the approval from the first item confirms that the approved version contains these rounds.
 - [x] **Before your first selection the app reads only identity and status.** An inverter without a saved selection shows "Please choose sensors" (section 3.1); normal reading begins only after saving via the web interface. There are no options such as `selected_keys` and no files in `/data` are changed by hand.
 - [x] Identity, active selection/read plan and connection errors can be inspected: web interface (overview, polling load per selection) and the diagnostic entities of the inverter devices (section 7).
@@ -68,7 +68,7 @@ Do not start an additional debug app or Modbus console in parallel. Local poller
 
 ### 3.1 First start: "Please choose sensors"
 
-As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 58 sensors and 29 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device. 
+As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 57 sensors and 29 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device. 
 
 1. Start the app (the app options stay empty except `instance_id`) and create the connection and inverter in the setup wizard of the web interface (stage 1, section 4).
 2. In the web interface (sidebar **Deye Monitor**) the inverter's card shows **"Please choose sensors"** after identification. Open **"Choose now"** there (or **Set up sensors**).
@@ -138,7 +138,8 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | `sensor.deye_deyetest1_deye1_diag_reason` | Reason in text form (e.g. "no usable identity answer", "serial number differs"); read first in every state except `running`. |
 | `sensor.deye_deyetest1_deye1_diag_path` | Active path (`primary`/`fallback`) and endpoint. |
 | `sensor.deye_deyetest1_deye1_diag_serial` | Bound inverter SN = `expected_serial`, unique per device. |
-| `sensor.deye_deyetest1_deye1_diag_firmware` | Firmware like the Deye cloud: `MCU1: 1001-C070 / MCU2: 2005-1175-1807` (MCU1 = communication/HMI board R17-R18, MCU2 = control board R14-R15-R16). |
+| `sensor.deye_deyetest1_deye1_diag_firmware_mcu1` | Firmware of the communication/HMI board (MCU1, R17-R18), like the Deye cloud: `1001-C070`. |
+| `sensor.deye_deyetest1_deye1_diag_firmware_mcu2` | Firmware of the control board (MCU2, R14-R16), like the Deye cloud: `2005-1175-1807`. |
 | `sensor.deye_deyetest1_deye1_diag_r65_raw` / `…_r65_status` | Energy resolution raw word and whether the last reading worked. Only present while R65 is read and reported (not with a user-chosen resolution, not on a device that reports `0xFFFF`). |
 | `sensor.deye_deyetest1_deye1_diag_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`R65` or `user choice`), confirmation/lock. |
 | `sensor.deye_deyetest1_deye1_diag_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |
