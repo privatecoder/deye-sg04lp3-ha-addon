@@ -178,8 +178,8 @@ async def test_role_change_is_picked_up_at_the_identity_pass(tmp_path: Path) -> 
 
 
 async def test_firmware_words_include_the_control_board(tmp_path: Path) -> None:
-    async with await _run(tmp_path, r14=0x2005, r15=0x1175, r16=0x1807) as r:
+    async with await _run(tmp_path, r14=0x2005, r15=0x1175, r11=0x1807) as r:
         inv = r.inv("deye1")
         await inv.step()
         words = inv.diagnostics()["identity"]["firmware_words"]
-        assert (words[14], words[15], words[16]) == (0x2005, 0x1175, 0x1807)
+        assert (words[14], words[15], words[11]) == (0x2005, 0x1175, 0x1807)

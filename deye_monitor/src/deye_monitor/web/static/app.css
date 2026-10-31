@@ -303,6 +303,7 @@ dialog.modal::backdrop { background: rgb(0 0 0 / 55%); }
 .app-nav a { padding: .35rem .8rem; border-radius: 999px; text-decoration: none; color: var(--text); }
 .app-nav a[aria-current="page"] { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 .plant-section { margin-bottom: 2rem; }
+.plant-section .checks { display: flex; flex-direction: column; gap: .35rem; margin: .5rem 0; }
 .plant-item h3 { margin-bottom: 0; }
 .target-line { margin: .25rem 0 .5rem; overflow-wrap: anywhere; }
 .actions.left { justify-content: flex-start; }

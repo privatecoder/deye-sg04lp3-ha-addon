@@ -485,7 +485,8 @@ class PlantTotals:
         body["plant_members_list"] = list(self.members)
         body["plant_members_stale_list"] = stale
         master = self.master()
-        body["plant_master"] = master
+        body["plant_master"] = self.members[master].name if master else None
+        body["plant_master_id"] = master
         return body
 
     def expire_after(self, metric: Metric) -> int:

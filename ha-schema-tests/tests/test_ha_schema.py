@@ -284,7 +284,8 @@ def test_plant_sensors_render_values_and_guard_the_energy_series() -> None:
         "plant_battery_soc": 61,
         "plant_members": 4,
         "plant_members_list": ["a", "b", "c", "d"],
-        "plant_master": "a",
+        "plant_master": "Deye Master 1",
+        "plant_master_id": "a",
     }
 
     async def check(hass: HomeAssistant) -> None:
@@ -304,5 +305,11 @@ def test_plant_sensors_render_values_and_guard_the_energy_series() -> None:
         tpl = Template(comps["plant_members"]["json_attributes_template"], hass)
         rendered = json.loads(str(tpl.async_render_with_possible_json_value(json.dumps(body))))
         assert rendered == {"members": ["a", "b", "c", "d"]}
+        master = make_sensor(hass, comps["plant_master"])
+        master._update_state(message(body))
+        assert master.native_value == "Deye Master 1"
+        tpl = Template(comps["plant_master"]["json_attributes_template"], hass)
+        rendered = json.loads(str(tpl.async_render_with_possible_json_value(json.dumps(body))))
+        assert rendered == {"inverter_id": "a"}
 
     run_in_ha(check)

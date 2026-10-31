@@ -79,7 +79,7 @@ As long as a selection has **never** been saved for an inverter, the app reads o
 
 If you want the template unchanged, use **"Accept the template unchanged"**; not recommended for this test.
 
-"Identity and status only" additionally comprises necessary **internal read** queries: R0, R3–7, R14–18, R20–22, R24, R336 as well as R500 and R551–558. For the feature hints the app also reads R111, R133 and R189 (group "Settings", diagnostics only). These are no write accesses. With `max_read_registers=20` and without gap bridging this gives **11 read blocks** per complete plan (identity 6, status 2, settings 3), not 11 requests every 30 seconds: each group has its own interval; identification and recovery may trigger additional probes. R65 is not needed in this selection. In the state "Please choose sensors" the same mandatory and hint registers are read.
+"Identity and status only" additionally comprises necessary **internal read** queries: R0, R3–7, R11–18, R20–22, R24, R336 as well as R500 and R551–558. For the feature hints the app also reads R111, R133 and R189 (group "Settings", diagnostics only). These are no write accesses. With `max_read_registers=20` and without gap bridging this gives **11 read blocks** per complete plan (identity 6, status 2, settings 3), not 11 requests every 30 seconds: each group has its own interval; identification and recovery may trigger additional probes. R65 is not needed in this selection. In the state "Please choose sensors" the same mandatory and hint registers are read.
 
 ## 4. Stage 1 – one inverter, gateway only
 
@@ -139,7 +139,7 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | `sensor.deye_deyetest1_deye1_diag_path` | Active path (`primary`/`fallback`) and endpoint. |
 | `sensor.deye_deyetest1_deye1_diag_serial` | Bound inverter SN = `expected_serial`, unique per device. |
 | `sensor.deye_deyetest1_deye1_diag_firmware_mcu1` | Firmware of the communication/HMI board (MCU1, R17-R18), like the Deye cloud: `1001-C070`. |
-| `sensor.deye_deyetest1_deye1_diag_firmware_mcu2` | Firmware of the control board (MCU2, R14-R16), like the Deye cloud: `2005-1175-1807`. |
+| `sensor.deye_deyetest1_deye1_diag_firmware_mcu2` | Firmware of the control board (MCU2, R14-R15-R11), like the Deye cloud: `2005-1175-1807`. |
 | `sensor.deye_deyetest1_deye1_diag_r65_raw` / `…_r65_status` | Energy resolution raw word and whether the last reading worked. Only present while R65 is read and reported (not with a user-chosen resolution, not on a device that reports `0xFFFF`). |
 | `sensor.deye_deyetest1_deye1_diag_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`R65` or `user choice`), confirmation/lock. |
 | `sensor.deye_deyetest1_deye1_diag_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |

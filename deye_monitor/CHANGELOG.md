@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.9
+
+Small fixes from the 0.2.8 field check.
+
+- **Firmware MCU2 corrected**: the third word is R11 (control board bootloader / assistant program
+  version), not R16. The control board now reads `2005-1175-1807` like the Deye cloud
+  (R14-R15-R11). MCU1 (R17-R18) is unchanged. R11-R18 are read as one identity block (R12, R13 and R16
+  are internal gap entries), so the number of read blocks is unchanged.
+- **Plant page, "Anlage (Summen)"**: one checkbox per line, labelled with the inverter name only.
+- **Plant master** (diagnostic on the app device) shows the inverter name; the id is the attribute
+  `inverter_id`.
+
 ## 0.2.8
 
 Named warnings and faults from the Deye alarm list (5-12 kW).

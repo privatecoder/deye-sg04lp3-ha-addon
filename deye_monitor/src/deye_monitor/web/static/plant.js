@@ -207,7 +207,7 @@ export function plantView() {
     const totals = plant.totals || { members: [], allow_single: false };
     const members = new Set(totals.members);
     const boxes = plant.inverters.map((inv) => h('label', { class: 'check', 'data-member': inv.id },
-      h('input', { type: 'checkbox', value: inv.id, checked: members.has(inv.id), disabled: !canEdit() }), ` ${inv.name} (${inv.id})`));
+      h('input', { type: 'checkbox', value: inv.id, checked: members.has(inv.id), disabled: !canEdit() }), ` ${inv.name}`));
     const single = h('input', { type: 'checkbox', id: 'totals-single', checked: totals.allow_single, disabled: !canEdit() });
     const message = h('div');
     const button = h('button', { class: 'btn primary', id: 'save-totals', type: 'button', disabled: !canEdit() }, t('plant.totals_save'));

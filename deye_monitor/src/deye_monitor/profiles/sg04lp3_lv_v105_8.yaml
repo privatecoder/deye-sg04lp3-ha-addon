@@ -242,10 +242,73 @@ entries:
   default_enabled: false
   internal: true
   mandatory: true
-- key: id_fw_control_r16
+- key: id_fw_control_r11
   name:
     de: Firmware Steuerplatine, drittes Wort (intern)
     en: Control board firmware, third word (internal)
+  addr: 11
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  tags: []
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "V105.8 document: R11 is the control board bootloader / assistant program version; the Deye cloud shows R14-R15-R11 as one MCU2 number (e.g. 2005-1175-1807)"
+  confidence: firmware_supported_1175_cloud_display
+  default_enabled: false
+  internal: true
+  mandatory: true
+- key: id_gap_r12
+  name:
+    de: Identitätslücke R12 (intern)
+    en: Identity gap R12 (internal)
+  addr: 12
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  tags: []
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "V105.8 registers: R12 lies between R11 and R18; read only so that R11-R18 is one block"
+  confidence: firmware_supported_1175_cloud_display
+  default_enabled: false
+  internal: true
+  mandatory: true
+- key: id_gap_r13
+  name:
+    de: Identitätslücke R13 (intern)
+    en: Identity gap R13 (internal)
+  addr: 13
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  tags: []
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "V105.8 registers: R13 lies between R11 and R18; read only so that R11-R18 is one block"
+  confidence: firmware_supported_1175_cloud_display
+  default_enabled: false
+  internal: true
+  mandatory: true
+- key: id_gap_r16
+  name:
+    de: Identitätslücke R16 (intern)
+    en: Identity gap R16 (internal)
   addr: 16
   type: raw
   entity_category: diagnostic
@@ -258,7 +321,7 @@ entries:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
-  source: "V105.8 document: R14-R15-R16 are the control board (MCU2) version words; the Deye cloud shows them as one number (e.g. 2005-1175-1807)"
+  source: "V105.8 registers: R16 lies between R11 and R18; read only so that R11-R18 is one block"
   confidence: firmware_supported_1175_cloud_display
   default_enabled: false
   internal: true

@@ -35,4 +35,4 @@ def test_the_plant_sensors_use_keys_the_profile_has() -> None:
 
 
 def test_main_firmware_is_not_a_default_sensor_any_more() -> None:
-    assert PROFILE.entry("fw_main_version").default_enabled is False  # part of MCU2 (R14-R16)
+    assert PROFILE.entry("fw_main_version").default_enabled is False  # part of MCU2 (R14-R15-R11)

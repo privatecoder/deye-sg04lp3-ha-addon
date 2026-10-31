@@ -327,7 +327,7 @@ def _number(value: object) -> int | float | None:
 
 def firmware_board(words: object, board: str) -> str | None:
     """One firmware board as the Deye cloud shows it: MCU1 ``1001-C070`` (communication/HMI board,
-    R17-R18), MCU2 ``2005-1175-1807`` (control board, R14-R15-R16)."""
+    R17-R18), MCU2 ``2005-1175-1807`` (control board, R14-R15-R11)."""
     if not isinstance(words, Mapping):
         return None
     values = [words.get(a) for a in _FIRMWARE_BOARDS[board]]
@@ -338,7 +338,7 @@ def firmware_board(words: object, board: str) -> str | None:
     )
 
 
-_FIRMWARE_BOARDS: Final = {"mcu1": (17, 18), "mcu2": (14, 15, 16)}
+_FIRMWARE_BOARDS: Final = {"mcu1": (17, 18), "mcu2": (14, 15, 11)}
 
 
 def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -481,6 +481,11 @@ def plant_components(
             comp["json_attributes_topic"] = comp["state_topic"]
             comp["json_attributes_template"] = (
                 f"{{{{ {{'members': value_json.get('{list_key}')}} | tojson }}}}"
+            )
+        if key == "plant_master":
+            comp["json_attributes_topic"] = comp["state_topic"]
+            comp["json_attributes_template"] = (
+                "{{ {'inverter_id': value_json.get('plant_master_id')} | tojson }}"
             )
         out[ckey] = comp
     return out

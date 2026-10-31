@@ -283,7 +283,7 @@ def test_the_app_device_keeps_only_app_wide_entities() -> None:
 
 
 def test_firmware_is_shown_like_the_deye_cloud() -> None:
-    words = {14: 0x2005, 15: 0x1175, 16: 0x1807, 17: 0x1001, 18: 0xC070}
+    words = {14: 0x2005, 15: 0x1175, 11: 0x1807, 17: 0x1001, 18: 0xC070}
     assert firmware_board(words, "mcu1") == "1001-C070"
     assert firmware_board(words, "mcu2") == "2005-1175-1807"
     partial = {15: 0x1175, 17: 0x1001, 18: 0xC070}
@@ -355,7 +355,7 @@ async def test_device_layer_tracks_r65_serial_and_cooldown(tmp_path: Path) -> No
         values = inverter_diagnostic_values(d)
         assert values["r65_status"] == "failed" and values["serial"] == A
         assert values["firmware_mcu1"] == "1000-0070"
-        assert values["firmware_mcu2"] == "002B-1001-0031"
+        assert values["firmware_mcu2"] == "002B-1001-0022"
 
 
 # -- T8-05: jitter ------------------------------------------------------------------------------

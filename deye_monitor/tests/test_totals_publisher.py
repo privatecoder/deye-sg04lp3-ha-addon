@@ -55,7 +55,7 @@ async def make(tmp_path: Path, *, ids: tuple[str, ...] = IDS) -> AsyncIterator[P
     series = {i: "g0" for i in ids}
     roles = {ids[0]: "master", **dict.fromkeys(ids[1:], "slave")}
     totals = PlantTotals(
-        [TotalsMember(i, i, PROFILE, PollConfig()) for i in ids],
+        [TotalsMember(i, f"Inverter {i}", PROFILE, PollConfig()) for i in ids],
         PlantSeries(tmp_path),
         keys_of=lambda i: set(KEYS),
         role_of=roles.get,
@@ -133,7 +133,8 @@ async def test_totals_are_published_and_unknown_while_a_member_is_missing(tmp_pa
         assert (
             last["plant_battery_soc"] == 76
             and last["plant_bms_soc"] == 77
-            and last["plant_master"] == "deye1"
+            and last["plant_master"] == "Inverter deye1"
+            and last["plant_master_id"] == "deye1"
         )
         assert last["energy_series"] == "g0"
         plant.pub.on_availability("deye2", InverterState.OFFLINE, "gone")

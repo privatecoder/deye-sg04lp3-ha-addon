@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher (0.2.8, experimental).** The app validates its
+> **Status: device loop with MQTT publisher (0.2.9, experimental).** The app validates its
 > configuration, then connects to the configured endpoints (read-only, Modbus function code 03
 > only), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
@@ -10,7 +10,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.8 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.9 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -73,7 +73,7 @@ device loop and without the publisher.
   sensor of that inverter's own device (no name prefix; available while the inverter is offline):
   state and reason, connection path and endpoint, bound serial number, the firmware of both boards
   like the Deye cloud (`Firmware MCU1` = `1001-C070`, communication/HMI board R17-R18, and
-  `Firmware MCU2` = `2005-1175-1807`, control board R14-R15-R16; the former "Main firmware
+  `Firmware MCU2` = `2005-1175-1807`, control board R14-R15-R11; the former "Main firmware
   version" R15 is part of MCU2 and no longer a default sensor), energy resolution raw word and last reading (only while R65 is read
   and reported), effective energy resolution and its source (`user choice` or `R65`),
   confirmation/blocking state, current energy series, number of capability conflicts (the list is

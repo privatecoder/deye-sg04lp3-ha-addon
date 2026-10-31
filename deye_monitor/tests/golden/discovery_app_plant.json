@@ -252,6 +252,8 @@
    "default_entity_id": "sensor.deye_ab12cd34_app_plant_master",
    "entity_category": "diagnostic",
    "expire_after": 90,
+   "json_attributes_template": "{{ {'inverter_id': value_json.get('plant_master_id')} | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/app/plant",
    "name": "Plant master",
    "platform": "sensor",
    "state_topic": "deye/ab12cd34/app/plant",
@@ -331,6 +333,6 @@
  },
  "origin": {
   "name": "Deye SG04LP3 Monitor",
-  "sw_version": "0.2.8"
+  "sw_version": "0.2.9"
  }
 }

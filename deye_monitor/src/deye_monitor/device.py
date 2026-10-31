@@ -724,7 +724,7 @@ class InverterRuntime:
 
     def _check_capabilities(self, words: Mapping[int, int], serial: str) -> None:
         caps = {a: words[a] for a in _CAPABILITY_WORDS if a in words}
-        self.identity_info["firmware_words"] = {a: words.get(a) for a in (14, 15, 16, 17, 18)}
+        self.identity_info["firmware_words"] = {a: words.get(a) for a in (11, 14, 15, 17, 18)}
         self.identity_info["capability_words"] = dict(caps)  # raw, for comparing logger and gateway
         self.identity_info["capabilities_unreported"] = unreported_capabilities(caps)
         self.identity_info["capabilities_unknown"] = unknown_capability_codes(self.hardware, caps)
