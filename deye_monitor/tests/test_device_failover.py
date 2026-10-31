@@ -22,8 +22,8 @@ def two_paths(**inv_kw: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
 
 def banks(fallback_serial: str = SN) -> dict[str, dict[int, int]]:
     return {
-        "gw1": device_regs(SN, r588=55),
-        "logger1": device_regs(fallback_serial, r588=66),
+        "gw1": device_regs(SN, soc=55),
+        "logger1": device_regs(fallback_serial, soc=66),
     }
 
 

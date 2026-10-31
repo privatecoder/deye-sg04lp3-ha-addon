@@ -16,10 +16,8 @@ pytestmark = pytest.mark.ui
 BASIC = {
     "serial_number",
     "operating_state",
-    "fault_word_1",
-    "fault_word_2",
-    "fault_word_3",
-    "fault_word_4",
+    "active_warnings",
+    "active_faults",
 }
 
 
@@ -38,7 +36,7 @@ async def test_overview_asks_for_a_selection_and_the_setup_page_explains_it(
         await s.check()
 
 
-async def test_basics_only_saves_exactly_the_six_basic_sensors(
+async def test_basics_only_saves_exactly_the_four_basic_sensors(
     browser: Browser, tmp_path: Any
 ) -> None:
     async with ui_stack(tmp_path, running=False, require_choice=True) as stack:
@@ -49,8 +47,8 @@ async def test_basics_only_saves_exactly_the_six_basic_sensors(
             page.locator(".sensor input:checked").first
         ).to_be_visible()  # the template proposal
         await page.locator('button[data-quick="basic"]').click()
-        await expect(page.locator(".sensor input:checked")).to_have_count(6)
-        await expect(page.get_by_text("6 Sensoren", exact=False).first).to_be_visible()
+        await expect(page.locator(".sensor input:checked")).to_have_count(4)
+        await expect(page.get_by_text("4 Sensoren", exact=False).first).to_be_visible()
         await page.get_by_role("button", name="Speichern", exact=True).click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         sel = stack.plant.manager.selection("deye1")

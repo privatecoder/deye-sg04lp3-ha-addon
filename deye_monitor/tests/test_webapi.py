@@ -109,8 +109,8 @@ def err(body: Any) -> str:
 
 MUTATIONS: list[tuple[str, str, Any]] = [
     ("PUT", "/api/inverters/deye1/features", {"features": {"battery": False}}),
-    ("POST", "/api/inverters/deye1/sensors", {"remove": ["battery_soc"]}),
-    ("POST", "/api/inverters/deye1/sensors/preview", {"remove": ["battery_soc"]}),
+    ("POST", "/api/inverters/deye1/sensors", {"remove": ["bms_soc"]}),
+    ("POST", "/api/inverters/deye1/sensors/preview", {"remove": ["bms_soc"]}),
     ("POST", "/api/inverters/deye1/template/restore", {}),
     ("POST", "/api/inverters/deye1/rebind", {"confirm": True}),
     ("POST", "/api/transfer/preview", {"source": "deye1"}),
@@ -188,7 +188,7 @@ async def test_missing_user_is_not_an_administrator(tmp_path: Path) -> None:
 
 async def test_csrf_missing_wrong_or_of_another_user(tmp_path: Path) -> None:
     async with client(tmp_path) as c:
-        path, payload = "/api/inverters/deye1/sensors", {"remove": ["battery_soc"]}
+        path, payload = "/api/inverters/deye1/sensors", {"remove": ["bms_soc"]}
         for token in (None, "", "wrong", "0" * 64):
             status, body = await c.post(path, payload, csrf=token)
             assert status == 403 and err(body) == "csrf_invalid"
@@ -225,7 +225,7 @@ async def test_body_must_be_json_and_small(tmp_path: Path) -> None:
         status, body = await c.post(path, content_type="text/plain", raw=b"{}")
         assert status == 415 and err(body) == "json_required"
         status, body = await c.post(
-            path, content_type="application/x-www-form-urlencoded", raw=b"remove=battery_soc"
+            path, content_type="application/x-www-form-urlencoded", raw=b"remove=bms_soc"
         )
         assert status == 415
         status, body = await c.post(path, raw=b"{not json")
@@ -241,7 +241,7 @@ async def test_body_must_be_json_and_small(tmp_path: Path) -> None:
 
 async def test_revision_header_is_required_and_checked(tmp_path: Path) -> None:
     async with client(tmp_path) as c:
-        path, payload = "/api/inverters/deye1/sensors", {"remove": ["battery_soc"]}
+        path, payload = "/api/inverters/deye1/sensors", {"remove": ["bms_soc"]}
         status, body = await c.post(path, payload, revision=None)
         assert status == 428 and err(body) == "revision_required"
         for bad in ("abc", "-1", "1.5", "99999999999999999"):
@@ -271,7 +271,7 @@ async def test_concurrent_requests_with_the_same_revision_only_one_wins(tmp_path
                     csrf=s["csrf"],
                     revision=0,
                 )
-                for k in ("battery_soc", "pv1_power", "pv2_power", "battery_voltage")
+                for k in ("bms_soc", "pv1_power", "pv2_power", "battery_voltage")
             )
         )
         assert sorted(st for st, _ in results) == [200, 409, 409, 409]
@@ -291,14 +291,14 @@ async def test_unknown_and_malformed_content_is_rejected(tmp_path: Path) -> None
             ({"add": ["../../etc/passwd"]}, "invalid_request"),
             ({"add": ["R586"]}, "invalid_request"),
             ({"add": [586]}, "invalid_request"),
-            ({"add": "battery_soc"}, "invalid_request"),
-            ({"add": ["battery_soc"] * 700}, "invalid_request"),
+            ({"add": "bms_soc"}, "invalid_request"),
+            ({"add": ["bms_soc"] * 700}, "invalid_request"),
             ({"remove": [], "add": []}, "invalid_request"),
             ({}, "invalid_request"),
-            ({"remove": ["battery_soc"], "allow_writes": True}, "unknown_field"),
-            ({"remove": ["battery_soc"], "register": 586}, "unknown_field"),
-            ({"remove": ["battery_soc"], "frame": "0103"}, "unknown_field"),
-            ({"remove": ["battery_soc"], "path": "/data"}, "unknown_field"),
+            ({"remove": ["bms_soc"], "allow_writes": True}, "unknown_field"),
+            ({"remove": ["bms_soc"], "register": 586}, "unknown_field"),
+            ({"remove": ["bms_soc"], "frame": "0103"}, "unknown_field"),
+            ({"remove": ["bms_soc"], "path": "/data"}, "unknown_field"),
             ([], "invalid_request"),
         ]
         for payload, key in cases:
@@ -356,7 +356,7 @@ async def test_catalog_offers_no_placeholder_internal_or_unsupported(tmp_path: P
         assert not [k for k in keys if by_key[k].internal]
         raw = [e for e in cat["entries"] if e["raw_diagnostic"]]
         assert raw and all(e["release"] == "unresolved" and e["unit"] is None for e in raw)
-        one = next(e for e in cat["entries"] if e["key"] == "battery_soc")
+        one = next(e for e in cat["entries"] if e["key"] == "bms_soc")
         assert set(one) >= {
             "name",
             "category",
@@ -369,7 +369,9 @@ async def test_catalog_offers_no_placeholder_internal_or_unsupported(tmp_path: P
             "default_enabled",
         }
         assert one["name"]["de"] and one["name"]["en"]
-        assert one["requires"] == {"feature": "battery", "equals": True}
+        assert one["requires"] == {
+            "all_of": [{"feature": "battery", "equals": True}, {"feature": "bms", "equals": True}]
+        }
 
 
 async def test_hardware_status_and_selection_views(tmp_path: Path) -> None:
@@ -446,25 +448,25 @@ async def test_sensor_changes_and_dry_run_preview(tmp_path: Path) -> None:
     async with client(tmp_path) as c:
         status, prev = await c.post(
             "/api/inverters/deye1/sensors/preview",
-            {"remove": ["battery_soc"], "add": ["gen_voltage_a"]},
+            {"remove": ["bms_soc"], "add": ["gen_voltage_a"]},
         )
-        assert status == 200 and prev["preview"]["drops"] == ["battery_soc"]
+        assert status == 200 and prev["preview"]["drops"] == ["bms_soc"]
         assert prev["preview"]["adds"] == ["gen_voltage_a"] and prev["revision"] == 0
         assert c.plant.manager.revision == 0 and no_selection_files(tmp_path)
         status, body = await c.post(
-            "/api/inverters/deye1/sensors", {"remove": ["battery_soc"], "add": ["gen_voltage_a"]}
+            "/api/inverters/deye1/sensors", {"remove": ["bms_soc"], "add": ["gen_voltage_a"]}
         )
         assert status == 200 and body["revision"] == 1 and body["changed"] == ["deye1"]
         sel = body["inverters"]["deye1"]
         assert sel["deviations"] == {
             "added": ["gen_voltage_a"],
-            "removed": ["battery_soc"],
+            "removed": ["bms_soc"],
             "redundant": [],
         }
         inv = c.plant.rig.inv("deye1")
-        assert "battery_soc" not in inv.selection and "gen_voltage_a" in inv.selection
-        status, body = await c.post("/api/inverters/deye1/sensors", {"reset": ["battery_soc"]})
-        assert status == 200 and "battery_soc" in inv.selection
+        assert "bms_soc" not in inv.selection and "gen_voltage_a" in inv.selection
+        status, body = await c.post("/api/inverters/deye1/sensors", {"reset": ["bms_soc"]})
+        assert status == 200 and "bms_soc" in inv.selection
         status, body = await c.post("/api/inverters/deye1/template/restore")
         assert status == 200 and body["inverters"]["deye1"]["deviations"]["added"] == []
         assert "gen_voltage_a" not in inv.selection and inv.selection_revision == 3
@@ -477,11 +479,11 @@ async def test_features_change_template_but_not_access(tmp_path: Path) -> None:
         )
         assert status == 200
         sel = body["inverters"]["deye1"]
-        assert "battery_soc" not in sel["template"] and "pv2_power" not in sel["template"]
+        assert "bms_soc" not in sel["template"] and "pv2_power" not in sel["template"]
         assert sel["features"]["battery"] is False
-        status, _ = await c.post("/api/inverters/deye1/sensors", {"add": ["battery_soc"]})
+        status, _ = await c.post("/api/inverters/deye1/sensors", {"add": ["bms_soc"]})
         assert status == 200  # a deviation is allowed: the template is only the default
-        assert "battery_soc" in c.plant.rig.inv("deye1").selection
+        assert "bms_soc" in c.plant.rig.inv("deye1").selection
 
 
 async def test_empty_selection_has_no_entities_but_status_stays(tmp_path: Path) -> None:
@@ -499,13 +501,13 @@ async def test_empty_selection_has_no_entities_but_status_stays(tmp_path: Path) 
 
 async def test_restart_keeps_the_changes_made_through_the_api(tmp_path: Path) -> None:
     async with client(tmp_path) as c:
-        await c.post("/api/inverters/deye2/sensors", {"remove": ["battery_soc"]})
+        await c.post("/api/inverters/deye2/sensors", {"remove": ["bms_soc"]})
     async with client(tmp_path) as c:
         _, body = await c.get("/api/session")
         assert body["revision"] == 1
-        assert "battery_soc" not in c.plant.rig.inv("deye2").selection
+        assert "bms_soc" not in c.plant.rig.inv("deye2").selection
         _, one = await c.get("/api/inverters/deye2")
-        assert one["selection"]["removed"] == ["battery_soc"]
+        assert one["selection"]["removed"] == ["bms_soc"]
 
 
 async def test_failed_persist_through_the_api_leaves_everything_intact(
@@ -517,11 +519,11 @@ async def test_failed_persist_through_the_api_leaves_everything_intact(
             raise OSError("read-only")
 
         monkeypatch.setattr("deye_monitor.store.os.replace", refuse)
-        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["battery_soc"]})
+        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["bms_soc"]})
         assert status == 500 and err(body) == "persist_failed"
         monkeypatch.undo()
         assert c.plant.manager.revision == 0
-        assert "battery_soc" in c.plant.rig.inv("deye1").selection
+        assert "bms_soc" in c.plant.rig.inv("deye1").selection
 
 
 # -- transfer -----------------------------------------------------------------------------------
@@ -534,7 +536,7 @@ async def test_transfer_preview_with_heterogeneous_inverters(tmp_path: Path) -> 
             {"features": {"gen_port_mode": "generator", "mppt2_used": False}},
         )
         await c.post(
-            "/api/inverters/deye1/sensors", {"add": ["gen_voltage_a"], "remove": ["battery_soc"]}
+            "/api/inverters/deye1/sensors", {"add": ["gen_voltage_a"], "remove": ["bms_soc"]}
         )
         target = c.plant.rig.inv("deye2")
         target.capability_conflicts = [{"code": "mppt_count", "detail": "R22 reports 1 MPPT"}]
@@ -546,7 +548,7 @@ async def test_transfer_preview_with_heterogeneous_inverters(tmp_path: Path) -> 
         src = c.plant.manager.selection("deye1")
         assert set(t["selection"]["effective"]) == src.effective
         assert t["selection"]["features"]["gen_port_mode"] == "generator"
-        assert "battery_soc" in t["drops"]  # the target had it, the source removed it
+        assert "bms_soc" in t["drops"]  # the target had it, the source removed it
         assert t["capability_conflicts"][0]["code"] == "mppt_count"
         assert t["inactive"] == []  # deye2 is no parallel slave: everything stays active
         assert t["capability_warnings"] and all(
@@ -828,8 +830,8 @@ async def test_sensor_edit_can_carry_features_and_restore_for_one_atomic_save(
         draft = {"features": {"battery": False}, "remove": ["grid_voltage_a"]}
         _, preview = await c.post(path + "/preview", draft)
         sel = preview["preview"]["selection"]
-        assert "battery_soc" in preview["preview"]["drops"]
-        assert "battery_soc" not in sel["effective"] and "grid_voltage_a" not in sel["effective"]
+        assert "bms_soc" in preview["preview"]["drops"]
+        assert "bms_soc" not in sel["effective"] and "grid_voltage_a" not in sel["effective"]
         assert c.plant.manager.revision == 0  # a preview stores nothing
         status, body = await c.post(path, draft)
         assert status == 200 and body["revision"] == 1

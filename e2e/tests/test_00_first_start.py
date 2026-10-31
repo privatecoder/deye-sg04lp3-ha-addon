@@ -12,10 +12,8 @@ from tests.helpers import INV, inverter_states, ours, until
 BASIC = [
     "serial_number",
     "operating_state",
-    "fault_word_1",
-    "fault_word_2",
-    "fault_word_3",
-    "fault_word_4",
+    "active_warnings",
+    "active_faults",
 ]
 
 
@@ -81,7 +79,7 @@ async def test_first_start_reads_only_the_basics_until_the_selection_is_saved(st
                 inverter_states(states, INSTANCE, i).get("serial_number") == SERIALS[i] for i in INV
             )
 
-        await until(basics_present, "the six basic sensors appear after the save", 60, 1)
+        await until(basics_present, "the four basic sensors appear after the save", 60, 1)
         got = inverter_states(await ha.states(), INSTANCE, "deye_tcp")
         assert set(got) == set(BASIC), sorted(got)
         assert not log.json_values("battery_soc"), (

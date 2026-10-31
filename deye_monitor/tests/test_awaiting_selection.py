@@ -45,7 +45,7 @@ async def test_any_change_and_the_plain_acceptance_choose_and_persist(tmp_path: 
     m = manager_requiring_choice(tmp_path)
     await m.change(0, {"deye1": Edit(choose=True)})  # accept the template as it is
     assert m.selection("deye1").chosen and not m.selection("deye2").chosen
-    await m.change(1, {"deye2": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(1, {"deye2": Edit(remove=frozenset({"bms_soc"}))})
     assert m.selection("deye2").chosen
     doc = newest_body(tmp_path)
     assert (
@@ -62,7 +62,7 @@ async def test_runtime_reads_only_the_basics_until_the_choice_and_then_the_templ
         inv = p.rig.inv("deye1")
         assert inv.awaiting_selection and inv.selection == frozenset()
         await inv.step()
-        assert p.rig.sink.values("deye1", "battery_soc") == []  # no sensor value published
+        assert p.rig.sink.values("deye1", "bms_soc") == []  # no sensor value published
         plan_addresses = inv.current_plan().addresses
         assert not (plan_addresses & TEMPLATE_ONLY)
         expected = build_read_plan(
@@ -77,11 +77,11 @@ async def test_runtime_reads_only_the_basics_until_the_choice_and_then_the_templ
         assert (
             not inv.awaiting_selection and inv.selection == p.manager.selection("deye1").effective
         )
-        assert "battery_soc" in inv.selection and not p.rig.inv("deye2").selection
+        assert "bms_soc" in inv.selection and not p.rig.inv("deye2").selection
         for _ in range(4):
             p.rig.clock.offset += 11
             await inv.step()
-        assert p.rig.sink.values("deye1", "battery_soc")  # normal polling started
+        assert p.rig.sink.values("deye1", "bms_soc")  # normal polling started
 
 
 async def test_api_exposes_the_state_and_accepts_the_template(tmp_path: Path) -> None:

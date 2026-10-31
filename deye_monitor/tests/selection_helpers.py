@@ -53,7 +53,7 @@ async def plant(
     async with rig(
         eps,
         invs,
-        banks or {"gw1": device_regs(A, r588=55)},
+        banks or {"gw1": device_regs(A, soc=55)},
         directory,
         runtime_kw={
             "features": {i: f for i, (f, _, _) in initial.items()},

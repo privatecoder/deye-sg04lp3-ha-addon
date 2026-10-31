@@ -27,8 +27,8 @@ def plant() -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, dict[
         inverters.append(
             inverter(f"deye{n}", f"gw{n}", fallback_endpoint=f"logger{n}")
         )  # all unit 1
-        banks[f"gw{n}"] = device_regs(SERIALS[n], r588=10 * n)
-        banks[f"logger{n}"] = device_regs(SERIALS[n], r588=10 * n + 5)
+        banks[f"gw{n}"] = device_regs(SERIALS[n], soc=10 * n)
+        banks[f"logger{n}"] = device_regs(SERIALS[n], soc=10 * n + 5)
     return endpoints, inverters, banks
 
 

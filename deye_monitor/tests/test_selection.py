@@ -65,21 +65,21 @@ def test_missing_file_is_the_template_with_revision_zero(tmp_path: Path) -> None
     assert m.revision == 0 and m.store.status is LoadStatus.MISSING and m.store.problems == []
     sel = m.selection("deye1")
     expected = template_selection(PROFILE, m.specs["deye1"].hardware, Features())
-    assert sel.effective == sel.template == expected and "battery_soc" in expected
+    assert sel.effective == sel.template == expected and "bms_soc" in expected
     assert not (tmp_path / "selection.json").exists()  # nothing is written by reading
 
 
 async def test_effective_is_template_plus_added_minus_removed(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
     await m.change(
-        0, {"deye1": Edit(add=frozenset({"gen_voltage_a"}), remove=frozenset({"battery_soc"}))}
+        0, {"deye1": Edit(add=frozenset({"gen_voltage_a"}), remove=frozenset({"bms_soc"}))}
     )
     sel = m.selection("deye1")
-    assert sel.added == {"gen_voltage_a"} and sel.removed == {"battery_soc"}
-    assert sel.effective == (sel.template | {"gen_voltage_a"}) - {"battery_soc"}
+    assert sel.added == {"gen_voltage_a"} and sel.removed == {"bms_soc"}
+    assert sel.effective == (sel.template | {"gen_voltage_a"}) - {"bms_soc"}
     assert sel.deviations == {
         "added": ["gen_voltage_a"],
-        "removed": ["battery_soc"],
+        "removed": ["bms_soc"],
         "redundant": [],
     }
     assert m.selection("deye2").effective == m.selection("deye2").template  # untouched
@@ -92,11 +92,11 @@ async def test_templates_follow_features_deviations_survive(tmp_path: Path) -> N
     )
     await m.change(1, {"deye1": Edit(features={"battery": False, "mppt2_used": False})})
     sel = m.selection("deye1")
-    assert "battery_soc" not in sel.template and "pv2_power" not in sel.template
+    assert "bms_soc" not in sel.template and "pv2_power" not in sel.template
     assert "pv1_power" not in sel.effective  # the user's removal still applies
     assert "gen_voltage_a" in sel.effective
     await m.change(2, {"deye1": Edit(features={"battery": True, "mppt2_used": True})})
-    assert "battery_soc" in m.selection("deye1").effective
+    assert "bms_soc" in m.selection("deye1").effective
 
 
 async def test_requires_does_not_limit_access_only_the_default(tmp_path: Path) -> None:
@@ -112,11 +112,11 @@ async def test_requires_does_not_limit_access_only_the_default(tmp_path: Path) -
 async def test_reset_and_restore_template(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
     await m.change(
-        0, {"deye1": Edit(remove=frozenset({"battery_soc"}), add=frozenset({"gen_voltage_a"}))}
+        0, {"deye1": Edit(remove=frozenset({"bms_soc"}), add=frozenset({"gen_voltage_a"}))}
     )
-    await m.change(1, {"deye1": Edit(reset=frozenset({"battery_soc"}))})
+    await m.change(1, {"deye1": Edit(reset=frozenset({"bms_soc"}))})
     sel = m.selection("deye1")
-    assert "battery_soc" in sel.effective and sel.removed == frozenset()
+    assert "bms_soc" in sel.effective and sel.removed == frozenset()
     assert sel.added == {"gen_voltage_a"}
     await m.change(2, {"deye1": Edit(features={"battery": False}, restore_template=True)})
     sel = m.selection("deye1")
@@ -153,7 +153,7 @@ async def test_unknown_and_malformed_edits_change_nothing(tmp_path: Path) -> Non
     m = manager_at(tmp_path)
     for edit in (
         Edit(add=frozenset({"no_such_sensor"})),
-        Edit(remove=frozenset({"battery_soc", "no_such_sensor"})),
+        Edit(remove=frozenset({"bms_soc", "no_such_sensor"})),
         Edit(features={"allow_writes": True}),
         Edit(features={"battery": "yes"}),
         Edit(features={"mppt1_used": 1}),  # type: ignore[dict-item]  # 1 == True, but not a bool
@@ -179,7 +179,7 @@ async def test_no_op_change_keeps_the_revision(tmp_path: Path) -> None:
 
 async def test_stale_revision_is_rejected_and_revision_is_monotone(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
-    assert (await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})).revision == 1
+    assert (await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})).revision == 1
     with pytest.raises(ChangeError) as err:
         await m.change(0, {"deye1": Edit(remove=frozenset({"pv1_power"}))})
     assert err.value.key == "stale_revision" and err.value.status == 409
@@ -191,10 +191,7 @@ async def test_stale_revision_is_rejected_and_revision_is_monotone(tmp_path: Pat
 async def test_concurrent_changes_exactly_one_wins(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
     results = await asyncio.gather(
-        *(
-            m.change(0, {"deye1": Edit(remove=frozenset({k}))})
-            for k in ("battery_soc", "pv1_power")
-        ),
+        *(m.change(0, {"deye1": Edit(remove=frozenset({k}))}) for k in ("bms_soc", "pv1_power")),
         return_exceptions=True,
     )
     wins = [r for r in results if not isinstance(r, Exception)]
@@ -209,9 +206,7 @@ async def test_concurrent_changes_exactly_one_wins(tmp_path: Path) -> None:
 
 async def test_restart_restores_the_selection(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
-    await m.change(
-        0, {"deye1": Edit(remove=frozenset({"battery_soc"}), features={"parallel": True})}
-    )
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}), features={"parallel": True})})
     again = manager_at(tmp_path)
     assert again.revision == 1 and again.store.problems == [] and again.store.source == "file"
     assert again.selection("deye1") == m.selection("deye1")
@@ -244,11 +239,11 @@ async def test_process_end_in_any_step_leaves_old_or_new_never_a_mix(
     monkeypatch.setattr("deye_monitor.store.os.replace", tick(os.replace))
     monkeypatch.setattr("deye_monitor.store.tempfile.mkstemp", tick(tempfile.mkstemp))
     with contextlib.suppress(Boom):
-        await m.change(1, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+        await m.change(1, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     monkeypatch.undo()
     reloaded = manager_at(tmp_path)  # the next process start
     sel = reloaded.selection("deye1")
-    new_expected = (old.effective) - {"battery_soc"}
+    new_expected = (old.effective) - {"bms_soc"}
     assert (reloaded.revision, sel.effective) in (
         (1, old.effective),
         (2, new_expected),
@@ -273,13 +268,13 @@ async def test_write_failure_keeps_old_selection_everywhere(
 
         monkeypatch.setattr("deye_monitor.store.os.replace", refuse)
         with pytest.raises(ChangeError) as err:
-            await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+            await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
         assert err.value.key == "persist_failed"
         assert (m.revision, m.selection("deye1"), inv.selection, inv.selection_revision) == before
         monkeypatch.undo()
         assert no_selection_files(tmp_path)  # nothing written, no temporary file left behind
-        await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})  # recovers
-        assert "battery_soc" not in inv.selection and inv.selection_revision == 1
+        await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})  # recovers
+        assert "bms_soc" not in inv.selection and inv.selection_revision == 1
 
 
 def test_stale_temporary_files_are_removed(tmp_path: Path) -> None:
@@ -302,7 +297,7 @@ async def test_corrupt_file_reports_uses_template_and_is_kept_on_next_change(
     assert "selection_store_corrupt" in codes and "selection_store_template_used" in codes
     assert m.selection("deye1").effective == m.selection("deye1").template
     assert (tmp_path / "selection.a.json").read_text() == "{not json"  # reading never replaces it
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     assert (tmp_path / "selection.a.json.corrupt").read_text() == "{not json"
     assert manager_at(tmp_path).store.problems == []
 
@@ -311,18 +306,18 @@ async def test_a_damaged_newest_slot_falls_back_to_the_last_accepted_document(
     tmp_path: Path,
 ) -> None:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     await m.change(1, {"deye1": Edit(remove=frozenset({"pv1_power"}))})
     (tmp_path / newest_slot(tmp_path)).write_text("garbage")
     again = manager_at(tmp_path)
     assert again.store.source == "recovered_previous"
     assert "selection_store_recovered_previous" in [p.code for p in again.store.problems]
-    assert again.selection("deye1").removed == {"battery_soc"} and again.revision == 1
+    assert again.selection("deye1").removed == {"bms_soc"} and again.revision == 1
 
 
 async def test_a_slot_with_a_wrong_checksum_is_never_used(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     path = tmp_path / newest_slot(tmp_path)
     doc = json.loads(path.read_text())
     doc["data"]["body"]["revision"] = 7  # content changed behind the checksum
@@ -359,7 +354,7 @@ def test_loading_reports_and_discards_unknown_keys(tmp_path: Path) -> None:
             "deye1": {
                 "features": {"battery": False, "legacy_flag": True, "bms": "maybe"},
                 "added": ["gen_voltage_a", "retired_sensor", placeholder, 7],
-                "removed": ["battery_soc", "gen_voltage_a"],
+                "removed": ["bms_soc", "gen_voltage_a"],
                 "old_field": 1,
             },
             "gone": {"features": {}, "added": [], "removed": []},
@@ -381,7 +376,7 @@ def test_loading_reports_and_discards_unknown_keys(tmp_path: Path) -> None:
     assert ("unknown_inverter", "gone") in codes
     sel = m.selection("deye1")
     assert m.revision == 4 and sel.features.battery is False and sel.features.bms is True
-    assert sel.added == frozenset() and sel.removed == {"battery_soc", "gen_voltage_a"}
+    assert sel.added == frozenset() and sel.removed == {"bms_soc", "gen_voltage_a"}
     assert placeholder not in sel.effective
 
 
@@ -399,24 +394,26 @@ async def test_change_reaches_runtime_and_other_inverters_stay(tmp_path: Path) -
     async with plant(tmp_path) as p:
         one, two = p.rig.inv("deye1"), p.rig.inv("deye2")
         epoch2 = two.lifecycle_epoch
-        result = await p.manager.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+        result = await p.manager.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
         assert result.selection_changed == ("deye1",)
-        assert "battery_soc" not in one.selection and one.selection_revision == 1
-        assert "battery_soc" in two.selection and two.selection_revision == 0
+        assert "bms_soc" not in one.selection and one.selection_revision == 1
+        assert "bms_soc" in two.selection and two.selection_revision == 0
         assert two.lifecycle_epoch == epoch2  # an unchanged inverter is not disturbed
         await p.manager.change(1, {"deye1": Edit(features={"parallel": True})})
-        assert one.features.parallel is True and one.selection_revision == 1  # features only
+        assert (
+            one.features.parallel is True and "parallel_master" in one.selection
+        )  # the preset follows
         assert p.rig.inv("deye1").current_plan().budget.utilisation > 0
 
 
 async def test_runtime_starts_from_the_stored_selection(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye2": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye2": Edit(remove=frozenset({"bms_soc"}))})
     async with plant(tmp_path) as p:
         assert p.manager.revision == 1
-        assert "battery_soc" not in p.rig.inv("deye2").selection
+        assert "bms_soc" not in p.rig.inv("deye2").selection
         assert p.rig.inv("deye2").selection_revision == 1
-        assert "battery_soc" in p.rig.inv("deye1").selection
+        assert "bms_soc" in p.rig.inv("deye1").selection
 
 
 async def test_removal_during_a_running_read_never_publishes_the_old_value(tmp_path: Path) -> None:
@@ -426,11 +423,11 @@ async def test_removal_during_a_running_read_never_publishes_the_old_value(tmp_p
         assert inv.state is InverterState.RUNNING
         r.clock.offset += 11
         proxy = install_gate(r, "deye1")
-        entered, release = proxy.gate(586)  # the battery group is in flight
+        entered, release = proxy.gate(587)  # the battery group is in flight
         task = asyncio.create_task(inv.step())
         await asyncio.wait_for(entered.wait(), 2)
         before = len(r.sink.states)
-        await p.manager.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+        await p.manager.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
         release.set()
         await task
         proxy.gates.clear()
@@ -438,7 +435,7 @@ async def test_removal_during_a_running_read_never_publishes_the_old_value(tmp_p
             await inv.step()
             r.clock.offset += 11
         later = r.sink.states[before:]
-        assert not [1 for _, _, v in later if "battery_soc" in v]
+        assert not [1 for _, _, v in later if "bms_soc" in v]
         assert all(s.selection_revision == 1 for _, s, _ in later)
 
 
@@ -485,12 +482,12 @@ async def test_publisher_follows_and_removes_only_its_own_component(tmp_path: Pa
                 k for k, v in comps.items() if set(v) != {"platform"} and not k.startswith("diag_")
             }  # not a tombstone
 
-        assert "battery_soc" in keys(topic1) and "battery_soc" in keys(topic2)
+        assert "bms_soc" in keys(topic1) and "bms_soc" in keys(topic2)
         mark = len(conn.sent)
-        await manager.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
-        await settle(lambda: "battery_soc" not in keys(topic1))
+        await manager.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
+        await settle(lambda: "bms_soc" not in keys(topic1))
         assert "pv1_power" in keys(topic1)
-        assert "battery_soc" in keys(topic2)  # the neighbour keeps its component
+        assert "bms_soc" in keys(topic2)  # the neighbour keeps its component
         touched = {s.topic for s in conn.sent[mark:] if s.retain}
         assert all(
             t.startswith(("homeassistant/device/", "homeassistant/sensor/")) for t in touched

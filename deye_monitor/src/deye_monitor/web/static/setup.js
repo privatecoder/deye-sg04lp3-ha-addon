@@ -6,10 +6,10 @@ import { ApiError, api } from './api.js';
 import { t, errorText, localName, localText } from './i18n.js';
 import { h, uid, modal, toast, debounce } from './ui.js';
 import { state, canEdit, inverterById, profileOf, loadInverters, loadSession, mutate } from './state.js';
-import { stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList } from './common.js';
+import { stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList, plantInputsOf, plantTotalName } from './common.js';
 import { openTransfer } from './transfer.js';
 
-const BASIC_KEYS = ['serial_number', 'operating_state', 'fault_word_1', 'fault_word_2', 'fault_word_3', 'fault_word_4'];
+const BASIC_KEYS = ['serial_number', 'operating_state', 'active_warnings', 'active_faults'];
 const POINT_ORDER = ['grid_terminal', 'ups_load', 'inverter_output', 'battery', 'bms', 'pv', 'gen_port', 'parallel', 'tou', 'diagnostic'];
 const DEFAULT_FEATURES = {
   utility_grid: true, grid_port_use: 'utility', battery: true, bms: true,
@@ -310,6 +310,9 @@ export function setupView(invId) {
     const reset = h('button', { class: 'link', type: 'button', hidden: true, 'aria-label': t('sensor.reset_for', { name: localName(entry) }), onClick: () => { setKey(entry.key, shown().template.includes(entry.key)); } }, t('sensor.reset'));
     const warn = h('span', { class: 'chip warn', hidden: true }, t('sensor.warn'));
     const note = h('span', { class: 'chip', hidden: true });
+    const plant = plantInputsOf(base, entry);
+    const plantTip = plant.length ? t('sensor.plant_total_tip') : '';
+    const plantWarn = h('span', { class: 'plant-warn', role: 'status', hidden: true });
     const description = localText(entry.description);
     const row = h('div', { class: 'sensor', 'data-key': entry.key },
       h('label', { class: 'sensor-main', for: id },
@@ -320,10 +323,13 @@ export function setupView(invId) {
           h('span', { class: 'sensor-meta' },
             entry.hint ? h('span', { class: `chip hint-${entry.hint}` }, t(`sensor.hint.${entry.hint}`)) : null,
             expert ? h('span', { class: 'chip' }, t(`point.${entry.point}`)) : null,
-            warn, note))),
+            plant.length ? h('span', { class: 'chip plant-total', title: plantTip }, t('sensor.plant_total')) : null,
+            warn, note),
+          plant.length ? h('span', { class: 'sensor-desc plant-tip' }, plantTip) : null,
+          plantWarn)),
       h('span', { class: 'sensor-actions' }, state_, reset));
     const search = [entry.key, entry.name.de, entry.name.en, description, entry.unit || '', t(`point.${entry.point}`)].join(' ').toLowerCase();
-    rows.set(entry.key, { entry, row, input, state: state_, reset, warn, note, search });
+    rows.set(entry.key, { entry, row, input, state: state_, reset, warn, note, plant, plantWarn, search });
     return row;
   }
 
@@ -394,6 +400,14 @@ export function setupView(invId) {
     refs.empty.hidden = visible > 0;
   }
 
+  // Deselecting an input of a plant total says what happens to that total (not when the template
+  // never had it: then the user took nothing away).
+  function paintPlantWarning(r, key, eff, removed) {
+    const lost = removed.has(key) ? r.plant.filter((item) => !(item.mode === 'any' ? item.keys.some((k) => eff.has(k)) : eff.has(key))) : [];
+    r.plantWarn.hidden = !lost.length;
+    r.plantWarn.textContent = lost.map((item) => t(item.mode === 'optional' ? 'sensor.plant_warn_partial' : 'sensor.plant_warn_unknown', { name: plantTotalName(item) })).join(' ');
+  }
+
   function paintRows() {
     const sel = shown();
     const eff = new Set(sel.effective);
@@ -416,6 +430,7 @@ export function setupView(invId) {
       r.row.dataset.state = kind;
       r.reset.hidden = !(removed.has(key) || added.has(key));
       r.warn.hidden = !warned.has(key);
+      paintPlantWarning(r, key, eff, removed);
       const gone = unreported[key];
       const off = inactive[key];
       r.row.classList.toggle('unreported', !!off || (!!gone && gone.profile_value == null));

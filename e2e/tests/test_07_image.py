@@ -147,7 +147,7 @@ async def image_app(running):
         app.image_tag = image["tag"]  # type: ignore[attr-defined]
         app.start()
         await app.wait_api(120)
-        await app.choose_all(list(SN))
+        await app.choose_all(list(SN), features={"bms": False})
         yield app, fakes
         await quiesce_and_check(app, fakes)
 

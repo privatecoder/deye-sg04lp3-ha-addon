@@ -13,6 +13,7 @@ from deye_monitor.profiles.schema import load_profile
 from deye_monitor.totals import (
     METRIC_BY_KEY,
     METRICS,
+    PLANT_INPUTS,
     PlantSeries,
     PlantTotals,
     TotalsMember,
@@ -39,7 +40,14 @@ ENERGY = {
     "load_energy_today",
     "pv_energy_today",
 }
-BMS = {"battery_soc", "bms_soc", "bms_voltage", "bms_current", "bms_temperature"}
+BMS = {
+    "battery_soc",
+    "bms_soc",
+    "bms_voltage",
+    "bms_current",
+    "bms_temperature",
+    "battery_temperature",
+}
 SELECTED = FAST | ENERGY | BMS
 
 
@@ -165,15 +173,48 @@ def test_energy_totals_sum_the_counters(tmp_path: Path) -> None:
 
 def test_battery_state_comes_from_the_master_only(tmp_path: Path) -> None:
     r = Rig(tmp_path)
-    r.feed("m", battery_soc=80, bms_soc=81, bms_voltage=52.0, bms_current=-10, bms_temperature=17.5)
+    r.feed(
+        "m",
+        battery_soc=80,
+        bms_soc=81,
+        bms_voltage=52.0,
+        bms_current=-10,
+        bms_temperature=17.5,
+        battery_temperature=18.5,
+    )
     r.feed("s1", battery_soc=0, bms_soc=0, bms_voltage=0, bms_current=0, bms_temperature=-100)
     r.feed("s2", battery_soc=0, bms_soc=0, bms_voltage=0, bms_current=0, bms_temperature=-100)
-    assert r.value("plant_battery_soc") == 80  # not averaged
-    assert r.value("plant_bms_soc") == 81
+    assert r.value("plant_battery_soc") == 81  # the master's BMS value, not averaged
+    assert r.value("plant_battery_temperature") == 17.5
     assert r.value("plant_bms_current") == -10
     assert r.value("plant_bms_power") == 520  # bank discharging: positive
-    assert r.value("plant_bms_temperature") == 17.5
     assert r.totals.master() == "m"
+    assert "plant_bms_soc" not in METRIC_BY_KEY and "plant_bms_temperature" not in METRIC_BY_KEY
+
+
+def test_battery_soc_and_temperature_fall_back_to_the_masters_inverter_values(
+    tmp_path: Path,
+) -> None:
+    r = Rig(tmp_path)
+    r.keys["m"] -= {"bms_soc", "bms_temperature"}  # no BMS: the inverter's own values
+    r.feed("m", battery_soc=80, bms_soc=81, battery_temperature=18.5, bms_temperature=17.5)
+    assert r.value("plant_battery_soc") == 80
+    assert r.value("plant_battery_temperature") == 18.5
+    r.keys["m"] -= {"battery_soc", "battery_temperature"}  # neither selected: unknown
+    assert r.value("plant_battery_soc") is None and r.value("plant_battery_temperature") is None
+
+
+def test_the_plant_inputs_are_derived_from_the_metrics() -> None:
+    assert {i["metric"] for i in PLANT_INPUTS["load_power_total"]} == {"plant_load_power"}
+    assert {i["metric"] for i in PLANT_INPUTS["bms_voltage"]} == {
+        "plant_bms_voltage",
+        "plant_bms_power",
+    }
+    soc = PLANT_INPUTS["battery_soc"][0]
+    assert soc["mode"] == "any" and soc["keys"] == ["bms_soc", "battery_soc"] and soc["master_only"]
+    assert PLANT_INPUTS["pv1_power"][0]["mode"] == "optional"
+    assert not PLANT_INPUTS["battery_current"][0]["master_only"]
+    assert "ups_power_total" not in PLANT_INPUTS
 
 
 @pytest.mark.parametrize(
@@ -191,7 +232,7 @@ def test_without_exactly_one_master_the_battery_state_is_unknown(
     for member in ("m", "s1", "s2"):
         r.feed(member, battery_soc=80, bms_soc=81)
     assert r.totals.master() is None
-    assert r.value("plant_battery_soc") is None and r.value("plant_bms_soc") is None
+    assert r.value("plant_battery_soc") is None and r.value("plant_battery_temperature") is None
 
 
 # -- series --------------------------------------------------------------------------------------

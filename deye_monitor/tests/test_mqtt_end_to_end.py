@@ -15,7 +15,7 @@ FAST = PublisherSettings(reconnect_min_s=0.01, reconnect_max_s=0.04)
 
 async def test_running_inverter_publishes_values_and_goes_online(tmp_path: Path) -> None:
     relay = RelaySink()
-    banks = {"gw1": device_regs("2401234567", r588=55, r500=2)}
+    banks = {"gw1": device_regs("2401234567", soc=55, r500=2)}
     async with rig([ep("gw1")], [inverter("deye1", "gw1")], banks, tmp_path, sink=relay) as r:  # type: ignore[arg-type]
         broker = FakeBroker()
         pub = build_publisher(

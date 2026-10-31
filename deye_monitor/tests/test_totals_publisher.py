@@ -131,8 +131,8 @@ async def test_totals_are_published_and_unknown_while_a_member_is_missing(tmp_pa
         await settle(lambda: plant.plant_messages()[-1]["plant_load_power"] == 120.0, timeout=3)
         last = plant.plant_messages()[-1]
         assert (
-            last["plant_battery_soc"] == 76
-            and last["plant_bms_soc"] == 77
+            last["plant_battery_soc"] == 77  # the master's BMS value; one SOC for the plant
+            and "plant_bms_soc" not in last
             and last["plant_master"] == "Inverter deye1"
             and last["plant_master_id"] == "deye1"
         )

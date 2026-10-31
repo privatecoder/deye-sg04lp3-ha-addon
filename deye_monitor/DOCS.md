@@ -92,7 +92,8 @@ device loop and without the publisher.
   | Plant battery power | sum of battery voltage x battery current of the members; **positive = discharging** |
   | Plant PV energy, battery charge, battery discharge, load energy | sums of the members' total counters (`total_increasing`); the series is in the entity id (`..._g<n>`) and the attribute `energy_series`, not in the name |
   | Plant ... today (PV, battery charge/discharge, load) | sums of the "today" counters, measurement only |
-  | Plant battery SOC, BMS SOC / voltage / current (bank) / temperature, battery power (BMS) | from the parallel **master** only (R336), never averaged; `unknown` without exactly one master among the members. BMS current is positive while charging, so the BMS power is negated to show discharging as positive |
+  | Plant battery SOC, battery temperature | from the parallel **master** only (R336), never averaged; one entity each: the master's BMS value when it is selected, else the master's inverter value (R588 / R586); `unknown` without exactly one master among the members |
+  | Plant BMS voltage / current (bank), battery power (BMS) | from the master only, as above. BMS current is positive while charging, so the BMS power is negated to show discharging as positive |
   | Plant members / stale members / master / energy series | diagnostics; the members are attributes |
 
   **Energy dashboard.** Use the energy sensors of the current series (the entity id ends in `_g<n>`; the attribute `energy_series` and the diagnostic *Plant energy series* show it; after a series change the retired entities are removed, so the names do not clash): *Plant PV energy* as solar
@@ -114,7 +115,12 @@ device loop and without the publisher.
   limit is smaller than the block). No slave is assumed while the role is unknown.
 * **"Only 0" hints.** Only physical measurements that should not be 0 in operation are watched
   (`observe_zero` in the profile; default by category). Alarm/fault words, flags, enums, counters
-  and similar are healthy at 0 and never reported.
+  and similar are healthy at 0 and never reported. No "only 0" hint is shown for an entry that
+  feeds a plant total on a plant member: a master that supplies no load legitimately reads 0.
+* **Plant-total inputs.** In the sensor list every entry that feeds a plant total carries the chip
+  "Plant total" (only on a member of the plant totals; battery state and BMS values only on the
+  master). Deselecting one shows what happens to that total (it becomes unknown, or no longer
+  includes this share). The list is derived from the same definition as the totals.
 * **Fields the device does not report.** Profile entries that declare a not-reported value (R0,
   R22, R24, R65: `0xFFFF`, R65 also `0`, R24 any undefined code) are checked once at the identity
   read and again after a change of serial number, firmware (R15/R17/R18) or profile revision.
@@ -406,10 +412,10 @@ card (totals and the status of every member).
    operation. Values the device reports itself are filled in and marked “read from the device –
    please confirm”. The BMS question defaults to “Yes, with communication” and is suggested
    from the battery type (R98: lithium = yes, lead = no); parallel slaves keep their BMS values
-   inactive regardless. The choice decides the default selection: “island” hides all grid values,
-   “no battery” all battery values. *Step 2 – choose sensors:* grouped by measuring point with a
+   inactive regardless. The choice decides the default selection (the template, below):
+   “island” hides all grid values, “no battery” all battery values. *Step 2 – choose sensors:* grouped by measuring point with a
    short description and unit; search, filter (all / selected / deviations); quick actions
-   “Basics only” (serial number, operating state, fault words) and “Deselect all”, which are
+   “Basics only” (serial number, operating state, active warnings and faults) and “Deselect all”, which are
    ordinary deviations you can preview and reset; “Accept the template unchanged” saves the
    proposal as it is. A sensor marked
    “from template” follows your plant description; “added by you” and “deselected” are deviations
@@ -418,6 +424,20 @@ card (totals and the status of every member).
    the bottom shows the polling load of the draft (low / medium / high / overloaded) before you
    save; **Save** applies plant features and sensors in one step. If someone else saved in the
    meantime you get a hint and can reload without losing your changes.
+
+   **Default selection (template).** Every answer of step 1 changes only what is preselected;
+   anything can still be ticked by hand.
+
+   | Answer | Preselected | Not preselected |
+   | --- | --- | --- |
+   | Battery with BMS communication | BMS SOC, temperature, voltage, current, charge/discharge current limits, charge voltage; inverter battery voltage, current, power and energies | inverter battery SOC and temperature (same source), BMS discharge voltage, BMS off-grid limits |
+   | Battery without BMS | inverter battery SOC, temperature, voltage, current, energies | all BMS values |
+   | Public grid | grid voltage and frequency, selected grid power, grid energies | internal GRID-terminal power |
+   | Generator on the GRID port | grid voltage and frequency, internal GRID-terminal power, inverter frequency | utility grid power and energy counters |
+   | Island (grid port unused) | inverter frequency; no grid values | grid values |
+   | Any | load power and voltage L1-L3, inverter output power total, active warnings and faults, the named alarm bits | UPS/EPS power (equals the load power off-grid), raw alarm and fault words 1-4 |
+   | Parallel operation | parallel role and serial number | (slaves: BMS values and temperature stay inactive, the plant device carries SOC and temperature) |
+
 3. **Transfer to other inverters** (button on card or setup page). Choose the targets, optionally
    leave out the plant features, look at the preview per target (which sensors are added or
    dropped, load, hardware warnings; targets that cannot take it are skipped) and confirm. Serial

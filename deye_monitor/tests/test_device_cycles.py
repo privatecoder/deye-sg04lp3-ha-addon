@@ -38,7 +38,7 @@ def battery_snapshots(r: Rig, after: int = 0) -> list[tuple[object, dict[str, ob
 
 async def test_all_exception_group_publishes_unknowns(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         await ready(r)
         assert r.sink.values("deye1", "battery_soc")[-1] == 55
@@ -59,7 +59,7 @@ async def test_all_exception_group_publishes_unknowns(tmp_path: Path) -> None:
 
 async def test_timeout_after_a_valid_value_publishes_unknowns(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         await ready(r)
         r.servers["gw1"].default = Behavior(silent=True)
@@ -72,7 +72,7 @@ async def test_timeout_after_a_valid_value_publishes_unknowns(tmp_path: Path) ->
 
 async def test_failure_snapshot_covers_only_the_selected_keys(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         inv.set_selection({"battery_soc"}, revision=1)
@@ -96,7 +96,7 @@ async def test_failure_snapshot_covers_only_the_selected_keys(tmp_path: Path) ->
 
 async def test_quarantine_and_epoch_changes_publish_no_failure_snapshots(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         await ready(r)
@@ -118,7 +118,7 @@ async def test_transport_error_in_a_partial_cycle_is_counted_and_keeps_the_parti
     tmp_path: Path,
 ) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         await ready(r)
@@ -140,7 +140,7 @@ async def test_repeated_abort_at_the_last_block_triggers_the_failover_on_time(
 ) -> None:
     endpoints = [ep("gw1"), ep("logger1", "solarman_v5_tcp")]
     inverters = [inverter("deye1", "gw1", fallback_endpoint="logger1")]
-    banks = {"gw1": device_regs(A, r588=55), "logger1": device_regs(A, r588=66)}
+    banks = {"gw1": device_regs(A, soc=55), "logger1": device_regs(A, soc=66)}
     settings = RuntimeSettings(failover_after=3)
     async with rig(endpoints, inverters, banks, tmp_path, settings=settings) as r:
         inv = r.inv("deye1")
@@ -163,7 +163,7 @@ async def test_repeated_abort_at_the_last_block_triggers_the_failover_on_time(
 
 async def test_address_related_exceptions_are_no_failures(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         await ready(r)

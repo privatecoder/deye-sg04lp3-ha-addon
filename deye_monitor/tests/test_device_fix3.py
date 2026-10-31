@@ -85,7 +85,7 @@ async def test_global_reset_invalidates_every_peer_despite_notification_error(
     async with rig(
         [ep("ga", port=25001), ep("gb", port=25002)],
         [inverter("a", "ga"), inverter("b", "gb")],
-        {"ga": device_regs(A), "gb": device_regs(B, r588=55)},
+        {"ga": device_regs(A), "gb": device_regs(B, soc=55)},
         tmp_path,
         sink=sink,
     ) as r:

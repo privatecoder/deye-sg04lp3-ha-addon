@@ -10,7 +10,7 @@ into ``PlantTotals``; the totals are computed from the newest value of each memb
 * energy totals are sums of the members' ``total_increasing`` counters. A plant statistics series
   (``g<n>`` like the inverter series) ends when the membership changes or when any member starts a
   new series of its own, so the total never drops or jumps inside a series;
-* battery state (SOC, BMS) comes from the parallel master only, never averaged.
+* battery state (SOC, temperature, BMS) comes from the parallel master only, never averaged.
 
 Battery power of one inverter is battery voltage x battery current; the current is negative while
 charging (R591), so positive power is discharging.
@@ -53,6 +53,9 @@ class Metric:
     state_class: str | None = None
     precision: int | None = None
     optional: bool = False  # a member without these entries adds 0 (PV)
+    # "master" metrics: ``keys`` are alternatives in order of preference (the first one the master
+    # has selected is used) instead of values that are all needed
+    alternatives: bool = False
 
 
 METRICS: Final = (
@@ -176,18 +179,29 @@ METRICS: Final = (
         "measurement",
         1,
     ),
+    # one SOC and one temperature per plant: the master's BMS value when it is selected (the
+    # inverter value is the same source then and is not selected), else the inverter's own
     Metric(
         "plant_battery_soc",
         "Plant battery SOC",
         "master",
-        ("battery_soc",),
+        ("bms_soc", "battery_soc"),
         "%",
         "battery",
         "measurement",
         0,
+        alternatives=True,
     ),
     Metric(
-        "plant_bms_soc", "Plant BMS SOC", "master", ("bms_soc",), "%", "battery", "measurement", 0
+        "plant_battery_temperature",
+        "Plant battery temperature",
+        "master",
+        ("bms_temperature", "battery_temperature"),
+        "°C",
+        "temperature",
+        "measurement",
+        1,
+        alternatives=True,
     ),
     Metric(
         "plant_bms_voltage",
@@ -219,19 +233,37 @@ METRICS: Final = (
         "measurement",
         0,
     ),
-    Metric(
-        "plant_bms_temperature",
-        "Plant BMS temperature",
-        "master",
-        ("bms_temperature",),
-        "°C",
-        "temperature",
-        "measurement",
-        1,
-    ),
 )
 METRIC_BY_KEY: Final = {m.key: m for m in METRICS}
 ENERGY_METRICS: Final = tuple(m for m in METRICS if m.kind == "energy")
+
+
+def _mode(metric: Metric) -> str:
+    if metric.alternatives:
+        return "any"
+    return "optional" if metric.optional else "all"
+
+
+def _plant_inputs() -> dict[str, tuple[dict[str, Any], ...]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    for m in METRICS:
+        for key in m.keys:
+            out.setdefault(key, []).append(
+                {
+                    "metric": m.key,
+                    "name": m.name,
+                    "mode": _mode(
+                        m
+                    ),  # all: a missing input makes it unknown; any; optional: adds 0
+                    "keys": list(m.keys),
+                    "master_only": m.kind == "master",
+                }
+            )
+    return {k: tuple(v) for k, v in out.items()}
+
+
+# Profile entry key -> the plant totals it feeds (derived from ``METRICS``, the one list)
+PLANT_INPUTS: Final = _plant_inputs()
 
 
 @dataclass(frozen=True, slots=True)
@@ -447,6 +479,10 @@ class PlantTotals:
             amps = self._fresh(member, "bms_current", now)
             # the BMS current is positive while charging: negate it to show discharging as positive
             return None if volts is None or amps is None else -(volts * amps)
+        if metric.alternatives:
+            selected = self._keys_of(master)
+            key = next((k for k in metric.keys if k in selected), None)
+            return None if key is None else self._fresh(member, key, now)
         return self._fresh(member, metric.keys[0], now)
 
     def value(self, metric: Metric, now: float) -> float | None:

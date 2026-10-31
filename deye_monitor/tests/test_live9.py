@@ -108,7 +108,7 @@ async def test_status_words_at_zero_give_no_hint_but_a_dead_load_power_does(
     tmp_path: Path,
 ) -> None:
     regs = device_regs(SN, r336=0, r588=55, r653=0, r659=0)
-    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path, bms=True) as r:
         inv = r.inv("deye1")
         for _ in range(35):
             await inv.step()
@@ -123,7 +123,7 @@ async def test_status_words_at_zero_give_no_hint_but_a_dead_load_power_does(
 
 async def _run(tmp_path: Path, **regs: int):  # type: ignore[no-untyped-def]
     banks = {"gw1": device_regs(SN, **regs)}
-    return rig([ep("gw1")], [inverter("deye1", "gw1")], banks, tmp_path)
+    return rig([ep("gw1")], [inverter("deye1", "gw1")], banks, tmp_path, bms=True)
 
 
 async def test_a_slave_without_bms_link_drops_the_bms_block_and_the_temperature(
@@ -162,7 +162,7 @@ async def test_master_and_independent_inverters_keep_everything(
         inv = r.inv("deye1")
         await inv.step()
         assert inv.inactive == {}, name  # an all-zero BMS block on the master is a real fault
-        assert inv.current_plan().addresses >= {586}
+        assert inv.current_plan().addresses >= {214}  # the BMS block is read again
 
 
 async def test_role_change_is_picked_up_at_the_identity_pass(tmp_path: Path) -> None:
@@ -174,7 +174,7 @@ async def test_role_change_is_picked_up_at_the_identity_pass(tmp_path: Path) -> 
         r.clock.offset += 4000
         await inv.step()
         assert inv.inactive == {}
-        assert inv.current_plan().addresses >= {586}
+        assert inv.current_plan().addresses >= {214}  # the BMS block is read again
 
 
 async def test_firmware_words_include_the_control_board(tmp_path: Path) -> None:

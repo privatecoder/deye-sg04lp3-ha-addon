@@ -830,7 +830,9 @@ entries:
   tags:
   - parallel
   - role
-  requires: {}
+  requires:
+    feature: parallel
+    equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -900,7 +902,9 @@ entries:
   tags:
   - parallel
   - role
-  requires: {}
+  requires:
+    feature: parallel
+    equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -1062,11 +1066,11 @@ entries:
   notes: Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded.
 - key: relay_grid_supply
   name:
-    de: Relais Netzeinspeisung
+    de: Relais Netzversorgung
     en: Grid supply relay
   description:
-    de: "Softwarezustand des Relais (Netzeinspeisung); keine mechanische Rückmeldung."
-    en: "Software state of the grid feed-in relay; not mechanical feedback."
+    de: "Softwarezustand von „grid give power to relay“ (V105.8, Bit 4). Ob LOAD-Versorgung oder zweites Netzrelais, ist nicht belegt; keine mechanische Rückmeldung."
+    en: "Software state of “grid give power to relay” (V105.8, bit 4). Whether it is the LOAD-port supply or the second series grid relay is not proven; not mechanical feedback."
   addr: 552
   type: bitfield
   mask: 16
@@ -1184,7 +1188,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R553 (TXT 3451-3463)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   mandatory: true
   notes: Raw word; unknown bits are preserved. All four fault words are read together.
 - key: alarm_word_2
@@ -1209,7 +1213,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R554 (TXT 3463-3474)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   mandatory: true
   notes: Raw word; unknown bits are preserved. All four fault words are read together.
 - key: fault_word_1
@@ -1234,7 +1238,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R555 (TXT 3474-3481)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   mandatory: true
   notes: Raw word; unknown bits are preserved. All four fault words are read together.
 - key: fault_word_2
@@ -1259,7 +1263,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R556 (TXT 3481-3487)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   mandatory: true
   notes: Raw word; unknown bits are preserved. All four fault words are read together.
 - key: fault_word_3
@@ -1284,7 +1288,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R557 (TXT 3487-3493)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   mandatory: true
   notes: Raw word; unknown bits are preserved. All four fault words are read together.
 - key: fault_word_4
@@ -1309,7 +1313,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R558 (TXT 3493-3499)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   mandatory: true
   notes: Raw word; unknown bits are preserved. All four fault words are read together.
 - key: alarm_fan
@@ -1649,8 +1653,11 @@ entries:
   group: battery
   tags: []
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: false
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -1707,8 +1714,11 @@ entries:
   group: battery
   tags: []
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: false
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -1996,7 +2006,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R210 (TXT 1630-1637)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: bms_discharge_voltage
   name:
     de: BMS Entladespannung
@@ -2301,12 +2311,10 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
-      in:
-      - generator
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -2332,12 +2340,10 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
-      in:
-      - generator
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -2363,12 +2369,10 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
-      in:
-      - generator
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -2426,12 +2430,10 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
-      in:
-      - generator
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -2753,19 +2755,15 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
-      in:
-      - generator
+    feature: grid_port_use
+    equals: "generator"
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: confirmed
   source: "V105.8 registers.json inverter: R607 (TXT 3654-3655), R703 (TXT 3979-3980)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_external_power_a
@@ -3025,12 +3023,11 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
+    all_of:
     - feature: utility_grid
       equals: true
     - feature: grid_port_use
-      in:
-      - generator
+      equals: "utility"
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -3482,8 +3479,10 @@ entries:
   group: ac
   tags: []
   requires:
-    feature: utility_grid
-    equals: false
+    feature: grid_port_use
+    in:
+    - unused
+    - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -3608,16 +3607,14 @@ entries:
   point: ups_load
   group: ac
   tags: []
-  requires:
-    feature: utility_grid
-    equals: false
+  requires: {}
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: confirmed
   source: "V105.8 registers.json inverter: R643 (TXT 3795-3797), R699 (TXT 3974-3976)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: true
+  default_enabled: false
   notes: "Documented and decoded as unsigned 32 bit (the catalog marks this group unsigned). The total is part of the island\
     \ template: UPS/EPS, inverter output and load power are different measurement points and are never added."
 - key: load_voltage_a
@@ -3637,9 +3634,7 @@ entries:
   point: ups_load
   group: ac
   tags: []
-  requires:
-    feature: utility_grid
-    equals: false
+  requires: {}
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -3695,9 +3690,7 @@ entries:
   point: ups_load
   group: ac
   tags: []
-  requires:
-    feature: utility_grid
-    equals: false
+  requires: {}
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -3753,9 +3746,7 @@ entries:
   point: ups_load
   group: ac
   tags: []
-  requires:
-    feature: utility_grid
-    equals: false
+  requires: {}
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -5774,8 +5765,11 @@ entries:
   group: energy
   tags: []
   requires:
-    feature: utility_grid
-    equals: true
+    all_of:
+    - feature: utility_grid
+      equals: true
+    - feature: grid_port_use
+      equals: "utility"
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -5803,8 +5797,11 @@ entries:
   group: energy
   tags: []
   requires:
-    feature: utility_grid
-    equals: true
+    all_of:
+    - feature: utility_grid
+      equals: true
+    - feature: grid_port_use
+      equals: "utility"
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -5950,8 +5947,11 @@ entries:
   group: energy
   tags: []
   requires:
-    feature: utility_grid
-    equals: true
+    all_of:
+    - feature: utility_grid
+      equals: true
+    - feature: grid_port_use
+      equals: "utility"
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -5979,8 +5979,11 @@ entries:
   group: energy
   tags: []
   requires:
-    feature: utility_grid
-    equals: true
+    all_of:
+    - feature: utility_grid
+      equals: true
+    - feature: grid_port_use
+      equals: "utility"
   supported_on:
   - sg04lp3_eu
   support_status: supported

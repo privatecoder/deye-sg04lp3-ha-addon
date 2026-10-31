@@ -2,7 +2,7 @@
 
 import { t, tOr, localName, localText, errorText } from './i18n.js';
 import { h, toast } from './ui.js';
-import { loadLevel, profileOf, serverNowEstimate, canEdit } from './state.js';
+import { state, loadLevel, profileOf, serverNowEstimate, canEdit } from './state.js';
 
 export { errorText };
 
@@ -91,6 +91,19 @@ export function sensorName(inv, key) {
   return entry ? localName(entry) : key;
 }
 
+// The plant totals an entry feeds on this inverter: only a member of the plant totals delivers
+// inputs, and the master-only ones (battery state, BMS) only while it is (or may be) the master.
+export function plantInputsOf(inv, entry) {
+  const totals = state.totals;
+  if (!entry || !entry.plant_total || !totals || !totals.active || !(totals.members || []).some((m) => m.id === inv.id)) return [];
+  return entry.plant_total.filter((item) => !item.master_only || !totals.master || totals.master === inv.id);
+}
+
+export function plantTotalName(item) {
+  const key = `plantname.${item.metric}`;
+  return tOr(key, 'plantname.generic', { name: item.name });
+}
+
 export function sensorList(inv, keys) {
   return keys.map((k) => sensorName(inv, k)).join(', ');
 }
@@ -134,6 +147,8 @@ export function hintsOf(inv) {
     out.push({ kind: 'energy', text: t('hint.energy.r65_invalid'), actions: energyChoice(inv) });
   }
   for (const hint of s.hints || []) {
+    // a plant total needs this value: "only 0" is legitimate (the master may supply no load)
+    if (hint.state === 'zero_only_inconclusive' && plantInputsOf(inv, profileOf(inv)?.byKey.get(hint.key)).length) continue;
     const name = sensorName(inv, hint.key);
     out.push({
       kind: 'observation',

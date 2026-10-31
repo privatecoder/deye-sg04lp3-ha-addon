@@ -228,12 +228,11 @@ def tpl(p: Profile, hw: HardwareProfile, **features: object) -> frozenset[str]:
 DIAGNOSTICS = {
     "serial_number",
     "operating_state",
-    "fault_word_1",
-    "fault_word_4",
+    "active_warnings",
+    "active_faults",
     "power_switch",
     "remote_run_enable",
-    "parallel_sn",
-    "parallel_master",
+    "parallel_enable",
 }  # fw_main_version (R15) is part of the MCU2 diagnostic since 0.2.7
 
 
@@ -268,7 +267,8 @@ def test_diagnostics_are_available_for_every_feature_combination(
 
 def test_off_grid_with_generator_on_the_grid_port(p: Profile, hw: HardwareProfile) -> None:
     t = tpl(p, hw, utility_grid=False, grid_port_use="generator")
-    assert {"grid_voltage_a", "grid_selected_power_total", "grid_frequency"} <= t  # still measured
+    assert {"grid_voltage_a", "grid_internal_power_total", "grid_frequency"} <= t  # still measured
+    assert "grid_selected_power_total" not in t  # the utility view is not the generator terminal
     assert not t & {"grid_energy_import_today", "grid_energy_export_total"}  # no utility energy
     off = tpl(p, hw, utility_grid=False, grid_port_use="unused")
     assert not off & {"grid_voltage_a", "grid_selected_power_total", "grid_energy_import_today"}
@@ -319,7 +319,7 @@ def test_parallel_slave_without_pv(p: Profile, hw: HardwareProfile) -> None:
     assert not [k for k in slave if k.startswith(("pv1_", "pv2_", "pv_energy"))]
     assert {"parallel_enable", "parallel_master", "parallel_sn"} <= slave
     assert "parallel_phase" not in slave  # three-phase model: every unit reads "A"
-    assert {"load_power_total", "battery_soc"} <= slave
+    assert {"load_power_total", "bms_voltage"} <= slave
     one = tpl(p, hw, mppt2_used=False)
     assert "pv1_power" in one and "pv2_power" not in one
     assert "pv_energy_today" in one

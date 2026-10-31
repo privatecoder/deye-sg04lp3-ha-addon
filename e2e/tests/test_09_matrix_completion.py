@@ -76,7 +76,7 @@ async def slow_instance(running):
         ex.callback(app.cleanup)
         app.start()
         await app.wait_api(60)
-        await app.choose_all(["s_inv"])
+        await app.choose_all(["s_inv"], features={"bms": False})
         await until(
             lambda: valid(running.ha, "e2eslow01", "s_inv", "battery_soc", "52"),
             "the slow-group instance delivers data",
@@ -194,6 +194,7 @@ async def persistent_world(running):
         ex.callback(app.cleanup)
         app.start()
         await app.wait_api(60)
+        await app.choose_all(["p_inv"], features={"bms": False})
         yield broker, ha, fake, app
         await quiesce_and_check(app, {"pers": fake})
 
@@ -339,7 +340,7 @@ async def old_cycle_instance(running):
         ex.callback(app.cleanup)
         app.start()
         await app.wait_api(60)
-        await app.choose_all(["o_inv"])
+        await app.choose_all(["o_inv"], features={"bms": False})
         await until(
             lambda: valid(running.ha, "e2eold001", "o_inv", "battery_soc", "52"),
             "the old-cycle instance delivers data",

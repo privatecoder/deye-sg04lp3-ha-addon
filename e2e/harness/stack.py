@@ -229,10 +229,11 @@ class App:
                     data = await r.text()
                 return r.status, data
 
-    async def choose_all(self, inverter_ids: list[str]) -> None:
-        """Save the template as the selection of every inverter (ends the first-start state)."""
+    async def choose_all(self, inverter_ids: list[str], **edit: Any) -> None:
+        """Save the template (with ``edit`` on top) as the selection of every inverter; any saved
+        edit ends the first-start state."""
         for iid in inverter_ids:
-            status, body = await self.sensors(iid, choose=True)
+            status, body = await self.sensors(iid, **(edit or {"choose": True}))
             assert status == 200, (iid, body)
 
     async def revision(self) -> int:

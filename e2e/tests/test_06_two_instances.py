@@ -78,7 +78,7 @@ async def instance_b(running):
         ex.callback(app.cleanup)
         app.start()
         await app.wait_api(60)
-        await app.choose_all(["b_tcp", "b_rtu"])
+        await app.choose_all(["b_tcp", "b_rtu"], features={"bms": False, "parallel": True})
         # b_tcp is an island inverter: no grid, load and inverter values instead
         status, body = await app.sensors(
             "b_tcp", features={"utility_grid": False, "grid_port_use": "unused"}

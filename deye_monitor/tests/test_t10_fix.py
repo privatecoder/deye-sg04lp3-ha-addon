@@ -22,7 +22,7 @@ from tests.test_webapi import client
 
 async def damaged_newest_slot_with_good_previous(tmp_path: Path) -> str:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     await m.change(1, {"deye1": Edit(remove=frozenset({"pv1_power"}))})
     name = newest_slot(tmp_path)
     (tmp_path / name).write_text("{broken")
@@ -31,7 +31,7 @@ async def damaged_newest_slot_with_good_previous(tmp_path: Path) -> str:
 
 def assert_last_good(tmp_path: Path) -> None:
     again = manager_at(tmp_path)
-    assert "battery_soc" not in again.selection("deye1").effective
+    assert "bms_soc" not in again.selection("deye1").effective
     assert again.revision == 1
     assert again.store.source == "recovered_previous"
     assert again.store.problems
@@ -108,14 +108,14 @@ async def test_failed_live_adoption_is_not_reported_as_applied(
             real(*args, **kwargs)
 
         monkeypatch.setattr(inv, "set_selection", fail_once)
-        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["battery_soc"]})
+        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["bms_soc"]})
         assert status == 500 and body["error"]["key"] == "adoption_failed"
         assert c.plant.manager.revision == 0
-        assert "battery_soc" in c.plant.manager.selection("deye1").effective
+        assert "bms_soc" in c.plant.manager.selection("deye1").effective
         assert (inv.selection, inv.selection_revision) == before  # old coherent revision
         assert manager_at(tmp_path).revision == 0  # the file is back on the previous revision
-        status, _ = await c.post("/api/inverters/deye1/sensors", {"remove": ["battery_soc"]})
-        assert status == 200 and "battery_soc" not in inv.selection
+        status, _ = await c.post("/api/inverters/deye1/sensors", {"remove": ["bms_soc"]})
+        assert status == 200 and "bms_soc" not in inv.selection
 
 
 async def test_unprepareable_selection_is_refused_before_anything_is_written(
@@ -129,7 +129,7 @@ async def test_unprepareable_selection_is_refused_before_anything_is_written(
 
         monkeypatch.setattr(inv, "check_selection", refuse)
         with pytest.raises(ChangeError) as err:
-            await p.manager.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+            await p.manager.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
         assert err.value.key == "adoption_failed"
         assert not (tmp_path / "selection.json").exists() and p.manager.revision == 0
 
@@ -152,7 +152,7 @@ async def test_identity_and_energy_actions_require_current_counter(
 ) -> None:
     async with client(tmp_path) as c:
         await c.plant.rig.inv("deye1").step()
-        await c.plant.manager.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+        await c.plant.manager.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
         status, _ = await c.post(route, body, revision=revision)
         assert status == expected
 
@@ -199,9 +199,7 @@ async def test_preview_budget_uses_runtime_route_and_reports_total_bus_load(
     invs = [inverter("deye1", "ga"), inverter("deye2", "gb", unit_id=2)]
     async with client(tmp_path, endpoints=eps, inverters=invs) as c:
         runtime = c.plant.rig.runtime
-        status, body = await c.post(
-            "/api/inverters/deye1/sensors/preview", {"remove": ["battery_soc"]}
-        )
+        status, body = await c.post("/api/inverters/deye1/sensors/preview", {"remove": ["bms_soc"]})
         assert status == 200
         view = body["preview"]["selection"]["budget"]
         plan = runtime.inverters["deye1"].candidate_plan(
@@ -321,14 +319,14 @@ async def test_a_change_that_cannot_be_made_durable_is_rolled_back_and_reported(
         inv = c.plant.rig.inv("deye1")
         for slot in c.plant.manager.store._slots:
             monkeypatch.setattr(slot, "commit", _refuse)
-        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["battery_soc"]})
+        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["bms_soc"]})
         assert status == 500 and body["error"]["key"] == "persist_failed"
         assert c.plant.manager.revision == inv.selection_revision == 0
-        assert "battery_soc" in inv.selection  # the running application is back on the old state
+        assert "bms_soc" in inv.selection  # the running application is back on the old state
         monkeypatch.undo()
         restart = manager_at(tmp_path)
-        assert restart.revision == 0 and "battery_soc" in restart.selection("deye1").effective
-        status, _ = await c.post("/api/inverters/deye1/sensors", {"remove": ["battery_soc"]})
+        assert restart.revision == 0 and "bms_soc" in restart.selection("deye1").effective
+        status, _ = await c.post("/api/inverters/deye1/sensors", {"remove": ["bms_soc"]})
         assert status == 200 and manager_at(tmp_path).revision == 1
 
 
@@ -350,7 +348,7 @@ async def test_failed_adoption_leaves_the_accepted_state_on_disk(
             return real(*args, **kwargs)
 
         monkeypatch.setattr(inv, "set_selection", fail_once)
-        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["battery_soc"]})
+        status, body = await c.post("/api/inverters/deye1/sensors", {"remove": ["bms_soc"]})
         assert status == 500 and body["error"]["key"] == "adoption_failed"
         assert no_selection_files(tmp_path)  # nothing was ever made durable
         assert manager_at(tmp_path).revision == 0
@@ -360,7 +358,7 @@ async def test_startup_with_unwritable_slots_keeps_the_accepted_state_through_re
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     broken = manager_at(tmp_path)
     for slot in broken.store._slots:
         monkeypatch.setattr(slot, "commit", _refuse)
@@ -370,18 +368,18 @@ async def test_startup_with_unwritable_slots_keeps_the_accepted_state_through_re
     monkeypatch.undo()
     again = manager_at(tmp_path)
     assert again.revision == 1 and "pv1_power" in again.selection("deye1").effective
-    assert "battery_soc" not in again.selection("deye1").effective
+    assert "bms_soc" not in again.selection("deye1").effective
 
 
 async def test_a_half_written_newer_slot_is_never_used(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     newest = newest_slot(tmp_path)
     other = "selection.b.json" if newest == "selection.a.json" else "selection.a.json"
     text = (tmp_path / newest).read_text()
     (tmp_path / other).write_text(text[: len(text) // 2])  # a truncated later write
     again = manager_at(tmp_path)
-    assert again.revision == 1 and "battery_soc" not in again.selection("deye1").effective
+    assert again.revision == 1 and "bms_soc" not in again.selection("deye1").effective
     assert "selection_store_corrupt" in [p.code for p in again.store.problems]
 
 
@@ -413,7 +411,7 @@ async def test_failed_rollback_never_leaves_a_running_peer_on_rejected_selection
         p.manager.attach(FailingApplier())  # type: ignore[arg-type]
         with pytest.raises(ChangeError) as caught:
             await p.manager.change(
-                0, {i: Edit(remove=frozenset({"battery_soc"})) for i in ("deye1", "deye2")}
+                0, {i: Edit(remove=frozenset({"bms_soc"})) for i in ("deye1", "deye2")}
             )
         assert caught.value.key == "adoption_failed"
         first = p.rig.inv("deye1")
@@ -427,7 +425,7 @@ async def test_failed_rollback_never_leaves_a_running_peer_on_rejected_selection
             await p.manager.change(0, {"deye2": Edit(remove=frozenset({"pv1_power"}))})
         assert refused.value.key == "selection_recovery_required"
         restart = manager_at(tmp_path)
-        assert restart.revision == 0 and "battery_soc" in restart.selection("deye1").effective
+        assert restart.revision == 0 and "bms_soc" in restart.selection("deye1").effective
 
 
 # -- N4-03: every action with a possible side effect uses up the confirmation -------------------
@@ -473,7 +471,7 @@ async def test_a_refused_rebind_keeps_the_confirmation(tmp_path: Path) -> None:
 
 async def test_sequence_bit_corruption_is_not_silently_trusted(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     older = tmp_path / newest_slot(tmp_path)
     await m.change(1, {"deye1": Edit(remove=frozenset({"pv1_power"}))})
     doc = json.loads(older.read_text())
@@ -486,7 +484,7 @@ async def test_sequence_bit_corruption_is_not_silently_trusted(tmp_path: Path) -
 
 async def test_conflicting_slots_prefer_the_higher_revision(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
-    await m.change(0, {"deye1": Edit(remove=frozenset({"battery_soc"}))})
+    await m.change(0, {"deye1": Edit(remove=frozenset({"bms_soc"}))})
     await m.change(1, {"deye1": Edit(remove=frozenset({"pv1_power"}))})
     assert manager_at(tmp_path).revision == 2
 

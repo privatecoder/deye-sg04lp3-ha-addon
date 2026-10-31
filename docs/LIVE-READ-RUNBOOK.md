@@ -68,13 +68,13 @@ Do not start an additional debug app or Modbus console in parallel. Local poller
 
 ### 3.1 First start: "Please choose sensors"
 
-As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 65 sensors and 30 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device. 
+As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 59 sensors and 32 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device. 
 
 1. Start the app (the app options stay empty except `instance_id`) and create the connection and inverter in the setup wizard of the web interface (stage 1, section 4).
 2. In the web interface (sidebar **Deye Monitor**) the inverter's card shows **"Please choose sensors"** after identification. Open **"Choose now"** there (or **Set up sensors**).
 3. Answer step 1 "Describe your plant" **truthfully** (island/grid, battery yes/no, BMS, GEN port, PV inputs, parallel operation). A note "The device setting reports …" is **no proof of the installation** and changes nothing by itself; your answers stay saved.
-4. Step 2 "Choose sensors": **"Basics only"** selects `serial_number` (serial number), `operating_state` (operating state) and `fault_word_1` to `fault_word_4` (fault words 1–4) and deselects everything else; **"Deselect all"** selects nothing. Both are ordinary deviations from the template (individually resettable, preserved across later changes to the plant description).
-5. The bar at the bottom shows the **polling load**, "What saving changes" the sensors that drop out. Expected for "Basics only": **6 sensors, 12 polling blocks**, load "low", no energy, no R65, no battery/AC/PV group.
+4. Step 2 "Choose sensors": **"Basics only"** selects `serial_number` (serial number), `operating_state` (operating state), `active_warnings` and `active_faults` (the decoded warnings and faults) and deselects everything else; **"Deselect all"** selects nothing. Both are ordinary deviations from the template (individually resettable, preserved across later changes to the plant description).
+5. The bar at the bottom shows the **polling load**, "What saving changes" the sensors that drop out. Expected for "Basics only": **4 sensors, 12 polling blocks**, load "low", no energy, no R65, no battery/AC/PV group.
 6. **Save.** The selection counts as saved only once it is stored durably; after that the note "Please choose sensors" disappears and normal reading begins – with the small selection.
 
 If you want the template unchanged, use **"Accept the template unchanged"**; not recommended for this test.
@@ -149,7 +149,7 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | `sensor.deye_deyetest1_deye1_diag_transport_cooldown` | Wait time after errors (backoff). |
 | `sensor.deye_deyetest1_deye1_diag_last_success` | Time of the last successful query; should be at most a few intervals old. |
 
-**Inverter entities** (selected sensors only): `sensor.deye_deyetest1_deye1_<key>`, e.g. `…_serial_number`, `…_operating_state`, `…_fault_word_1` … `…_fault_word_4`, later `…_battery_voltage`, `…_battery_soc`, `…_inverter_frequency`, `…_pv1_power`, `…_pv2_power`. Energy counters carry the series in the name, e.g. `…_battery_energy_charge_total_g0`.
+**Inverter entities** (selected sensors only): `sensor.deye_deyetest1_deye1_<key>`, e.g. `…_serial_number`, `…_operating_state`, `…_active_warnings`, `…_active_faults`, later `…_battery_voltage`, `…_battery_soc`, `…_inverter_frequency`, `…_pv1_power`, `…_pv2_power`. Energy counters carry the series in the name, e.g. `…_battery_energy_charge_total_g0`.
 
 | Check | Expectation / procedure |
 | --- | --- |

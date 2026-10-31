@@ -115,7 +115,7 @@ async def test_the_assistant_leads_from_an_empty_plant_to_the_sensor_selection(
         await page.get_by_role("button", name="Speichern", exact=True).click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         sel = rig.manager.selection("deye_keller")
-        assert sel.chosen and len(sel.effective) == 6
+        assert sel.chosen and len(sel.effective) == 4
         assert rig.service.plant.inverters[0].id == "deye_keller"
         await rig.wait_state("deye_keller", InverterState.RUNNING)
         await s.check()

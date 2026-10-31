@@ -127,6 +127,19 @@
    "unit_of_measurement": "%",
    "value_template": "{{ value_json.get('plant_battery_soc') if value_json is mapping else none }}"
   },
+  "plant_battery_temperature": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_battery_temperature",
+   "device_class": "temperature",
+   "expire_after": 90,
+   "name": "Plant battery temperature",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_app_plant_battery_temperature",
+   "unit_of_measurement": "°C",
+   "value_template": "{{ value_json.get('plant_battery_temperature') if value_json is mapping else none }}"
+  },
   "plant_bms_current": {
    "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_current",
    "device_class": "current",
@@ -152,32 +165,6 @@
    "unique_id": "deye_ab12cd34_app_plant_bms_power",
    "unit_of_measurement": "W",
    "value_template": "{{ value_json.get('plant_bms_power') if value_json is mapping else none }}"
-  },
-  "plant_bms_soc": {
-   "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_soc",
-   "device_class": "battery",
-   "expire_after": 90,
-   "name": "Plant BMS SOC",
-   "platform": "sensor",
-   "state_class": "measurement",
-   "state_topic": "deye/ab12cd34/app/plant",
-   "suggested_display_precision": 0,
-   "unique_id": "deye_ab12cd34_app_plant_bms_soc",
-   "unit_of_measurement": "%",
-   "value_template": "{{ value_json.get('plant_bms_soc') if value_json is mapping else none }}"
-  },
-  "plant_bms_temperature": {
-   "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_temperature",
-   "device_class": "temperature",
-   "expire_after": 90,
-   "name": "Plant BMS temperature",
-   "platform": "sensor",
-   "state_class": "measurement",
-   "state_topic": "deye/ab12cd34/app/plant",
-   "suggested_display_precision": 1,
-   "unique_id": "deye_ab12cd34_app_plant_bms_temperature",
-   "unit_of_measurement": "°C",
-   "value_template": "{{ value_json.get('plant_bms_temperature') if value_json is mapping else none }}"
   },
   "plant_bms_voltage": {
    "default_entity_id": "sensor.deye_ab12cd34_app_plant_bms_voltage",
@@ -341,6 +328,6 @@
  },
  "origin": {
   "name": "Deye SG04LP3 Monitor",
-  "sw_version": "0.2.12"
+  "sw_version": "0.2.13"
  }
 }

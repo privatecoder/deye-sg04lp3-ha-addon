@@ -241,6 +241,8 @@ input.locked { background: var(--line); color: var(--muted); cursor: not-allowed
 .sensor-name { font-weight: 500; }
 .unit { color: var(--muted); font-weight: 400; }
 .sensor-desc { color: var(--muted); font-size: .88rem; }
+.chip.plant-total { background: var(--info-soft); color: var(--primary); border-color: transparent; }
+.plant-warn { display: block; color: var(--warn); font-size: .88rem; }
 .sensor-meta { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; }
 .sensor-meta:empty { display: none; }
 .sensor-actions { display: flex; gap: .5rem; align-items: center; flex: none; flex-wrap: wrap; justify-content: flex-end; }

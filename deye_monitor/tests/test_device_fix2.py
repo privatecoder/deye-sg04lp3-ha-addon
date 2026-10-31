@@ -246,7 +246,7 @@ async def two_inverters(tmp_path: Path) -> Any:
     return rig(
         [ep("ga", port=25001), ep("gb", port=25002)],
         [inverter("a", "ga"), inverter("b", "gb")],
-        {"ga": device_regs(A), "gb": device_regs(B, r588=55)},
+        {"ga": device_regs(A), "gb": device_regs(B, soc=55)},
         tmp_path,
     )
 
@@ -340,7 +340,7 @@ class BlockAnnouncementError(Recorder):
 async def test_reset_revives_supervisor_that_waited_while_blocked(tmp_path: Path) -> None:
     (tmp_path / "identity.json").write_text("{broken")
     async with rig(
-        [ep("g")], [inverter("i", "g")], {"g": device_regs(A, r588=55)}, tmp_path,
+        [ep("g")], [inverter("i", "g")], {"g": device_regs(A, soc=55)}, tmp_path,
         sink=BlockAnnouncementError(),
     ) as r:  # fmt: skip
         await r.runtime.start()

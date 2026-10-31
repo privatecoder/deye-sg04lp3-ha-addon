@@ -34,9 +34,8 @@ ISLAND_KEYS = {
     "load_voltage_b",
     "load_voltage_c",
     "inverter_frequency",
-    "ups_power_total",
 }
-ISLAND_ADDRESSES = {644, 645, 646, 638, 643, 699}
+ISLAND_ADDRESSES = {644, 645, 646, 638}
 
 
 # -- T5-01 -----------------------------------------------------------------------------------------
@@ -55,7 +54,10 @@ def test_island_template_has_ac_voltage_frequency_and_eps_power(
     assert p.entry("ups_power_total").point == "ups_load"
     assert p.entry("inverter_power_total").point == "inverter_output"
     assert p.entry("load_power_total").point == "ups_load"
-    assert len({"inverter_power_total", "load_power_total", "ups_power_total"} & template) == 3
+    # UPS power equals the load power off-grid (field evidence): selectable, not preselected
+    assert {"inverter_power_total", "load_power_total"} <= template
+    assert "ups_power_total" not in template
+    validate_selection(p, {"ups_power_total", "ups_power_a"})
 
 
 def test_slave_without_pv_keeps_the_island_ac_basics(p: Profile, hw: HardwareProfile) -> None:
@@ -73,8 +75,8 @@ def test_slave_without_pv_keeps_the_island_ac_basics(p: Profile, hw: HardwarePro
 
 def test_grid_mode_template_is_unchanged(p: Profile, hw: HardwareProfile) -> None:
     template = template_selection(p, hw, GRID)
-    assert not template & ISLAND_KEYS
-    assert {"grid_voltage_a", "grid_frequency"} <= template
+    assert "inverter_frequency" not in template  # the grid sets the frequency
+    assert {"grid_voltage_a", "grid_frequency", "load_voltage_a"} <= template  # LOAD is measured
     # the island entries stay selectable by hand: the template changes defaults, not rights
     validate_selection(p, ISLAND_KEYS)
 

@@ -47,7 +47,7 @@ async def foreign_device_after_serial_block(r: Rig, inverter_id: str, exceptions
 
     def hook(n: int, start: int) -> None:
         if n == base + trigger:
-            r.servers["gw1"].responder.regs.update(device_regs(B, r588=88))
+            r.servers["gw1"].responder.regs.update(device_regs(B, soc=88))
             if exceptions_only:
                 r.servers["gw1"].responder.fail_addresses = remaining
             proxy.inner._drop()  # the next request opens a new connection
@@ -63,7 +63,7 @@ async def test_reconnect_inside_the_identity_cycle_never_releases_foreign_data(
 ) -> None:
     endpoints = [ep("gw1", max_read_registers=max_read)]
     async with rig(
-        endpoints, [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        endpoints, [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         await inv.step()
@@ -86,7 +86,7 @@ async def test_same_device_after_a_reconnect_is_accepted_after_a_full_reread(
     tmp_path: Path,
 ) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         await inv.step()
@@ -105,15 +105,13 @@ async def test_same_device_after_a_reconnect_is_accepted_after_a_full_reread(
 async def test_a_reconnect_caused_by_another_inverter_on_a_shared_endpoint(tmp_path: Path) -> None:
     endpoints = [ep("gw1")]
     inverters = [inverter("deye1", "gw1"), {**inverter("deye2", "gw1"), "unit_id": 2}]
-    async with rig(endpoints, inverters, {"gw1": device_regs(A, r588=55)}, tmp_path) as r:
+    async with rig(endpoints, inverters, {"gw1": device_regs(A, soc=55)}, tmp_path) as r:
         r.servers["gw1"].responder.any_unit = True
         await r.inv("deye1").step()
         await r.inv("deye2").step()
         published = len(r.sink.values("deye1", "battery_soc"))
         r.runtime.transports["gw1"]._drop()  # e.g. a failed request of the neighbour
-        r.servers["gw1"].responder.regs.update(
-            device_regs(B, r588=88)
-        )  # a different device answers
+        r.servers["gw1"].responder.regs.update(device_regs(B, soc=88))  # a different device answers
         await r.inv("deye2").step()  # deye2 reconnects and re-identifies: it sees B
         r.clock.offset += 11
         await r.inv("deye1").step()  # its first request now runs on the new connection
@@ -138,7 +136,7 @@ async def running(r: Rig) -> Any:
 
 async def test_selection_revision_invalidates_inflight_group(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = await running(r)
         proxy = install_gate(r, "deye1")
@@ -164,7 +162,7 @@ async def test_selection_revision_invalidates_inflight_group(tmp_path: Path) -> 
 
 async def test_deselect_and_reselect_does_not_revive_an_old_answer(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = await running(r)
         old = inv.selection
@@ -186,7 +184,7 @@ async def test_deselect_and_reselect_does_not_revive_an_old_answer(tmp_path: Pat
 
 async def test_rebind_invalidates_inflight_identity(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = await running(r)
         proxy = install_gate(r, "deye1")
@@ -194,7 +192,7 @@ async def test_rebind_invalidates_inflight_identity(tmp_path: Path) -> None:
         r.clock.offset += 4000
         task = asyncio.create_task(inv.step())
         await asyncio.wait_for(entered.wait(), 2)
-        r.servers["gw1"].responder.regs.update(device_regs(B, r588=88))
+        r.servers["gw1"].responder.regs.update(device_regs(B, soc=88))
         assert r.runtime.rebind("deye1") is True
         assert r.sink.availability[-1] == ("deye1", InverterState.OFFLINE, "rebind requested")
         release.set()
@@ -209,7 +207,7 @@ async def test_rebind_invalidates_inflight_identity(tmp_path: Path) -> None:
 
 async def test_rebind_during_a_data_read_publishes_nothing_of_the_old_cycle(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, r588=55)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(A, soc=55)}, tmp_path
     ) as r:
         inv = await running(r)
         proxy = install_gate(r, "deye1")
@@ -229,7 +227,7 @@ async def test_selection_change_during_failback_does_not_publish_stale_results(
 ) -> None:
     endpoints = [ep("gw1"), ep("logger1", "solarman_v5_tcp")]
     inverters = [inverter("deye1", "gw1", fallback_endpoint="logger1")]
-    banks = {"gw1": device_regs(A, r588=55), "logger1": device_regs(A, r588=66)}
+    banks = {"gw1": device_regs(A, soc=55), "logger1": device_regs(A, soc=66)}
     async with rig(endpoints, inverters, banks, tmp_path) as r:
         inv = await running(r)
         before = len(r.sink.states)

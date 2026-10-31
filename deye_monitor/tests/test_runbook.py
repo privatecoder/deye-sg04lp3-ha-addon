@@ -57,10 +57,8 @@ def _plan_blocks(keys: list[str], tmp_path: Path) -> tuple[int, int, bool, set[i
 MINIMAL = [
     "serial_number",
     "operating_state",
-    "fault_word_1",
-    "fault_word_2",
-    "fault_word_3",
-    "fault_word_4",
+    "active_warnings",
+    "active_faults",
 ]
 MORE = ["battery_voltage", "battery_soc", "inverter_frequency", "pv1_power", "pv2_power"]
 
@@ -68,7 +66,7 @@ MORE = ["battery_voltage", "battery_soc", "inverter_frequency", "pv1_power", "pv
 def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None:
     blocks, template_size, r65, addresses = _plan_blocks(MINIMAL, tmp_path)
     assert blocks == 12 and not r65
-    assert "**6 sensors, 12 polling blocks**" in RUNBOOK and "**12 read blocks**" in RUNBOOK
+    assert "**4 sensors, 12 polling blocks**" in RUNBOOK and "**12 read blocks**" in RUNBOOK
     # no energy, battery, AC or PV registers; the internal identity/status/settings reads only
     assert addresses == {
         0,
@@ -109,8 +107,8 @@ def test_the_default_template_figures_in_the_runbook(tmp_path: Path) -> None:
     cfg = plant_config()
     manager = SelectionManager(SelectionStore(tmp_path, specs_from_config(cfg)))
     plan = manager.plan("deye1")
-    assert len(plan.blocks) == 30 and plan.reads_r65
-    assert "30 read blocks" in RUNBOOK
+    assert len(plan.blocks) == 32 and plan.reads_r65
+    assert "32 read blocks" in RUNBOOK
 
 
 def test_the_documented_diagnostic_entities_exist() -> None:
@@ -133,11 +131,11 @@ def test_the_documented_diagnostic_entities_exist() -> None:
 def test_the_documented_sensor_keys_and_register_claims_match_the_profile() -> None:
     keys = set(
         re.findall(
-            r"`(?:…_)?(serial_number|operating_state|fault_word_[1-4]|battery_voltage|battery_soc|inverter_frequency|pv[12]_power)`",
+            r"`(?:…_)?(serial_number|operating_state|active_warnings|active_faults|battery_voltage|battery_soc|inverter_frequency|pv[12]_power)`",
             RUNBOOK,
         )
     )
-    assert keys >= {"serial_number", "operating_state", "fault_word_1", "fault_word_4", *MORE}
+    assert keys >= {"serial_number", "operating_state", "active_warnings", "active_faults", *MORE}
     assert (PROFILE.entry("battery_soc").addr, PROFILE.entry("battery_soc").scale) == (588, 1.0)
     assert (PROFILE.entry("battery_voltage").addr, PROFILE.entry("battery_voltage").scale) == (
         587,

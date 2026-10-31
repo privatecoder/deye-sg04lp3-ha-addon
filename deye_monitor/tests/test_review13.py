@@ -15,7 +15,7 @@ SLAVE_KEYS = BMS_KEYS | {"battery_temperature"}
 
 def _run(tmp_path: Path, **regs: int) -> Any:
     banks = {"gw1": device_regs(SN, r15=0x1175, **regs)}
-    return rig([ep("gw1")], [inverter("deye1", "gw1")], banks, tmp_path)
+    return rig([ep("gw1")], [inverter("deye1", "gw1")], banks, tmp_path, bms=True)
 
 
 async def _next_identity_pass(r: Any, inv: Any, *, fail: frozenset[int] = frozenset()) -> None:
@@ -74,7 +74,7 @@ async def test_a_valid_master_response_restores_after_an_unknown_one(tmp_path: P
         r.servers["gw1"].responder.regs[336] = MASTER
         await _next_identity_pass(r, inv)
         assert inv.inactive == {}
-        assert inv.current_plan().addresses >= {586}
+        assert inv.current_plan().addresses >= {214}  # the BMS block is read again
 
 
 async def test_a_valid_slave_response_rechecks_the_bms_block(tmp_path: Path) -> None:

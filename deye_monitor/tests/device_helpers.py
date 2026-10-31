@@ -26,11 +26,14 @@ def serial_words(serial: str) -> dict[int, int]:
     return {3 + i: (ord(serial[2 * i]) << 8) | ord(serial[2 * i + 1]) for i in range(5)}
 
 
-def device_regs(serial: str, **extra: int) -> dict[int, int]:
+def device_regs(serial: str, *, soc: int | None = None, **extra: int) -> dict[int, int]:
     """A plausible standalone SG04LP3: R0, R22 (2 MPPT / 3 phases), R24, R336 (no parallel mode)
-    and a printable serial number."""
+    and a printable serial number. ``soc`` fills the inverter SOC (R588) and the BMS SOC (R214):
+    the default template reads one of them, depending on the BMS answer."""
     regs = {0: 0x0500, 22: 0x0203, 24: 1, 15: 0x1001, 17: 0x1000, 18: 0x0070, 65: 0x0104, 336: 0}
     regs.update(serial_words(serial))
+    if soc is not None:
+        regs.update({588: soc, 214: soc})
     regs.update({int(k[1:]): v for k, v in extra.items()})  # r588=55 -> {588: 55}
     return regs
 
@@ -96,12 +99,16 @@ async def rig(
     *,
     settings: RuntimeSettings | None = None,
     features: Mapping[str, Features] | None = None,
+    bms: bool = False,
     sink: Recorder | None = None,
     clock: FakeClock | None = None,
     runtime_kw: Mapping[str, Any] | None = None,
     **extra: Any,
 ) -> AsyncIterator[Rig]:
     cfg = config(endpoints, inverters, **extra)
+    if features is None and not bms:
+        # the inverter's own battery values (SOC, temperature) are in the template without a BMS
+        features = {i.id: Features(bms=False) for i in cfg.inverters}
     clock = clock or FakeClock()
     servers: dict[str, FakeServer] = {}
     for ep in cfg.endpoints:

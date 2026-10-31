@@ -130,7 +130,7 @@ async def test_corrupt_identity_never_rebinds_without_user_action(
 ) -> None:
     original = write(tmp_path / "identity.json", content)
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(B, r588=88)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(B, soc=88)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         proxy = install_gate(r, "deye1")
@@ -148,7 +148,7 @@ async def test_corrupt_identity_never_rebinds_without_user_action(
 async def test_identity_reset_is_explicit_and_keeps_the_old_file(tmp_path: Path) -> None:
     original = write(tmp_path / "identity.json", "{broken")
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(B, r588=88)}, tmp_path
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(B, soc=88)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         await inv.step()

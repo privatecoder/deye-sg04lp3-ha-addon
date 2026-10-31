@@ -51,6 +51,7 @@ from deye_monitor.selection import (
     Record,
     SelectionManager,
 )
+from deye_monitor.totals import PLANT_INPUTS
 
 log = logging.getLogger(__name__)
 
@@ -221,6 +222,9 @@ def entry_view(e: Entry) -> dict[str, Any]:
         "platform": e.platform,
         "default_enabled": e.default_enabled,
         "raw_diagnostic": e.is_raw_diagnostic,
+        # the plant totals this entry feeds (one source: totals.METRICS); the UI shows them only
+        # for a plant-totals member
+        "plant_total": list(PLANT_INPUTS.get(e.key, ())),
     }
 
 

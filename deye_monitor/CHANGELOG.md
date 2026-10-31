@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.13
+
+- **One source per battery value.** With BMS communication the template selects the BMS values
+  (SOC, temperature, voltage, current, charge/discharge current limits, charge voltage) and no
+  longer the inverter's battery SOC and temperature, which read the same source. Inverter battery
+  voltage, current, power and energies stay (own measurement per unit). Without BMS nothing
+  changes. BMS discharge voltage and the two BMS off-grid limits stay selectable, not preselected.
+- **Presets for all wizard combinations** (from the preset design): utility grid values only for a
+  used GRID port (utility or generator), the selected grid power and utility energy counters only
+  for the public grid, the internal GRID-terminal power for a generator on the GRID port, inverter
+  frequency for an unused or generator GRID port, load voltages L1-L3 always, UPS power total not
+  preselected (equals the load power off-grid), parallel role and serial number only with
+  parallel operation. The raw alarm and fault words 1-4 are off by default (the decoded warnings
+  and faults stay); the named alarm bits stay on. "Basics only" now selects serial number,
+  operating state, active warnings and active faults.
+- **Plant totals**: one "Plant battery SOC" and one "Plant battery temperature" (the master's BMS
+  value when selected, else its inverter value). "Plant BMS SOC" and "Plant BMS temperature" are
+  gone (the entities are retired from discovery).
+- **Plant-total inputs are marked** in the sensor list ("Plant total" chip, tooltip, inline
+  warning when deselected). The list comes from the totals definition. The "only 0" hint no longer
+  fires for them on a plant member (a master that supplies no load reads 0 legitimately).
+- "Relais Netzeinspeisung" is now "Relais Netzversorgung" (English unchanged: "Grid supply
+  relay"); the description says the exact function of the V105.8 bit "grid give power to relay" is
+  not proven.
+
 ## 0.2.12
 
 - **Energy entity names without the series**: "Battery charge total (g0)" is now "Battery charge

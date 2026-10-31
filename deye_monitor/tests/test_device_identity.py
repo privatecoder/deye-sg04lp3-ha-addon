@@ -99,7 +99,7 @@ async def test_no_answer_is_offline_not_a_binding(tmp_path: Path) -> None:
 
 async def test_device_swap_at_the_primary_path_quarantines(tmp_path: Path) -> None:
     async with rig(
-        gw(), [inverter("deye1", "gw1")], {"gw1": device_regs(SN, r588=55)}, tmp_path
+        gw(), [inverter("deye1", "gw1")], {"gw1": device_regs(SN, soc=55)}, tmp_path
     ) as r:
         inv = r.inv("deye1")
         await inv.step()

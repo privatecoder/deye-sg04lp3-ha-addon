@@ -94,7 +94,7 @@ async def instance_c(running):
         ex.callback(app.cleanup)
         app.start()
         await app.wait_api(60)
-        await app.choose_all(["c_gen", "c_fb", "c_dx"])
+        await app.choose_all(["c_gen", "c_fb", "c_dx"], features={"bms": False})
 
         async def data():
             states = await running.ha.states()
