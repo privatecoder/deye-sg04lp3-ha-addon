@@ -172,7 +172,9 @@ async def test_the_overview_shows_the_plant_card_and_the_setup_page_the_membersh
         boxes = section.locator('input[type="checkbox"]')
         await expect(boxes).to_have_count(3)  # two inverters and the single-member option
         await expect(section.locator('[data-member="deye2"]')).to_have_text("Deye 2")  # name only
-        top = [await section.locator(f'[data-member="{i}"]').bounding_box() for i in ("deye1", "deye2")]
+        top = [
+            await section.locator(f'[data-member="{i}"]').bounding_box() for i in ("deye1", "deye2")
+        ]
         assert top[0] and top[1] and top[1]["y"] > top[0]["y"]  # one per line
         await expect(section.locator('[data-member="deye2"] input')).to_be_checked()
         await section.locator('[data-member="deye2"] input').uncheck()
