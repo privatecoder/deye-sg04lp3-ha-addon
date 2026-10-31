@@ -4,7 +4,7 @@ import { t, errorText } from './i18n.js';
 import { h, busy } from './ui.js';
 import { state, canEdit, loadPlant } from './state.js';
 import {
-  endpointForm, inverterForm, testPanel, loadSerialDevices, saveEndpoint, saveInverter,
+  endpointForm, inverterForm, testPanel, savedInverterChecks, loadSerialDevices, saveEndpoint, saveInverter,
   existingEndpointIds, existingInverterIds, transportLabel, endpointTarget,
 } from './plantforms.js';
 import { noticeBanners } from './plant.js';
@@ -102,9 +102,7 @@ export function wizardView() {
     const panel = testPanel({
       intro: h('p', {}, t('wiz.check_intro')),
       build: () => {
-        const request = { endpoint_id: inv.endpoint, unit_id: inv.unit_id, inverter: inv.id };
-        if (inv.expected_serial) request.expected_serial = inv.expected_serial;
-        return request;
+        return savedInverterChecks(inv, state.plant.endpoints);
       },
     });
     queueMicrotask(() => panel.run());

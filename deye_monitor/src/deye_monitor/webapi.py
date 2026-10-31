@@ -1006,7 +1006,7 @@ class WebApi:
     def _v5_fallback_default(
         inverter: InverterConfig, body: Any, plant: PlantConfig
     ) -> InverterConfig:
-        """Unset ``fallback_unit_id`` on a Solarman V5 fallback is 1 (the logger answers only there)."""
+        """An unset ``fallback_unit_id`` on a V5 fallback is 1 (the logger needs it)."""
         if (
             inverter.fallback_endpoint is None
             or (isinstance(body, dict) and body.get("fallback_unit_id") is not None)

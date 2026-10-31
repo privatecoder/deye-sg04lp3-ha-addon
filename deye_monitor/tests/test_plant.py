@@ -11,11 +11,12 @@ from typing import Any
 
 import pytest
 
+from deye_monitor import probe
 from deye_monitor.config import PlantConfig, parse_config, plant_problems
 from deye_monitor.device import InverterState
 from deye_monitor.plant import PlantStore, SwitchError, options_notice
 from deye_monitor.store import LoadStatus
-from tests.fakes.servers import SERIAL, FakePty, Kind
+from tests.fakes.servers import SERIAL, Behavior, FakePty, Kind
 from tests.plant_helpers import A, B, PlantRig, plant_rig, serial_symlink
 from tests.transport_helpers import assert_wire_clean
 
@@ -857,3 +858,83 @@ async def test_serve_takes_the_options_over_once_and_warns_afterwards(
     assert "still contain connections/inverters" in caplog.text
     assert "taken over" not in caplog.text
     assert PlantStore(tmp_path).revision == 1  # the second start did not touch the store
+
+
+async def test_a_dropped_first_exchange_on_a_fresh_test_connection_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "RETRY_PAUSE_S", 0.05)
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        server = await rig.add_server("gw1", "modbus_tcp")
+        server.script = [Behavior(close=True)]  # the gateway drops the first exchange
+        status, result = await rig.call(
+            "POST", "/api/plant/test", {"endpoint": rig.endpoint_body("gw1"), "unit_id": 1}
+        )
+        assert status == 200, result
+        assert result["ok"] and result["path"] == "temporary" and result["attempts"] == 2
+        assert server.connections == 2  # one test connection at a time, each closed afterwards
+
+
+async def test_a_running_connection_in_cooldown_is_waited_for_instead_of_failing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "RETRY_PAUSE_S", 0.05)
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await create_gw(rig)  # saved, no inverter yet: the transport idles
+        rig.servers["gw1"].script = [Behavior(close=True)]  # a failure puts it into cooldown
+        status, first = await rig.call(
+            "POST", "/api/plant/test", {"endpoint_id": "gw1", "unit_id": 1}
+        )
+        assert status == 200 and first["path"] == "live", first
+        assert (
+            first["ok"] and first["attempts"] == 2
+        )  # attempt 1 failed, the cooldown was waited out
+        assert rig.servers["gw1"].connections == 2
+
+
+async def test_a_persistent_failure_is_reported_after_two_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "RETRY_PAUSE_S", 0.05)
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        server = await rig.add_server("gw1", "modbus_tcp")
+        server.default = Behavior(close=True)
+        status, result = await rig.call(
+            "POST", "/api/plant/test", {"endpoint": rig.endpoint_body("gw1"), "unit_id": 1}
+        )
+        assert status == 200 and not result["ok"] and result["attempts"] == 2, result
+        assert result["outcome"] == "unreachable"
+
+
+async def test_an_unset_fallback_unit_defaults_to_one_for_a_v5_fallback_through_the_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await create_gw(rig)
+        await create_gw(rig, "lg1", "solarman_v5_tcp")
+        await create_gw(rig, "gw2")
+        await create_inv(rig, unit_id=3, fallback_endpoint="lg1")
+        _, plant = await rig.call("GET", "/api/plant")
+        saved = {i["id"]: i for i in plant["inverters"]}["deye1"]
+        assert (saved["unit_id"], saved["fallback_unit_id"]) == (3, 1)
+        # explicit value untouched; a gateway fallback follows the primary's unit
+        status, _ = await rig.call(
+            "PUT",
+            "/api/plant/inverters/deye1",
+            {
+                "name": "deye1",
+                "endpoint": "gw1",
+                "unit_id": 3,
+                "fallback_endpoint": "lg1",
+                "fallback_unit_id": 7,
+            },
+        )
+        assert status == 200
+        assert rig.service.plant.inverters[0].fallback_unit_id == 7
+        status, _ = await rig.call(
+            "PUT",
+            "/api/plant/inverters/deye1",
+            {"name": "deye1", "endpoint": "gw1", "unit_id": 3, "fallback_endpoint": "gw2"},
+        )
+        assert status == 200
+        assert rig.service.plant.inverters[0].fallback_unit_id == 3

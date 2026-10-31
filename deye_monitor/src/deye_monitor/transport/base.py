@@ -289,6 +289,10 @@ class StreamTransport(ABC):
     def cooldown_active(self) -> bool:
         return self.clock() < self._not_before
 
+    @property
+    def cooldown_remaining_s(self) -> float:
+        return max(0.0, self._not_before - self.clock())
+
     def _check_cooldown(self) -> None:
         now = self.clock()
         if now < self._not_before:

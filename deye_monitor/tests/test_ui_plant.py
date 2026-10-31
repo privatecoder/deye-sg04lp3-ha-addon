@@ -11,7 +11,7 @@ import pytest
 from playwright.async_api import Browser, Page, expect
 
 from deye_monitor.device import InverterState
-from tests.fakes.servers import FakePty
+from tests.fakes.servers import Behavior, FakePty
 from tests.plant_helpers import A, B, PlantRig, plant_ui, serial_symlink
 from tests.test_ui import CSP_PROBE, SHOTS, Session, browser, shot  # noqa: F401
 
@@ -218,8 +218,17 @@ async def test_the_plant_page_edits_and_deletes_with_dropdowns_and_guards(
         # the connection check of a saved inverter goes through its running connection
         await card.get_by_role("button", name="Verbindung prüfen").click()
         await page.locator("dialog .test-panel button").click()
-        await expect(page.locator("dialog .test-result.ok")).to_contain_text(A)
-        await expect(page.locator("dialog .test-result")).to_contain_text("laufende Verbindung")
+        # primary and fallback are both checked, one result block per route
+        await expect(page.locator("dialog .test-route")).to_have_count(2)
+        await expect(
+            page.locator("dialog .test-route").nth(0).locator(".test-result.ok")
+        ).to_contain_text(A)
+        await expect(page.locator("dialog .test-route").nth(1)).to_contain_text(
+            "Ersatzverbindung: gw2"
+        )
+        await expect(page.locator("dialog .test-result").nth(0)).to_contain_text(
+            "laufende Verbindung"
+        )
         await page.locator("dialog .modal-body > .actions .btn").click()
         # delete the inverter (the binding stays unless the box is ticked)
         await card.get_by_role("button", name="Löschen").click()
@@ -481,13 +490,19 @@ async def test_modbus_address_prefill_help_and_hint_follow_the_connection_type(
         await dialog_select(page, "endpoint", "gw1")
         await field(page, "unit_id").fill("3")
         await dialog_select(page, "fallback_endpoint", "lg1")
-        await expect(fallback_unit).to_have_value("1")  # the logger fallback is 1, not the master unit
-        await expect(page.locator('dialog [data-field="fallback_unit_id"] .help:not(.warn-text)')).to_contain_text(
-            "immer 1"
-        )
-        await expect(page.locator('dialog [data-field="fallback_unit_id"] .warn-text')).to_be_hidden()
+        await expect(fallback_unit).to_have_value(
+            "1"
+        )  # the logger fallback is 1, not the master unit
+        await expect(
+            page.locator('dialog [data-field="fallback_unit_id"] .help:not(.warn-text)')
+        ).to_contain_text("immer 1")
+        await expect(
+            page.locator('dialog [data-field="fallback_unit_id"] .warn-text')
+        ).to_be_hidden()
         await fallback_unit.fill("4")
-        await expect(page.locator('dialog [data-field="fallback_unit_id"] .warn-text')).to_be_visible()
+        await expect(
+            page.locator('dialog [data-field="fallback_unit_id"] .warn-text')
+        ).to_be_visible()
         await fallback_unit.fill("1")
 
         await page.locator("dialog").get_by_role("button", name="Speichern", exact=True).click()
@@ -509,7 +524,9 @@ async def test_a_v5_address_other_than_one_does_not_block_saving_and_warns_in_th
         await page.get_by_role("button", name="Wechselrichter hinzufügen").click()
         await field(page, "name").fill("Slave")
         await dialog_select(page, "endpoint", "lg1")
-        await field(page, "unit_id").fill("2")  # the fake logger serves unit 1 only: the probe fails
+        await field(page, "unit_id").fill(
+            "2"
+        )  # the fake logger serves unit 1 only: the probe fails
         await page.locator("dialog").get_by_role("button", name="Verbindung prüfen").click()
         result = page.locator("dialog .test-result.fail")
         await expect(result).to_be_visible()
@@ -517,3 +534,32 @@ async def test_a_v5_address_other_than_one_does_not_block_saving_and_warns_in_th
         await page.locator("dialog").get_by_role("button", name="Speichern", exact=True).click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         assert rig.service.plant.inverters[0].unit_id == 2
+
+
+async def test_check_connection_tests_every_route_with_its_own_address(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await seed(rig, inverter=False)
+        await rig.add_server("lg1", "solarman_v5_tcp")
+        status, body = await rig.call(
+            "POST", "/api/plant/endpoints", rig.endpoint_body("lg1", "solarman_v5_tcp")
+        )
+        assert status == 200, body
+        rig.servers["lg1"].default = Behavior(close=True)  # the fallback logger is broken
+        page = (await open_page(browser, url + "#/plant")).page
+        await page.get_by_role("button", name="Wechselrichter hinzufügen").click()
+        await field(page, "name").fill("Master")
+        await dialog_select(page, "endpoint", "gw1")
+        await dialog_select(page, "fallback_endpoint", "lg1")
+        await page.locator("dialog").get_by_role("button", name="Verbindung prüfen").click()
+        routes = page.locator("dialog .test-route")
+        await expect(routes).to_have_count(2, timeout=20000)
+        await expect(routes.nth(0)).to_contain_text("Hauptverbindung: gw1")
+        await expect(routes.nth(0)).to_contain_text("Adresse 1")
+        await expect(routes.nth(0).locator(".test-result.ok")).to_be_visible()
+        await expect(routes.nth(1)).to_contain_text("Ersatzverbindung: lg1")
+        await expect(
+            routes.nth(1).locator(".test-result.fail")
+        ).to_be_visible()  # visible although the primary works
+        await expect(routes.nth(1)).to_contain_text("2 Versuche")

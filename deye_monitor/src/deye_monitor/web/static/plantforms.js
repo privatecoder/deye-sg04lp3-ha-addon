@@ -407,6 +407,7 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
     validate,
     endpointValue: () => endpointSelect.value,
     unitValue: () => numberOf(unitField.control),
+    fallbackValue: () => (fallbackSelect.value ? { endpoint: fallbackSelect.value, unit: numberOf(fallbackUnitField.control) } : null),
     focusFirst() { nameInput.focus(); },
   };
 }
@@ -445,26 +446,57 @@ export function testResultView(result, { unit = null } = {}) {
     advice ? h('p', {}, advice) : null,
     facts.length ? h('dl', { class: 'facts' }, facts.map(([key, value]) => h('div', { class: 'fact' }, h('dt', {}, t(key)), h('dd', {}, value)))) : null,
     notes.length ? h('ul', { class: 'hints' }, notes.map(([kind, text]) => h('li', { class: `hint ${kind}` }, text))) : null,
-    h('p', { class: 'muted small' }, `${t(`test.path.${result.path}`)} · ${t('test.duration', { s: result.duration_s })}`));
+    h('p', { class: 'muted small' }, [t(`test.path.${result.path}`), t('test.duration', { s: result.duration_s }), result.attempts > 1 ? t('test.attempts', { n: result.attempts }) : null].filter(Boolean).join(' · ')));
 }
 
-// ``build()`` returns the request body, or ``null`` when the form is not ready (it marks the fields).
+// One check per configured route of an inverter (primary and fallback, each with its own address).
+// ``routes``: [{ endpoint: id, unit, ...extra body fields }].
+export function routeChecks(routes, endpoints) {
+  return routes.map(({ endpoint, unit, ...rest }, index) => {
+    const ep = endpoints.find((e) => e.id === endpoint);
+    const kind = t(index === 0 ? 'test.route_primary' : 'test.route_fallback');
+    const type = ep ? transportLabel(ep.transport) : '?';
+    return {
+      label: t('test.route', { kind, id: endpoint, type, unit }),
+      body: { endpoint_id: endpoint, unit_id: unit, ...rest },
+    };
+  });
+}
+
+export function savedInverterChecks(inv, endpoints) {
+  const extra = { inverter: inv.id };
+  if (inv.expected_serial) extra.expected_serial = inv.expected_serial;
+  const routes = [{ endpoint: inv.endpoint, unit: inv.unit_id, ...extra }];
+  if (inv.fallback_endpoint) routes.push({ endpoint: inv.fallback_endpoint, unit: inv.fallback_unit_id ?? inv.unit_id, ...extra });
+  return routeChecks(routes, endpoints);
+}
+
+// ``build()`` returns the request body (or, for several routes, a list of ``{label, body}``), or
+// ``null`` when the form is not ready (it marks the fields).
 export function testPanel({ build, intro = null, extra = null }) {
   const out = h('div', { class: 'test-out', 'aria-live': 'polite' });
   const button = h('button', { class: 'btn', type: 'button' }, t('test.btn'));
   button.addEventListener('click', async () => {
-    const body = build();
-    if (!body) return;
+    const built = build();
+    if (!built) return;
+    const routes = Array.isArray(built) ? built : [{ label: null, body: built }];
     busy(button, true);
     button.textContent = t('test.running');
     out.replaceChildren(h('p', { class: 'muted', role: 'status' }, t('test.running')));
+    const blocks = [];
     try {
-      const result = await mutate('POST', 'api/plant/test', body);
-      const view = testResultView(result, { unit: body.unit_id });
-      out.replaceChildren(view);
-      view.focus({ preventScroll: false });
-    } catch (error) {
-      out.replaceChildren(h('p', { class: 'banner error', role: 'alert' }, errorText(error)));
+      for (const { label, body } of routes) {
+        let view;
+        try {
+          view = testResultView(await mutate('POST', 'api/plant/test', body), { unit: body.unit_id });
+        } catch (error) {
+          view = h('p', { class: 'banner error', role: 'alert' }, errorText(error));
+        }
+        blocks.push(label ? h('section', { class: 'test-route' }, h('h4', { class: 'route-title' }, label), view) : view);
+        out.replaceChildren(...blocks, ...(blocks.length < routes.length ? [h('p', { class: 'muted', role: 'status' }, t('test.running'))] : []));
+      }
+      const first = out.querySelector('.test-result, .banner');
+      if (first) first.focus({ preventScroll: false });
     } finally {
       busy(button, false);
       button.textContent = t('test.btn');

@@ -42,6 +42,11 @@ log = logging.getLogger(__name__)
 
 TEST_DEADLINE_S = 45.0  # for the whole test, on top of the per-request deadline of the transport
 _CAPABILITY_WORDS = (0, 15, 17, 18, 20, 21, 22, 24)
+# A first request on a fresh connection or one in failure cooldown is not a verdict on the device:
+# loggers and TCP→RTU gateways often drop the first exchange. The test pauses and tries once more.
+RETRY_PAUSE_S = 1.5
+MAX_COOLDOWN_WAIT_S = 10.0
+_TRANSIENT = frozenset({"unreachable", "timeout", "bad_frame", "logger_error", "transport_error"})
 
 
 class EndpointInUse(Exception):
@@ -101,6 +106,13 @@ def temporary_target(runtime: Runtime, ep: EndpointConfig) -> Target:
         gap_s=ep.request_gap_ms / 1000, max_queue=ep.queue_size
     )
     return Target(transport, scheduler, True)
+
+
+async def _close_temporary(target: Target) -> None:
+    try:
+        await target.transport.close()
+    except Exception as exc:
+        log.warning("temporary test connection did not close cleanly (%s)", type(exc).__name__)
 
 
 def identity_blocks(max_read_registers: int) -> list[tuple[int, int]]:
@@ -174,26 +186,34 @@ async def run_test(
 ) -> dict[str, Any]:
     """Run the identity read; never raises for a device problem (that is the result)."""
     started = time.monotonic()
-    target = live_target(runtime, ep)
-    if target is None:
-        target = temporary_target(runtime, ep)
     blocks = identity_blocks(ep.read_block_limit)
     outcome: str | None = None
     words: dict[int, int] = {}
     ok = 0
+    attempts = 0
+    temporary = False
     try:
         async with asyncio.timeout(TEST_DEADLINE_S):
-            words, ok, outcome = await _read_blocks(target, unit, blocks)
+            while True:
+                attempts += 1
+                target = live_target(runtime, ep)
+                if target is None:
+                    target = temporary_target(runtime, ep)
+                temporary = target.temporary
+                try:
+                    if not temporary:  # the running connection is cooling down after a failure
+                        await asyncio.sleep(
+                            min(target.transport.cooldown_remaining_s, MAX_COOLDOWN_WAIT_S)
+                        )
+                    words, ok, outcome = await _read_blocks(target, unit, blocks)
+                finally:
+                    if target.temporary:
+                        await _close_temporary(target)
+                if outcome not in _TRANSIENT or attempts >= 2:
+                    break
+                await asyncio.sleep(RETRY_PAUSE_S)
     except TimeoutError:
         outcome = "timeout"
-    finally:
-        if target.temporary:
-            try:
-                await target.transport.close()
-            except Exception as exc:
-                log.warning(
-                    "temporary test connection did not close cleanly (%s)", type(exc).__name__
-                )
     serial = (
         normalize_serial([words[a] for a in range(3, 8)])
         if all(a in words for a in range(3, 8))
@@ -206,7 +226,8 @@ async def run_test(
         "ok": outcome is None,
         "outcome": outcome or "ok",
         "transport": ep.transport.value,
-        "path": "temporary" if target.temporary else "live",
+        "path": "temporary" if temporary else "live",
+        "attempts": attempts,
         "blocks": len(blocks),
         "blocks_ok": ok,
         "duration_s": round(time.monotonic() - started, 2),

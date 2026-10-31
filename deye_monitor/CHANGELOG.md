@@ -12,6 +12,13 @@ The Modbus address depends on the connection type (field finding: four SG04LP3 i
   in the connection check after a failed probe.
 - Config and API: an unset `fallback_unit_id` defaults to 1 if the fallback endpoint is a Solarman
   V5 logger (otherwise still the primary's `unit_id`). Explicit values are untouched.
+- "Check connection" of an inverter tests every configured route (primary and fallback, each with
+  its own address) and shows one result block per route, so a failing fallback is visible even
+  when the primary works.
+- Intermittent check failures: a check no longer gives up on the first exchange. A transient
+  failure (unreachable, timeout, bad frame, logger error) is retried once after a short pause on a
+  fresh test connection; a running connection in failure cooldown is waited for (up to 10 s)
+  instead of failing immediately. The result shows the number of attempts.
 
 ## 0.2.5
 

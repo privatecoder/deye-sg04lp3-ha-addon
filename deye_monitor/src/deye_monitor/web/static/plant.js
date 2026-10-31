@@ -4,7 +4,7 @@ import { t } from './i18n.js';
 import { h, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant } from './state.js';
 import {
-  endpointForm, inverterForm, testPanel, loadSerialDevices, transportLabel, endpointTarget,
+  endpointForm, inverterForm, testPanel, routeChecks, savedInverterChecks, loadSerialDevices, transportLabel, endpointTarget,
   saveEndpoint, saveInverter, deleteEndpoint, deleteInverter, existingEndpointIds, existingInverterIds,
 } from './plantforms.js';
 
@@ -62,13 +62,14 @@ export function openInverterDialog(inverter = null, defaultEndpoint = null) {
     build() {
       const endpoint = form.endpointValue();
       const unit = form.unitValue();
-      if (!endpoint || typeof unit !== 'number') { message.replaceChildren(h('p', { class: 'banner warn', role: 'alert' }, t('test.need_endpoint'))); return null; }
+      const fallback = form.fallbackValue();
+      if (!endpoint || typeof unit !== 'number' || (fallback && typeof fallback.unit !== 'number')) { message.replaceChildren(h('p', { class: 'banner warn', role: 'alert' }, t('test.need_endpoint'))); return null; }
       message.replaceChildren();
-      const body = { endpoint_id: endpoint, unit_id: unit };
       const values = form.values();
-      if (editing) body.inverter = values.id;
-      if (values.expected_serial) body.expected_serial = values.expected_serial;
-      return body;
+      const extra = {};
+      if (editing) extra.inverter = values.id;
+      if (values.expected_serial) extra.expected_serial = values.expected_serial;
+      return routeChecks([{ endpoint, unit, ...extra }, ...(fallback ? [{ ...fallback, ...extra }] : [])], state.plant.endpoints);
     },
   });
   return modal({
@@ -94,9 +95,7 @@ function openCheckDialog(inv) {
   const panel = testPanel({
     intro: h('p', { class: 'help' }, t('ep.test_help')),
     build: () => {
-      const body = { endpoint_id: inv.endpoint, unit_id: inv.unit_id, inverter: inv.id };
-      if (inv.expected_serial) body.expected_serial = inv.expected_serial;
-      return body;
+      return savedInverterChecks(inv, state.plant.endpoints);
     },
   });
   return modal({
