@@ -261,4 +261,5 @@ def test_not_reported_words_are_unknown_per_field(p: Profile) -> None:
     assert d(p, "battery_input_code", {24: 0xFFFF}) is None
     assert d(p, "mppt_count", {22: 0x0203}) == 2 and d(p, "phase_count", {22: 0x0203}) == 3
     assert d(p, "device_type", {0: 0x0500}) == "three_phase_lv_hybrid"
+    assert d(p, "device_type", {0: 0x0005}) == "three_phase_lv_hybrid"
     assert d(p, "id_r22", {22: 0xFFFF}) == 0xFFFF  # the raw word stays available

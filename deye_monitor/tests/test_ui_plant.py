@@ -400,6 +400,21 @@ async def test_an_unusable_r65_asks_for_the_energy_resolution_and_the_choice_is_
         await expect(card).to_contain_text("keine gültige Energieauflösung")
         await expect(card).to_contain_text("Hardwareangaben vom Gerät nicht gemeldet")
         await expect(card.locator(".hint-detail")).to_have_count(0)  # not reported is no conflict
+        # the connection check does not show the raw 0xFFFF as 255 MPPT / 255 phases
+        await s.page.locator("#nav-plant").click()
+        await (
+            s.page.locator("article.plant-item.inverter")
+            .get_by_role("button", name="Verbindung prüfen")
+            .click()
+        )
+        await s.page.locator("dialog .test-panel button").click()
+        result = s.page.locator("dialog .test-result.ok")
+        await expect(result).to_contain_text(
+            "MPPT/Phasen nicht gemeldet · laut Profil 2 MPPT · 3 Phasen"
+        )
+        await expect(result).not_to_contain_text("255")
+        await s.page.locator("dialog .modal-body > .actions .btn").click()
+        await s.page.locator("a.brand").click()
         await card.get_by_role("button", name="0,1 kWh wählen").click()
         await expect(s.page.locator(".toast.ok")).to_be_visible()
         assert rig.service.plant.inverters[0].energy_resolution.value == "0.1"

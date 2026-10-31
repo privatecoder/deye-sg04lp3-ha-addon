@@ -388,8 +388,10 @@ export function testResultView(result) {
   const model = result.model;
   const facts = [];
   if (result.serial) facts.push(['test.serial', result.serial]);
-  if (model && (model.mppt !== null || model.phases !== null) && ok) {
-    const parts = [t('test.model_value', { mppt: model.mppt ?? '?', phases: model.phases ?? '?' })];
+  if (model && (model.mppt !== null || model.phases !== null || model.unreported) && ok) {
+    const parts = [model.unreported
+      ? t('test.model_unreported', { mppt: model.profile_mppt, phases: model.profile_phases })
+      : t('test.model_value', { mppt: model.mppt ?? '?', phases: model.phases ?? '?' })];
     if (model.rated_kw !== null && model.rated_kw !== undefined) parts.push(t('test.rated', { kw: model.rated_kw }));
     facts.push(['test.model', parts.join(' · ')]);
   }

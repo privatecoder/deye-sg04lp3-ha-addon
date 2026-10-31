@@ -35,6 +35,7 @@ class HardwareProfile(_Model):
     battery_inputs: Annotated[int, Field(ge=0)]
     gen_port: bool
     expected_device_type: int  # R0
+    also_accepted_device_types: list[int] = []  # further R0 codes for the same family
     expected_mppt_count: int  # R22 high byte
     expected_phase_count: int  # R22 low byte
     battery_input_codes: dict[int, int]  # R24 code -> number of battery inputs
@@ -67,7 +68,6 @@ def load_hardware(name: str) -> HardwareProfile:
     return profile
 
 
-UNDEFINED_BATTERY_CODE_MAX = 4  # V105.8 R24: range [0,4], only 0/1/2 defined
 NOT_REPORTED = 0xFFFF  # a word the device does not fill in (per field, never a value)
 
 
@@ -78,6 +78,14 @@ def unreported_capabilities(words: Mapping[int, int]) -> list[str]:
         for name, addr in (("device_type", 0), ("mppt_phases", 22), ("battery_input_code", 24))
         if words.get(addr) == NOT_REPORTED
     ]
+
+
+def unknown_capability_codes(hardware: HardwareProfile, words: Mapping[int, int]) -> dict[str, int]:
+    """R24 values the profile does not define (V105.8: only 0/1/2): raw value, no statement."""
+    r24 = words.get(24)
+    if r24 is None or r24 == NOT_REPORTED or r24 in hardware.battery_input_codes:
+        return {}
+    return {"battery_input_code": r24}
 
 
 def capability_conflicts(
@@ -93,7 +101,8 @@ def capability_conflicts(
     """
     out: list[CapabilityConflict] = []
     r0 = words.get(0)
-    if r0 is not None and r0 != NOT_REPORTED and r0 != hardware.expected_device_type:
+    accepted = {hardware.expected_device_type, *hardware.also_accepted_device_types}
+    if r0 is not None and r0 != NOT_REPORTED and r0 not in accepted:
         out.append(
             CapabilityConflict(
                 "device_type", f"R0=0x{r0:04x}, expected 0x{hardware.expected_device_type:04x}"
@@ -118,11 +127,8 @@ def capability_conflicts(
     r24 = words.get(24)
     if r24 is not None and r24 != NOT_REPORTED:
         inputs = hardware.battery_input_codes.get(r24)
-        if inputs is None and r24 <= UNDEFINED_BATTERY_CODE_MAX:
-            pass  # V105.8: 3/4 lie in the declared range [0,4] but are undefined: no statement
-        elif inputs is None:
-            out.append(CapabilityConflict("battery_input_code", f"R24={r24} is undefined"))
-        elif inputs > hardware.battery_inputs:
+        # an undefined code (V105.8: 0/1/2 only) is no statement: unknown_capability_codes
+        if inputs is not None and inputs > hardware.battery_inputs:
             out.append(
                 CapabilityConflict(
                     "battery_inputs",

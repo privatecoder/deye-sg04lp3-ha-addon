@@ -149,4 +149,7 @@ async def test_a_capability_conflict_shows_the_raw_values(browser: Browser, tmp_
         detail = s.page.locator("article.inverter .hint-detail")
         await expect(detail.filter(has_text="R0=0x0600, expected 0x0500")).to_have_count(1)
         await expect(detail.filter(has_text="R22 reports 5 MPPT")).to_have_count(1)
-        await expect(detail.filter(has_text="R24=7")).to_have_count(1)
+        await expect(detail.filter(has_text="R24")).to_have_count(0)  # unknown code, no conflict
+        await expect(s.page.locator("article.inverter .hint.info")).to_contain_text(
+            "Unbekannter Batterieeingangs-Code 7"
+        )

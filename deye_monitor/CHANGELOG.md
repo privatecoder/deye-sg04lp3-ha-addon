@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.2
+
+Second live read test (same SUN-10K, Solarman logger):
+
+- R0 = 0x0005 is accepted like 0x0500: both mark the three-phase low-voltage hybrid family
+  (kellerza/sunsynk `identity.py` `DEVICE_TYPES`; V105.8 names only 0x0500). The device type sensor
+  shows the same value for both, the raw word stays in the diagnostics. Other codes (e.g. 0x0006,
+  0x0600) are still a conflict.
+- R24: every value except 0/1/2 and 0xFFFF (live: 5; V105.8 declares [0,4] and defines 0/1/2 only) is
+  an unknown code, not a conflict: no "read battery values with care" warning, only a discreet hint
+  with the raw value; the profile applies (1 battery input). A defined value that contradicts the
+  profile (2 = two inputs) stays a conflict.
+- The connection test no longer shows 255 MPPT / 255 phases for R22 = 0xFFFF: it says "MPPT/phases
+  not reported" and marks the profile values as such.
+
 ## 0.2.1
 
 Corrections from the first live read test (SUN-10K, firmware word R15 = 0x1175, Solarman logger):

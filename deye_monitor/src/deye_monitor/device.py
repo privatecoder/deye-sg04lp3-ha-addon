@@ -53,6 +53,7 @@ from deye_monitor.profiles.features import Features
 from deye_monitor.profiles.hardware import (
     HardwareProfile,
     capability_conflicts,
+    unknown_capability_codes,
     unreported_capabilities,
 )
 from deye_monitor.profiles.plan import ReadPlan, build_read_plan
@@ -84,7 +85,6 @@ _CONFLICT_POINTS = {
     "device_type": None,  # every entity
     "mppt_count": frozenset({"pv"}),
     "phase_count": None,
-    "battery_input_code": frozenset({"battery", "bms"}),
     "battery_inputs": frozenset({"battery", "bms"}),
 }
 CONFLICT_POINTS = _CONFLICT_POINTS  # measurement points a capability conflict puts in doubt
@@ -587,6 +587,7 @@ class InverterRuntime:
         self.identity_info["firmware_words"] = {a: words.get(a) for a in (15, 17, 18)}
         self.identity_info["capability_words"] = dict(caps)  # raw, for comparing logger and gateway
         self.identity_info["capabilities_unreported"] = unreported_capabilities(caps)
+        self.identity_info["capabilities_unknown"] = unknown_capability_codes(self.hardware, caps)
         conflicts = capability_conflicts(self.hardware, caps)
         self.capability_conflicts = [{"code": c.code, "detail": c.detail} for c in conflicts]
         key = [serial, words.get(15), words.get(17), words.get(18), self.profile.revision]

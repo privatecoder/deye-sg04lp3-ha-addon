@@ -21,7 +21,7 @@ from deye_monitor.config import DEFAULT_PROFILE, EndpointConfig
 from deye_monitor.identity import normalize_serial
 from deye_monitor.profiles.decode import decode
 from deye_monitor.profiles.features import Features
-from deye_monitor.profiles.hardware import capability_conflicts, load_hardware
+from deye_monitor.profiles.hardware import NOT_REPORTED, capability_conflicts, load_hardware
 from deye_monitor.profiles.plan import build_read_plan
 from deye_monitor.profiles.schema import load_profile
 from deye_monitor.protocol.modbus import ModbusExceptionResponse, ModbusFrameError
@@ -147,10 +147,14 @@ def _model(words: dict[int, int]) -> dict[str, Any]:
         hardware, {a: words[a] for a in _CAPABILITY_WORDS if a in words}
     )
     r22 = words.get(22)
+    reported = r22 is not None and r22 != NOT_REPORTED
     return {
         "device_type": words.get(0),
-        "mppt": None if r22 is None else r22 >> 8,
-        "phases": None if r22 is None else r22 & 0xFF,
+        "mppt": r22 >> 8 if reported and r22 is not None else None,
+        "phases": r22 & 0xFF if reported and r22 is not None else None,
+        "unreported": r22 == NOT_REPORTED,  # 0xFFFF: not a count; the profile values apply
+        "profile_mppt": hardware.mppt_channels,
+        "profile_phases": hardware.expected_phase_count,
         "rated_kw": (
             round(float(watts) / 1000, 1)
             if isinstance(watts, int | float) and 1000 <= watts <= 20000

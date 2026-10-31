@@ -346,7 +346,7 @@ def test_capability_conflicts() -> None:
     assert codes({22: 0x0503}) == ["mppt_count"]  # the document example is not SG04
     assert codes({22: 0x0204}) == ["phase_count"]
     assert codes({24: 2}) == ["battery_inputs"]
-    assert codes({24: 9}) == ["battery_input_code"]
+    assert codes({24: 9}) == []  # undefined code: unknown, no conflict
     ten_kw = {20: 100000 & 0xFFFF, 21: 100000 >> 16}
     assert codes(ten_kw, rated_kw=10) == []
     assert codes(ten_kw, rated_kw=8) == ["rated_power"]
@@ -566,12 +566,24 @@ def test_capability_words_0xffff_are_not_conflicts_but_other_values_are() -> Non
     # field by field: one unreported word does not hide a real deviation in another
     assert {c.code for c in capability_conflicts(hw, {0: 0xFFFF, 22: 0x0503})} == {"mppt_count"}
     assert {c.code for c in capability_conflicts(hw, {0: 0x0600, 22: 0xFFFF})} == {"device_type"}
-    assert [c.code for c in capability_conflicts(hw, {24: 7})] == ["battery_input_code"]
 
 
-def test_r24_codes_3_and_4_are_undefined_but_no_statement() -> None:
+def test_r24_codes_other_than_0_1_2_are_unknown_but_no_conflict() -> None:
+    from deye_monitor.profiles.hardware import unknown_capability_codes
+
     hw = load_hardware("sg04lp3_eu")
-    for code in (3, 4):  # V105.8 inverter:24: range [0,4], only 0/1/2 defined
+    for code in (3, 4, 5, 7, 0x1234):  # V105.8 inverter:24: only 0/1/2 defined
         assert capability_conflicts(hw, {24: code}) == []
+        assert unknown_capability_codes(hw, {24: code}) == {"battery_input_code": code}
+    for code in (0, 1, 2, 0xFFFF):
+        assert unknown_capability_codes(hw, {24: code}) == {}
     assert capability_conflicts(hw, {24: 1}) == [] and capability_conflicts(hw, {24: 0}) == []
-    assert [c.code for c in capability_conflicts(hw, {24: 5})] == ["battery_input_code"]
+    assert [c.code for c in capability_conflicts(hw, {24: 2})] == ["battery_inputs"]
+
+
+def test_r0_0x0005_and_0x0500_are_both_the_three_phase_lv_family() -> None:
+    hw = load_hardware("sg04lp3_eu")
+    for word in (0x0005, 0x0500):
+        assert capability_conflicts(hw, {0: word}) == []
+    for word in (0x0006, 0x0600, 0x0050):
+        assert [c.code for c in capability_conflicts(hw, {0: word})] == ["device_type"]

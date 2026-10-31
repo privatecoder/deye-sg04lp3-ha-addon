@@ -129,6 +129,8 @@ export function hintsOf(inv) {
   }
   const unreported = (s.identity && s.identity.capabilities_unreported) || [];
   if (unreported.length) out.push({ kind: 'info', text: t('hint.unreported') });
+  const unknown = (s.identity && s.identity.capabilities_unknown) || {};
+  if (unknown.battery_input_code !== undefined) out.push({ kind: 'info', text: t('hint.unknown_battery_code', { value: unknown.battery_input_code }) });
   if (s.energy && s.energy.needs_choice) {
     out.push({ kind: 'energy', text: t('hint.energy.r65_invalid'), actions: energyChoice(inv) });
   }

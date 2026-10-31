@@ -96,6 +96,7 @@ entries:
     512: string_inverter
     768: single_phase_hybrid
     1024: microinverter
+    5: three_phase_lv_hybrid
     1280: three_phase_lv_hybrid
     1536: three_phase_hv_hybrid
     2048: pcs_100k
@@ -114,8 +115,8 @@ entries:
   source: "V105.8 registers.json inverter: R0 (TXT 169-184)"
   confidence: document_only
   default_enabled: true
-  notes: 0x0500 marks the three-phase low-voltage family only; it does not identify SG04 vs other LV generations and says
-    nothing about power or MPPT count.
+  notes: "0x0500 (V105.8) and 0x0005 (live SUN-10K, FW 0x1175; kellerza/sunsynk identity.py DEVICE_TYPES lists both) mark the three-phase low-voltage family only; it does not identify SG04 vs other LV generations and says
+    nothing about power or MPPT count."
 - key: id_device_type
   name:
     de: Gerätetyp (intern)
@@ -517,7 +518,7 @@ entries:
   source: "V105.8 registers.json inverter: R24 (TXT 349-358)"
   confidence: document_only
   default_enabled: true
-  notes: Code for the number of battery inputs; says nothing about whether a battery is connected. Codes 3/4 are undefined.
+  notes: "Code for the number of battery inputs; says nothing about whether a battery is connected. Every code other than 0/1/2 is undefined (V105.8 range [0,4], live code 5): shown raw, no conflict, the profile applies. In the older Deye document (modbus-en.pdf, before V105.1) R24-R29 were 'reserve SN byte 01...09' and R23 was the grid voltage class; live, FW 0x1175 returns R24=5 through the logger, so undefined values carry no statement."
 - key: id_battery_input_code
   name:
     de: Batterieeingangs-Code (intern)
@@ -668,7 +669,8 @@ entries:
   default_enabled: false
   notes: "R65 <= 0x0104 selects 0.1 kWh energy resolution, otherwise 1 kWh (V105.8). Not selected by default: it is pulled\
     \ in as an internal dependency when an energy entity is selected and energy_resolution is auto (ReadPlan.r65_required_for_energy).\
-    \ It can be selected explicitly as a diagnostic; that never changes an energy_resolution override."
+    \ It can be selected explicitly as a diagnostic; that never changes an energy_resolution override.\
+    \ 0x0000 and 0xFFFF are not a version: the resolution is then unknown and the user chooses it (0.1 kWh or 1 kWh)."
 - key: parallel_enable
   name:
     de: Parallelbetrieb aktiviert

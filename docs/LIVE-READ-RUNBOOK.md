@@ -6,7 +6,7 @@ Die App ist **rein lesend**: Sie sendet an Inverter ausschließlich FC03-Lesezug
 
 ## 1. Startvoraussetzungen – zuerst abhaken
 
-- [ ] Eine **konkrete Version** (Commit bzw. Image-Digest) ist für den Lesetest freigegeben: FC03-Sendeguard, Transporttests, MQTT-/HA-Veröffentlichung, Fehlerbehandlung und die E2E-Abnahme mit echtem Home Assistant (`e2e/`). Keinen ungeprüften Arbeitsbaum testen. Die Versionsnummer `0.2.1` allein identifiziert keinen Stand: Commit/Digest im Ergebnisblatt (Abschnitt 10) notieren.
+- [ ] Eine **konkrete Version** (Commit bzw. Image-Digest) ist für den Lesetest freigegeben: FC03-Sendeguard, Transporttests, MQTT-/HA-Veröffentlichung, Fehlerbehandlung und die E2E-Abnahme mit echtem Home Assistant (`e2e/`). Keinen ungeprüften Arbeitsbaum testen. Die Versionsnummer `0.2.2` allein identifiziert keinen Stand: Commit/Digest im Ergebnisblatt (Abschnitt 10) notieren.
 - [ ] Die früheren Nachprüfungs-Findings N2-01 bis N2-04 (Energienamensraum, isolierter Identitätsreset, Wiederanlauf nach Blockierung, Reconnect-/Bestätigungszustände) sind in den Fix-Runden T7-Fix 2/3 behoben; dass die freigegebene Version diese Runden enthält, bestätigt die Freigabe aus dem ersten Punkt.
 - [x] **Die App liest vor deiner ersten Auswahl nur Identität und Status.** Ein Inverter ohne gespeicherte Auswahl zeigt „Bitte Sensoren auswählen“ (Abschnitt 3.1); erst nach dem Speichern über die Weboberfläche beginnt das normale Lesen. Es gibt keine Optionen wie `selected_keys` und es werden keine Dateien in `/data` von Hand verändert.
 - [x] Identität, aktive Auswahl/Leseplan und Verbindungsfehler sind einsehbar: Weboberfläche (Übersicht, Abfragelast je Auswahl) und die Diagnose-Entities des App-Geräts (Abschnitt 7).
