@@ -40,7 +40,7 @@ configuration:
           Standard max(1, 2 x Timeout).
       max_read_registers:
         name: Max. Register pro Lesung
-        description: Obergrenze je Leseanfrage, 6-100. Standard 60.
+        description: Obergrenze je Leseanfrage, 6-100. Standard 60. Werte über 80 werden auf 80 begrenzt.
       request_gap_ms:
         name: Pause zwischen Anfragen (ms)
         description: Pause zwischen Anfragen auf diesem Bus. Standard 50.

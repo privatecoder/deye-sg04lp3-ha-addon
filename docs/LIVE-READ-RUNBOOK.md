@@ -1,236 +1,236 @@
-# Erster Live-Lesetest: Deye SG04LP3-EU in Home Assistant
+# First live read test: Deye SG04LP3-EU in Home Assistant
 
-Runbook für vier SUN-10K-SG04LP3-EU im Insel-Parallelbetrieb, je ein RS485-LAN-Gateway **am ModeBUS** und ein WiFi-Logger. Gemeldete Firmware: HMI `1001-C070`, Main `2005-1175-1807`. Dieses Dokument bereitet den Test aus der Ferne vor; beim Erstellen wurden keine Anlagenverbindungen hergestellt. Die Fassung beruht auf dem Runbook des Reviewers (Codex, 29.10.2026) und ist auf den **aktuellen App-Stand** gebracht (Weboberfläche, Zwei-Slot-Auswahl, Diagnose-Entities, Optionsschema). Verbindungen und Wechselrichter richtest du seit T14 **in der Weboberfläche** ein (Assistent „Anlage einrichten“), nicht mehr in den App-Optionen; die YAML-Beispiele stehen nur noch als Migrationsweg im Anhang A und werden von einem Test der App gegen das Supervisor-Optionsschema und den App-Parser geprüft.
+Runbook for four SUN-10K-SG04LP3-EU in island parallel operation, each with one RS485 LAN gateway **on the ModeBUS** and one WiFi logger. Reported firmware: HMI `1001-C070`, Main `2005-1175-1807`. This document prepares the test remotely; no plant connections were made while writing it. This version is based on the reviewer's runbook (Codex, 29.10.2026) and has been brought up to the **current app state** (web interface, two-slot selection, diagnostic entities, options schema). Since T14 you set up connections and inverters **in the web interface** (wizard "Set up plant"), no longer in the app options; the YAML examples remain only as a migration path in Appendix A and are checked by an app test against the Supervisor options schema and the app parser.
 
-Die App ist **rein lesend**: Sie sendet an Inverter ausschließlich FC03-Lesezugriffe (siehe Abschnitt 9).
+The app is **read-only**: it sends only FC03 read accesses to inverters (see section 9).
 
-## 1. Startvoraussetzungen – zuerst abhaken
+## 1. Start prerequisites – tick these off first
 
-- [ ] Eine **konkrete Version** (Commit bzw. Image-Digest) ist für den Lesetest freigegeben: FC03-Sendeguard, Transporttests, MQTT-/HA-Veröffentlichung, Fehlerbehandlung und die E2E-Abnahme mit echtem Home Assistant (`e2e/`). Keinen ungeprüften Arbeitsbaum testen. Die Versionsnummer `0.2.2` allein identifiziert keinen Stand: Commit/Digest im Ergebnisblatt (Abschnitt 10) notieren.
-- [ ] Die früheren Nachprüfungs-Findings N2-01 bis N2-04 (Energienamensraum, isolierter Identitätsreset, Wiederanlauf nach Blockierung, Reconnect-/Bestätigungszustände) sind in den Fix-Runden T7-Fix 2/3 behoben; dass die freigegebene Version diese Runden enthält, bestätigt die Freigabe aus dem ersten Punkt.
-- [x] **Die App liest vor deiner ersten Auswahl nur Identität und Status.** Ein Inverter ohne gespeicherte Auswahl zeigt „Bitte Sensoren auswählen“ (Abschnitt 3.1); erst nach dem Speichern über die Weboberfläche beginnt das normale Lesen. Es gibt keine Optionen wie `selected_keys` und es werden keine Dateien in `/data` von Hand verändert.
-- [x] Identität, aktive Auswahl/Leseplan und Verbindungsfehler sind einsehbar: Weboberfläche (Übersicht, Abfragelast je Auswahl) und die Diagnose-Entities des App-Geräts (Abschnitt 7).
-- [ ] Du kannst die App über HA zuverlässig stoppen und hast ein unabhängiges, bereits funktionierendes Anlagenmonitoring. Kritische Verbraucher sind für diesen Test nicht auf neue Sensoren angewiesen. Bei einer Störung ist ein Ansprechpartner vor Ort erreichbar; ein manueller Wiederanlauf aus der Ferne wird nicht vorausgesetzt.
-- [ ] HA-MQTT-Integration und Broker sind betriebsbereit. Konfiguration und vorhandene App-Daten sind gesichert (HA-Backup einschließlich Add-on/App-Daten). Beim ersten Versuch **keine** Energie-Entitäten ins Energy Dashboard und keine neuen Entitäten in Steuerautomationen aufnehmen.
+- [ ] A **specific version** (commit or image digest) is approved for the read test: FC03 send guard, transport tests, MQTT/HA publishing, error handling and the E2E acceptance with a real Home Assistant (`e2e/`). Do not test an unchecked working tree. The version number `0.2.3` alone does not identify a state: note the commit/digest in the result sheet (section 10).
+- [ ] The earlier re-verification findings N2-01 to N2-04 (energy namespace, isolated identity reset, restart after blocking, reconnect/confirmation states) were fixed in the fix rounds T7-Fix 2/3; the approval from the first item confirms that the approved version contains these rounds.
+- [x] **Before your first selection the app reads only identity and status.** An inverter without a saved selection shows "Please choose sensors" (section 3.1); normal reading begins only after saving via the web interface. There are no options such as `selected_keys` and no files in `/data` are changed by hand.
+- [x] Identity, active selection/read plan and connection errors can be inspected: web interface (overview, polling load per selection) and the diagnostic entities of the app device (section 7).
+- [ ] You can reliably stop the app via HA and have an independent, already working plant monitoring. Critical consumers do not depend on new sensors for this test. In case of a fault a contact person on site is reachable; a manual restart from remote is not assumed.
+- [ ] The HA MQTT integration and broker are operational. Configuration and existing app data are backed up (HA backup including add-on/app data). On the first attempt do **not** add energy entities to the Energy Dashboard and no new entities to control automations.
 
-In **Einstellungen → Apps** (bei älteren HA-Versionen „Add-ons“) die Test-App öffnen. Für diese App **Start beim Booten, Watchdog und automatische Updates ausschalten**; vorhandene Anlagensteuerungen unverändert lassen. Einen zweiten Browser-Tab mit der App-Infoseite und der Schaltfläche **Stoppen** offen halten. App-Ausgaben erscheinen im Log-Tab; `/data` bleibt bei Neustart/Update erhalten. Die Weboberfläche öffnest du über den Seitenleisteneintrag **Deye Monitor** (nur für HA-Administratoren). [HA: App-Lebenszyklus](https://contributors.home-assistant.io/apps/how-apps-work/)
+In **Settings → Apps** (called "Add-ons" in older HA versions) open the test app. For this app **switch off Start on boot, Watchdog and automatic updates**; leave existing plant controls unchanged. Keep a second browser tab open with the app info page and the **Stop** button. App output appears in the Log tab; `/data` is preserved across restart/update. You open the web interface via the sidebar entry **Deye Monitor** (HA administrators only). [HA: app lifecycle](https://contributors.home-assistant.io/apps/how-apps-work/)
 
-## 2. Verbindungsdaten selbst nachsehen – nichts scannen oder umstellen
+## 2. Look up connection data yourself – do not scan or reconfigure anything
 
-Fülle diese Tabelle anhand deiner bestehenden Konfiguration, erreichbarer Statusseiten und vorhandener Typenschildfotos aus. Historische KB-Adressen sind keine Bestätigung deiner heutigen Einrichtung.
+Fill in this table from your existing configuration, reachable status pages and existing nameplate photos. Historical KB addresses are no confirmation of your setup today.
 
-| Gerät / bestehende Rolle | Inverter-SN, exakt 10 Zeichen | Gateway-Modell/Firmware, LAN-IP:Port | Gateway-Protokoll / Unit-ID | Logger-LAN-IP:Port | Numerische Logger-SN / Unit-ID |
+| Device / existing role | Inverter SN, exactly 10 characters | Gateway model/firmware, LAN IP:port | Gateway protocol / unit ID | Logger LAN IP:port | Numeric logger SN / unit ID |
 | --- | --- | --- | --- | --- | --- |
 | deye1 / … | … | … | … | … | … |
 | deye2 / … | … | … | … | … | … |
 | deye3 / … | … | … | … | … | … |
 | deye4 / … | … | … | … | … | … |
 
-**Drei Kennungen auseinanderhalten:** Inverter-SN identifiziert das physische Gerät; numerische Logger-SN adressiert den Solarman-V5-Logger; Modbus-Unit-ID adressiert den Inverter über einen bestimmten Weg. Logger-SN ist weder WLAN-Passwort noch Inverter-SN. Parallelrolle/-nummer aus R336 ist kein ausreichender Nachweis der richtigen Unit-ID auf jedem Transport; das Modbus-Adressfeld R1 ist nur ein gemeldetes Feld, die benötigte Adresse ist je Verbindungsweg zu prüfen. Separate Gateways dürfen jeweils Unit-ID 1 verwenden; nichts auf 1 oder fortlaufend 1–4 umkonfigurieren.
+**Keep three identifiers apart:** the inverter SN identifies the physical device; the numeric logger SN addresses the Solarman V5 logger; the Modbus unit ID addresses the inverter via a particular path. The logger SN is neither the WiFi password nor the inverter SN. The parallel role/number from R336 is not sufficient proof of the right unit ID on every transport; the Modbus address field R1 is only a reported field, the required address must be checked per connection path. Separate gateways may each use unit ID 1; do not reconfigure anything to 1 or to consecutive 1–4.
 
-### Gateway: bestehende Einstellungen nur ansehen
+### Gateway: only look at existing settings
 
-Öffne die **bereits bekannte** LAN-Webadresse. Erfasse Modell/Revision, Firmware, TCP-Server-Port und vorhandene Protokollkonvertierung; je nach Waveshare-Modell heißen die Seiten etwa „Quick Configure“, „Application Setting“, „Transfer Protocol“ oder „Mode Selection“.
+Open the **already known** LAN web address. Record model/revision, firmware, TCP server port and the existing protocol conversion; depending on the Waveshare model the pages are called e.g. "Quick Configure", "Application Setting", "Transfer Protocol" or "Mode Selection".
 
-| Tatsächlich eingerichtete Rahmung | App-Transport | Erkennungsmerkmal |
+| Framing actually configured | App transport | Distinguishing feature |
 | --- | --- | --- |
-| Modbus TCP → Modbus RTU | `modbus_tcp` | TCP-Seite mit MBAP-Header; RTU-CRC wird vom Gateway behandelt |
-| Transparenter serieller TCP-Tunnel | `rtu_over_tcp` | TCP transportiert RTU-Rahmen einschließlich CRC |
+| Modbus TCP → Modbus RTU | `modbus_tcp` | TCP side with MBAP header; RTU CRC is handled by the gateway |
+| Transparent serial TCP tunnel | `rtu_over_tcp` | TCP carries RTU frames including CRC |
 
-**Port 502 beweist die Rahmung nicht.** Bestehende funktionierende Client-Konfiguration und zum exakten Modell passende Anleitung verwenden. Ist der Modus unbekannt, den Test vertagen; nicht durch wechselnde Treiber oder Gateway-Umkonfiguration erraten. Baudrate, Parität, Stopbits und Unit-ID nur dokumentieren. Keine „Save“, „Apply“, „Download“, „Clear“, „Reset“, Firmware-Update- oder Neustartaktion ausführen.
+**Port 502 does not prove the framing.** Use the existing working client configuration and the manual matching the exact model. If the mode is unknown, postpone the test; do not guess by switching drivers or reconfiguring the gateway. Only document baud rate, parity, stop bits and unit ID. Do not perform any "Save", "Apply", "Download", "Clear", "Reset", firmware update or restart action.
 
-Prüfe außerdem vorhandene JSON-/MQTT-/HTTP-Upload-Funktionen, Registertabellen, Polling-/Cache-/Storage-Modus, TCP-Clients und Wiederholungen. Einige Varianten verwalten Abfragen intern und können selbst weiter pollen. Die exakten Funktionen sind modellabhängig. Bei B-Varianten erläutert die Herstelleranleitung JSON-Konfiguration, Registerabfragen und Uploadzeiten; deren „Serial port polling time“ ist die Pause zum nächsten Eintrag, nicht zwingend dessen Wiederholungsperiode. [Waveshare-B: MQTT/JSON-Handbuch, S. 3–10](https://files.waveshare.com/upload/a/a6/EN-RS485-TO-ETH-B-MQTT-and-json-user-manual2.pdf)
+Also check existing JSON/MQTT/HTTP upload functions, register tables, polling/cache/storage mode, TCP clients and retries. Some variants manage queries internally and may keep polling on their own. The exact functions depend on the model. For B variants the manufacturer's manual explains JSON configuration, register queries and upload times; its "Serial port polling time" is the pause until the next entry, not necessarily its repetition period. [Waveshare-B: MQTT/JSON manual, pp. 3–10](https://files.waveshare.com/upload/a/a6/EN-RS485-TO-ETH-B-MQTT-and-json-user-manual2.pdf)
 
-Ein früherer Master-Export der Wissensbasis (47 Einträge, unter anderem `Query Period=1000`) beweist keine heute aktive Konfiguration und keine bestimmte Anfragenzahl pro Sekunde. Sein `last_update` stammt aus „Current Time“, nicht aus einem Inverter-Frischezähler; sein `online` liest R1. Ein frischer JSON-Zeitstempel allein belegt daher keine frischen Messwerte. JSON-Downloadtabellen können Befehlswege enthalten: **keine Tabelle importieren oder testweise auslösen**.
+An earlier master export of the knowledge base (47 entries, including `Query Period=1000`) proves no configuration active today and no particular number of requests per second. Its `last_update` comes from "Current Time", not from an inverter freshness counter; its `online` reads R1. A fresh JSON timestamp alone therefore does not prove fresh measurements. JSON download tables may contain command paths: **do not import or trigger any table as a test**.
 
-### WiFi-Logger: IP und Seriennummer bestätigen
+### WiFi logger: confirm IP and serial number
 
-Nutze die bekannte LAN-IP, Router-Geräteliste, vorhandene Solarman-Gerätedetails oder ein bestehendes Foto des Logger-Aufklebers. In der erreichbaren Logger-Weboberfläche ist „Status“ die passende Informationsseite. Die LSW-3-Handbücher beschreiben daneben AP-Einrichtung; `10.10.100.254` gehört zu diesem AP-Zugang, nicht automatisch zum aus der Ferne erreichbaren LAN. Keinen WLAN-Wechsel, Einrichtungsassistenten, Reset oder Reboot ausführen.
+Use the known LAN IP, the router device list, existing Solarman device details or an existing photo of the logger label. In the reachable logger web interface "Status" is the appropriate information page. The LSW-3 manuals additionally describe AP setup; `10.10.100.254` belongs to this AP access, not automatically to the LAN reachable from remote. Do not perform any WiFi change, setup wizard, reset or reboot.
 
-Geplant ist **WiFi-Logger per IP, Solarman V5**, üblicherweise Port 8899, mit numerischer Logger-SN. Kein physisch serieller Loggerweg. Der Port allein bestätigt keine erfolgreiche V5-Verbindung. Nicht von nativem Modbus TCP im Logger ausgehen.
+The plan is **WiFi logger by IP, Solarman V5**, usually port 8899, with the numeric logger SN. No physical serial logger path. The port alone does not confirm a successful V5 connection. Do not assume native Modbus TCP in the logger.
 
-### Andere Abfrager und bestehende Steuerungen erfassen
+### Record other pollers and existing controls
 
-| Vorhandener Dienst | Welches Gerät / welcher Weg? | Intervall / Clientzahl / letzte Datenlücke | Für Steuerung erforderlich? |
+| Existing service | Which device / which path? | Interval / client count / last data gap | Required for control? |
 | --- | --- | --- | --- |
-| Waveshare-interne JSON-/MQTT-/HTTP-Abfrage | … | … | … |
-| HA Modbus, ha-solarman, sunsynk, SolarAssistant, evcc, eigene Skripte | … | … | … |
-| Solarman-Cloud und Logger-Upload | … | … | … |
-| EMS/Automationen, die aus diesen Daten Aktionen ableiten | … | … | … |
+| Waveshare-internal JSON/MQTT/HTTP query | … | … | … |
+| HA Modbus, ha-solarman, sunsynk, SolarAssistant, evcc, custom scripts | … | … | … |
+| Solarman cloud and logger upload | … | … | … |
+| EMS/automations that derive actions from this data | … | … | … |
 
-Keine zusätzliche Debug-App oder Modbus-Konsole parallel starten. Nicht benötigte lokale Abfrager kannst **nur du selbst**, nach Prüfung ihrer Steuerungsabhängigkeiten, für ein begrenztes Testfenster pausieren. Keine kritische Automation blind abschalten. Cloud aktiv lassen und deren Aktualisierung beobachten; eine unbekannte maximale Logger-Clientzahl nicht durch Lasttests ermitteln. Gateway am ModeBUS und Logger sind verschiedene Wege; ein gemeinsam genutzter elektrischer RS485-Bus ist dadurch **nicht** bewiesen. Gleichwohl können Inverterressourcen begrenzt sein. App-interne `bus_id`-Queues koordinieren keine fremden Clients, Cloud-Abfragen oder Gateway-Autopoller.
+Do not start an additional debug app or Modbus console in parallel. Local pollers that are not needed can be paused **only by you**, after checking their control dependencies, for a limited test window. Do not blindly switch off any critical automation. Leave the cloud active and watch its updates; do not determine an unknown maximum logger client count by load tests. Gateway on the ModeBUS and logger are different paths; a shared electrical RS485 bus is **not** proven by that. Nevertheless inverter resources may be limited. App-internal `bus_id` queues do not coordinate foreign clients, cloud queries or gateway autopollers.
 
-## 3. Ausgangszustand und minimale Auswahl vorbereiten
+## 3. Prepare baseline and minimal selection
 
-1. Mindestens 15 Minuten, bei langsamem Cloud-Upload länger, das vorhandene Monitoring beobachten. Uhrzeit/Zeitzone, Fehler/Alarme, Cloud-Aktualisierungsabstand, vorhandene Timeouts und Logger-Verbindungsabbrüche notieren. Eine bereits instabile Anlage ist kein geeigneter Ersttest.
-2. Einen Inverter auswählen, dessen beide Kommunikationswege und Inverter-SN bekannt sind. Die Bezeichnung „Master“ legt keine bevorzugte Testreihenfolge fest; keine Parallelrolle ändern.
-3. App stoppen, freigegebene Version und vollständige Optionen notieren. `instance_id` sowie Inverter-`id` für alle folgenden Stufen stabil halten. Nicht mehrere App-Instanzen mit denselben IDs gleichzeitig betreiben.
+1. Observe the existing monitoring for at least 15 minutes, longer with slow cloud upload. Note time/time zone, faults/alarms, cloud update interval, existing timeouts and logger connection drops. A plant that is already unstable is not suitable for a first test.
+2. Pick one inverter whose two communication paths and inverter SN are both known. The designation "master" does not set a preferred test order; do not change any parallel role.
+3. Stop the app, note the approved version and the complete options. Keep `instance_id` and the inverter `id` stable for all following stages. Do not run several app instances with the same IDs at the same time.
 
-### 3.1 Erststart: „Bitte Sensoren auswählen“
+### 3.1 First start: "Please choose sensors"
 
-Solange für einen Inverter **noch nie** eine Auswahl gespeichert wurde, liest die App nur die zwingenden Identitäts- und Statusregister und die internen Hinweis-Register (siehe unten) – **keine Sensoren der Standardvorlage** (sonst wären es 59 Sensoren und 30 Lese-Blöcke inklusive Energie und R65) und es entstehen keine Inverter-Entities, nur die Diagnose-Entities des App-Geräts. Bereits gespeicherte Auswahlen einer früheren Version gelten als bestätigt.
+As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 59 sensors and 30 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the app device. Selections already saved by an earlier version count as confirmed.
 
-1. Die App starten (die App-Optionen bleiben bis auf `instance_id` leer) und Verbindung und Inverter im Einrichtungsassistenten der Weboberfläche anlegen (Stufe 1, Abschnitt 4).
-2. In der Weboberfläche (Seitenleiste **Deye Monitor**) zeigt die Karte des Inverters nach der Identifikation **„Bitte Sensoren auswählen“**. Dort **„Auswahl jetzt treffen“** öffnen (oder **Sensoren einrichten**).
-3. Schritt 1 „Anlage beschreiben“ **wahrheitsgemäß** beantworten (Insel/Netz, Akku ja/nein, BMS, GEN-Anschluss, PV-Eingänge, Parallelbetrieb). Ein Hinweis „Die Geräteeinstellung meldet …“ ist **kein Nachweis der Installation** und ändert nichts von selbst; deine Antworten bleiben gespeichert.
-4. Schritt 2 „Sensoren wählen“: **„Nur Basis“** wählt `serial_number` (Seriennummer), `operating_state` (Betriebszustand) und `fault_word_1` bis `fault_word_4` (Fehlerwörter 1–4) und wählt alles andere ab; **„Alle abwählen“** wählt nichts aus. Beides sind gewöhnliche Abweichungen von der Vorlage (einzeln rücksetzbar, bleiben bei späteren Änderungen der Anlagenbeschreibung erhalten).
-5. Die Leiste unten zeigt die **Abfragelast**, „Das ändert sich beim Speichern“ die wegfallenden Sensoren. Erwartet für „Nur Basis“: **6 Sensoren, 12 Abfrageblöcke**, Last „niedrig“, keine Energie, kein R65, keine Batterie-/AC-/PV-Gruppe.
-6. **Speichern.** Die Auswahl gilt erst als gespeichert, wenn sie dauerhaft abgelegt ist; danach verschwindet der Hinweis „Bitte Sensoren auswählen“ und das normale Lesen beginnt – mit der kleinen Auswahl.
+1. Start the app (the app options stay empty except `instance_id`) and create the connection and inverter in the setup wizard of the web interface (stage 1, section 4).
+2. In the web interface (sidebar **Deye Monitor**) the inverter's card shows **"Please choose sensors"** after identification. Open **"Choose now"** there (or **Set up sensors**).
+3. Answer step 1 "Describe your plant" **truthfully** (island/grid, battery yes/no, BMS, GEN port, PV inputs, parallel operation). A note "The device setting reports …" is **no proof of the installation** and changes nothing by itself; your answers stay saved.
+4. Step 2 "Choose sensors": **"Basics only"** selects `serial_number` (serial number), `operating_state` (operating state) and `fault_word_1` to `fault_word_4` (fault words 1–4) and deselects everything else; **"Deselect all"** selects nothing. Both are ordinary deviations from the template (individually resettable, preserved across later changes to the plant description).
+5. The bar at the bottom shows the **polling load**, "What saving changes" the sensors that drop out. Expected for "Basics only": **6 sensors, 12 polling blocks**, load "low", no energy, no R65, no battery/AC/PV group.
+6. **Save.** The selection counts as saved only once it is stored durably; after that the note "Please choose sensors" disappears and normal reading begins – with the small selection.
 
-Wer die Vorlage unverändert will, nutzt **„Vorlage unverändert übernehmen“**; für diesen Test nicht empfohlen.
+If you want the template unchanged, use **"Accept the template unchanged"**; not recommended for this test.
 
-„Nur Identität und Status“ umfasst zusätzlich notwendige **interne lesende** Abfragen: R0, R3–7, R14–15, R17–18, R20–22, R24, R336 sowie R500 und R551–558. Für die Merkmalshinweise liest die App außerdem R111, R133 und R189 (Gruppe „Einstellungen“, nur Diagnose). Das sind keine Schreibzugriffe. Bei `max_read_registers=20` und ohne Lückenüberbrückung ergibt das **12 Lese-Blöcke** pro vollständigem Plan (Identität 7, Status 2, Einstellungen 3), nicht 12 Anfragen alle 30 Sekunden: jede Gruppe hat ihr eigenes Intervall; Identifikation und Recovery können zusätzliche Probes auslösen. R65 wird in dieser Auswahl nicht benötigt. Im Zustand „Bitte Sensoren auswählen“ sind es dieselben Pflicht- und Hinweis-Register.
+"Identity and status only" additionally comprises necessary **internal read** queries: R0, R3–7, R14–15, R17–18, R20–22, R24, R336 as well as R500 and R551–558. For the feature hints the app also reads R111, R133 and R189 (group "Settings", diagnostics only). These are no write accesses. With `max_read_registers=20` and without gap bridging this gives **12 read blocks** per complete plan (identity 7, status 2, settings 3), not 12 requests every 30 seconds: each group has its own interval; identification and recovery may trigger additional probes. R65 is not needed in this selection. In the state "Please choose sensors" the same mandatory and hint registers are read.
 
-## 4. Stufe 1 – ein Inverter, nur das Gateway
+## 4. Stage 1 – one inverter, gateway only
 
-Die Einrichtung geschieht in der Weboberfläche (Seitenleiste **Deye Monitor**): Bei leerer Anlage startet der **Einrichtungsassistent** von selbst, sonst öffnest du **Anlage einrichten** (oder „Einrichtung starten“ auf der leeren Übersicht). Der Assistent führt durch **Verbindung anlegen → Wechselrichter anlegen → Verbindung prüfen → Sensoren wählen**. Änderungen gelten sofort; die App muss dafür nicht neu gestartet werden.
+Setup is done in the web interface (sidebar **Deye Monitor**): with an empty plant the **setup wizard** starts by itself, otherwise you open **Set up plant** (or "Start setup" on the empty overview). The wizard leads through **create connection → create inverter → check connection → choose sensors**. Changes apply immediately; the app does not need a restart for this.
 
-1. **Verbindung** (Schritt 1): Art **„Gateway (Modbus TCP → RTU)“** – nur für einen bestätigten Modbus-TCP→RTU-Modus –, Adresse (z. B. `192.0.2.11`) und Port `502`, Kennung `gw1`. Unter **Erweitert** vorsichtige Startwerte setzen: Zeitlimit `5`, Blockgröße `20`, Pause `250`, Warteschlange `8`. Bei einem **nachweislich transparenten** Gateway stattdessen **„Gateway transparent (RTU über TCP)“** und dessen tatsächlich eingerichteten Port. Dort ist optional ein **Nachlauffenster** von `10` s einstellbar: bei Zeitlimit 5 entspricht das dem heutigen Standard (`max(1 s, 2 × Zeitlimit)`). Diese zehn Sekunden sind eine **Annahme über verspätete Antworten**, keine Deye-Garantie. Bei unbekannten Verzögerungen/Cache-Effekten nicht weiter testen; keine unbestätigte Antwort wird als frisch ausgegeben.
-2. **Wechselrichter** (Schritt 2): Name `Deye 1`, Kennung `deye1` (nach dem Anlegen nicht mehr änderbar), Verbindung `gw1` aus der Auswahlliste, Modbus-Adresse `1`, **erwartete Seriennummer** `2401230001` (die bestätigte Inverter-SN), Energie-Auflösung „Automatisch“. Unter **Abfrageintervalle (erweitert)**: `30` / `300` / `600` / `3600` s. Das Schreiben ist in dieser Version nicht verfügbar (die Oberfläche zeigt „Schreiben: nicht verfügbar“, `allow_writes` lässt sich dort nicht setzen).
-3. **Prüfen** (Schritt 3): „Verbindung prüfen“ liest ausschließlich die Kennung des Wechselrichters (FC03, durch den Sendeguard, über den Bus-Scheduler der laufenden Verbindung) und zeigt Seriennummer, MPPT-/Phasenzahl und Auffälligkeiten. Bei einem Fehler nennt die Anzeige typische Ursachen (z. B. „Falscher Transport? Gateway-Modus prüfen“). Dieselbe Prüfung gibt es später je Verbindung und je Inverter unter **Anlage einrichten**.
-4. **Sensoren** (Schritt 4): weiter zu Abschnitt 3.1 mit **„Nur Basis“**.
+1. **Connection** (step 1): type **"Gateway (Modbus TCP → RTU)"** – only for a confirmed Modbus TCP→RTU mode –, address (e.g. `192.0.2.11`) and port `502`, identifier `gw1`. Under **Advanced** set cautious start values: timeout `5`, block size `20`, gap `250`, queue `8`. For a **demonstrably transparent** gateway use **"Gateway transparent (RTU over TCP)"** instead, with its actually configured port. There an optional **late-answer window** of `10` s can be set: with timeout 5 this corresponds to today's default (`max(1 s, 2 × timeout)`). These ten seconds are an **assumption about late answers**, not a Deye guarantee. With unknown delays/cache effects do not test further; no unconfirmed answer is published as fresh.
+2. **Inverter** (step 2): name `Deye 1`, identifier `deye1` (cannot be changed after creation), connection `gw1` from the selection list, Modbus address `1`, **expected serial number** `2401230001` (the confirmed inverter SN), energy resolution "Automatic". Under **Polling intervals (advanced)**: `30` / `300` / `600` / `3600` s. Writing is not available in this version (the interface shows "Writing: not available", `allow_writes` cannot be set there).
+3. **Check** (step 3): "Check connection" reads only the inverter's identifier (FC03, through the send guard, via the bus scheduler of the running connection) and shows serial number, MPPT/phase count and anomalies. On an error the display names typical causes (e.g. "Wrong transport? Check the gateway mode"). The same check is available later per connection and per inverter under **Set up plant**.
+4. **Sensors** (step 4): continue with section 3.1 using **"Basics only"**.
 
-`max_read_registers` (Blockgröße) `20`, 250 ms Abstand und diese Intervalle sind vorsichtige Startwerte, keine vom Hersteller bestätigten Belastungsgrenzen. Normale Abfragen dürfen kürzer sein. Eine Warteschlange von `8` erlaubt keine acht gleichzeitigen Transaktionen auf demselben App-Bus.
+`max_read_registers` (block size) `20`, 250 ms gap and these intervals are cautious start values, not load limits confirmed by the manufacturer. Normal queries may be shorter. A queue of `8` does not allow eight simultaneous transactions on the same app bus.
 
-5. Nach dem Speichern des Inverters beginnt die Abfrage sofort. Ab jetzt Logs, Abbruchkriterien und unabhängiges Monitoring gleichzeitig im Blick halten. Der Inverter liest zunächst nur Identität und Status (Abschnitt 3.1); danach die minimale Auswahl speichern.
-6. Innerhalb der ersten Minuten Identifikation, gebundene SN und frische Statusdaten prüfen (Abschnitt 7: Zustand „Online“, Entity `…_serial` = `expected_serial`). `ready` im Log bestätigt lediglich gestartete Schleifen, keinen erfolgreichen Gerätekontakt. Bei falscher SN/Quarantäne („Gesperrt“) sofort stoppen, Zuordnung außerhalb der App prüfen; **kein Identity-Reset**, um einen Fehler zu übergehen.
-7. 15 Minuten beobachten. Erwartet: wiederkehrende erfolgreiche FC03-Zyklen ohne wachsende Queue, wiederholte Cooldowns oder neue Störungen. Minutenlang unveränderte Leistungswerte sind mit dieser Auswahl kein Testfehler: es werden noch keine Leistungswerte gelesen.
-8. Bei stabilem Verlauf in der Weboberfläche zusätzlich `battery_voltage`, `battery_soc`, `inverter_frequency`, `pv1_power`, `pv2_power` aktivieren (Suche, Häkchen setzen) und die Vorschau prüfen. Erwartet: **11 Sensoren, 15 Abfrageblöcke** (zusätzlich Batterie 1, AC 1, PV 1), weiterhin ohne Energie und R65. Speichern und 15 Minuten beobachten, möglichst bei Tageslicht. Keine Diagnosefreigabe für PV3–PV10 oder Batterie 2 (die Experten-Rohwerte bleiben abgewählt).
-9. Energie erst danach separat auswählen (Energiezähler über die Suche „Energie“ der Weboberfläche), R65 und dessen Auflösung prüfen und mindestens einen Energiezyklus abwarten. Den Weg nicht zusammen mit der Sensorauswahl wechseln: pro Änderung nur eine Einflussgröße. Danach App stoppen und den letzten freigegebenen Zustand protokollieren.
+5. After saving the inverter, polling begins immediately. From now on keep logs, abort criteria and independent monitoring in view at the same time. The inverter first reads only identity and status (section 3.1); then save the minimal selection.
+6. Within the first minutes check identification, bound SN and fresh status data (section 7: state "Online", entity `…_serial` = `expected_serial`). `ready` in the log only confirms started loops, not successful device contact. On a wrong SN/quarantine ("Quarantined") stop immediately, check the assignment outside the app; **no identity reset** to bypass an error.
+7. Observe for 15 minutes. Expected: recurring successful FC03 cycles without a growing queue, repeated cooldowns or new faults. Power values unchanged for minutes are not a test failure with this selection: no power values are read yet.
+8. With a stable course, additionally enable `battery_voltage`, `battery_soc`, `inverter_frequency`, `pv1_power`, `pv2_power` in the web interface (search, tick the checkbox) and check the preview. Expected: **11 sensors, 15 polling blocks** (additionally battery 1, AC 1, PV 1), still without energy and R65. Save and observe for 15 minutes, preferably in daylight. No diagnostic release for PV3–PV10 or battery 2 (the expert raw values stay deselected).
+9. Select energy only afterwards and separately (energy counters via the web interface search "Energy"), check R65 and its resolution and wait for at least one energy cycle. Do not change the path together with the sensor selection: only one influencing factor per change. Afterwards stop the app and log the last approved state.
 
-`mqtt: {}` nutzt den bereits eingerichteten Supervisor-MQTT-Dienst; es startet keinen Broker. Fehlende HA-Entitäten bei funktionierender Verbindung sind separat zu untersuchen, ohne schnelleres Geräte-Polling zu erzwingen. Anfangs `info`; nur bei Bedarf ein begrenztes Debug-Fenster und vor Weitergabe IPs/SNs/Zugangsdaten aus Logs entfernen.
+`mqtt: {}` uses the already configured Supervisor MQTT service; it does not start a broker. Missing HA entities with a working connection are to be investigated separately, without forcing faster device polling. Use `info` at first; only if needed a limited debug window, and before passing on remove IPs/SNs/credentials from logs.
 
-## 5. Stufe 2 – denselben Inverter nacheinander über den Logger lesen
+## 5. Stage 2 – read the same inverter via the logger, one after the other
 
-Erst nach erfolgreicher Gateway-Stufe. In **Anlage einrichten** eine zweite Verbindung **„WiFi-Logger (Solarman V5)“** anlegen (Kennung `log1`, Adresse z. B. `192.0.2.21`, Port `8899`, **Logger-Seriennummer** `1700000001` – die Seriennummer des Sticks, nicht die des Wechselrichters; Erweitert wie in Stufe 1) und mit „Verbindung prüfen“ ausprobieren. Dann den Inverter `deye1` bearbeiten und als Verbindung `log1` wählen; Kennung, `instance_id`, erwartete Inverter-SN und Auswahl bleiben gleich (die Auswahl hängt an der Inverter-Kennung, nicht am Weg). Die bisherige Verbindung `gw1` bleibt zunächst angelegt, wird aber nicht mehr abgefragt, sobald kein Inverter sie nutzt; die **Gateway-Abfrage dieser App** ist damit beendet, bevor der Logger abgefragt wird (der Umbau stoppt die alte Abfrage und startet die neue). Zuerst wieder die minimale Auswahl, danach dieselbe kleine Messauswahl wie in Stufe 1. Nicht beide Wege parallel abfragen, zunächst keine Ersatzverbindung festlegen.
+Only after a successful gateway stage. Under **Set up plant** create a second connection **"WiFi logger (Solarman V5)"** (identifier `log1`, address e.g. `192.0.2.21`, port `8899`, **serial number of the WiFi stick** `1700000001` – the stick's serial number, not the inverter's; Advanced as in stage 1) and try it with "Check connection". Then edit the inverter `deye1` and choose `log1` as its connection; identifier, `instance_id`, expected inverter SN and selection stay the same (the selection hangs on the inverter identifier, not on the path). The previous connection `gw1` stays created for now, but is no longer polled once no inverter uses it; the **gateway polling of this app** is thus ended before the logger is polled (the rebuild stops the old polling and starts the new one). Again first the minimal selection, then the same small measurement selection as in stage 1. Do not poll both paths in parallel, and do not set a fallback connection for now.
 
-Je Auswahl mindestens 15 Minuten und mehrere normale Cloud-Uploadzyklen beobachten. Ein bestehender Gateway-Autopoller kann weiterhin arbeiten, obwohl diese App nur den Logger benutzt: diesen Zustand im Vergleich vermerken. Es gibt keine belegte universelle Client-/Polling-Grenze für deine Logger-/Firmwarekombination.
+Observe each selection for at least 15 minutes and several normal cloud upload cycles. An existing gateway autopoller may keep working although this app uses only the logger: note this state in the comparison. There is no documented universal client/polling limit for your logger/firmware combination.
 
-Vergleiche die **Inverter-SN exakt**, außerdem statische Rohdaten/Firmwarekennung, R22/R24 und – nur wenn gelesen – R65. Ein Transportwechsel darf weder ein anderes physisches Gerät unterschieben noch die Energiestatistik als neue physische Quelle behandeln (bei gleicher SN und gleicher Auflösung bleibt die Energieserie). Bei bekannten Recovery-/Persistenzproblemen anhalten, nicht Dateien löschen.
+Compare the **inverter SN exactly**, also static raw data/firmware identifier, R22/R24 and – only if read – R65. A transport change must neither substitute another physical device nor treat the energy statistics as a new physical source (with the same SN and the same resolution the energy series is kept). With known recovery/persistence problems stop, do not delete files.
 
-Dynamische Werte in Zeitfenstern mit Zeitstempel, Minimum/Maximum und Betriebszustand vergleichen. Nacheinander erfasste PV-/Leistungswerte müssen nicht exakt gleich sein; wechselnde Sonne und Last sind normal. Cloudwerte können erheblich älter sein. Beide Wege lesen denselben Inverter und sind keine zwei unabhängigen Messgeräte. Ein unveränderter Zähler oder Status beweist keine eingefrorenen Daten; natürliche Änderungen eines zusätzlichen Messwertes liefern bessere Hinweise. Keine Last-/Schaltversuche zur „Anregung“.
+Compare dynamic values in time windows with timestamp, minimum/maximum and operating state. PV/power values captured one after the other need not be exactly equal; changing sun and load are normal. Cloud values may be considerably older. Both paths read the same inverter and are not two independent measuring devices. An unchanged counter or status does not prove frozen data; natural changes of an additional measured value give better hints. No load/switching attempts to "stimulate".
 
-## 6. Stufe 3 – auf vier Inverter erweitern
+## 6. Stage 3 – extend to four inverters
 
-Für jeden weiteren Inverter zuerst dessen eigene Gateway-/Logger-Zuordnung prüfen. Anschließend dieselbe kleine Auswahl schrittweise für **zwei, drei, vier** Inverter aktivieren: jeweils unter **Anlage einrichten** die Verbindung und den Inverter ergänzen (Änderungen gelten sofort, die übrigen Inverter laufen nach einem kurzen Neustart der Abfrage weiter): der neue Inverter zeigt „Bitte Sensoren auswählen“ und liest nur Identität und Status, bis du seine Auswahl gespeichert hast (mit „Nur Basis“ oder mit „Auf andere übertragen …“ von einem bereits eingerichteten Inverter; Seriennummer-Bindung, Identität, Energieverlauf werden dabei nie übertragen). Nach dem Speichern mindestens 15 Minuten beobachten. Nicht allein durch Hinzufügen eines Geräts dessen volle Standardauswahl ungeprüft aktivieren. Das Zielbild sind vier separate, bestätigte Modbus-TCP-Gateways (`gw1` … `gw4`, je Port 502, Zeitlimit 5, Blockgröße 20, Pause 250, Warteschlange 8) mit je einem Inverter `deye1` … `deye4` (Modbus-Adresse 1, erwartete Seriennummern `2401230001` … `2401230004`, Intervalle 30/300/600/3600 s); reale Werte einsetzen. Als Migrationsweg steht es zusätzlich als YAML im Anhang A.
+For each further inverter first check its own gateway/logger assignment. Then enable the same small selection step by step for **two, three, four** inverters: each time add the connection and the inverter under **Set up plant** (changes apply immediately, the remaining inverters continue after a short restart of polling): the new inverter shows "Please choose sensors" and reads only identity and status until you have saved its selection (with "Basics only" or with "Transfer to others …" from an already set-up inverter; serial number binding, identity, energy history are never transferred in the process). After saving, observe for at least 15 minutes. Do not enable a device's full default selection unchecked merely by adding it. The target picture is four separate, confirmed Modbus TCP gateways (`gw1` … `gw4`, each port 502, timeout 5, block size 20, gap 250, queue 8) with one inverter each `deye1` … `deye4` (Modbus address 1, expected serial numbers `2401230001` … `2401230004`, intervals 30/300/600/3600 s); insert real values. As a migration path it is additionally given as YAML in Appendix A.
 
-Mit vier Geräten mindestens eine Stunde einschließlich langsamer Gruppen beobachten; die Weboberfläche zeigt die **Gesamtlast am Bus** je Auswahl. Danach eine längere Beobachtung über Tages-/Nachtwechsel vereinbaren, bevor Intervalle verkürzt oder weitere Sensoren aktiviert werden. Keine Summen aus SOC, gemeinsamem Batterie-SOC oder möglicherweise bereits aggregierten Parallelwerten bilden. Gleiche Werte mehrerer Geräte sind nicht automatisch unabhängige Messungen. Die Auswahl und Messstelle jedes Sensors festhalten.
+With four devices observe for at least one hour including slow groups; the web interface shows the **total bus load** per selection. Afterwards agree on a longer observation across day/night change before shortening intervals or enabling further sensors. Do not form sums from SOC, shared battery SOC or possibly already aggregated parallel values. Equal values from several devices are not automatically independent measurements. Record the selection and measuring point of each sensor.
 
-Eine optionale **Ersatzverbindung** (im Inverter-Formular, mit eigener Modbus-Adresse) erst **nach separater Prüfung beider Wege jedes Inverters** festlegen: sie verweist auf denselben Inverter mit identischer Inverter-SN; die App wechselt erst nach mehreren fehlgeschlagenen Zyklen und nur, wenn dort dieselbe SN antwortet. Aus der Ferne keinen Ausfall provozieren: kein Gateway-/Logger-Neustart, kein Steckerziehen, keine Firewall-Unterbrechung und kein Inverter-Abschalten. Der nacheinander geprüfte Quellenwechsel reicht für diesen Ersttest; er beweist keinen erfolgreichen automatischen Failover am echten Gerät.
+Set an optional **fallback connection** (in the inverter form, with its own Modbus address) only **after separately checking both paths of each inverter**: it points to the same inverter with identical inverter SN; the app switches only after several failed cycles and only if the same SN answers there. Do not provoke a failure from remote: no gateway/logger restart, no unplugging, no firewall interruption and no inverter shutdown. The sequentially checked source change suffices for this first test; it does not prove a successful automatic failover on the real device.
 
-## 7. Diagnose und Plausibilität prüfen
+## 7. Check diagnostics and plausibility
 
-In HA: App-Log, die Weboberfläche und unter **Entwicklerwerkzeuge → Zustände** Zeitstempel/Einheiten der Entities. Keine Aktionen oder MQTT-Nachrichten an Befehlsthemen senden (es gibt keine).
+In HA: app log, the web interface and under **Developer tools → States** timestamps/units of the entities. Send no actions or MQTT messages to command topics (there are none).
 
-**Diagnose-Entities des App-Geräts** (`deye_<instance_id>_app`, hier mit `instance_id: deyetest1` und Inverter `deye1`; alle `entity_category: diagnostic`, jeweils auch für `deye2` … sobald konfiguriert):
+**Diagnostic entities of the app device** (`deye_<instance_id>_app`, here with `instance_id: deyetest1` and inverter `deye1`; all `entity_category: diagnostic`, each also for `deye2` … once configured):
 
-| Entity | Bedeutung / Prüfpunkt |
+| Entity | Meaning / check point |
 | --- | --- |
-| `sensor.deye_deyetest1_app_app_version` | Version der App; mit dem freigegebenen Stand vergleichen. |
-| `sensor.deye_deyetest1_app_inverters_online` / `…_inverters_configured` | Anzahl online / konfiguriert. |
-| `sensor.deye_deyetest1_app_mqtt_reconnects` | Neuverbindungen zum Broker; wachsend = Broker-/Netzproblem. |
-| `sensor.deye_deyetest1_app_inverter_deye1_state` | `starting`, `identifying`, `running`, `quarantined`, `offline`, `blocked` (Weboberfläche: Startet, Wird erkannt, Online, Gesperrt, Offline, Blockiert). Erwartet: `running`. |
-| `sensor.deye_deyetest1_app_inverter_deye1_reason` | Grund in Textform (z. B. „no usable identity answer“, „serial number differs“); bei jedem Zustand außer `running` zuerst lesen. |
-| `sensor.deye_deyetest1_app_inverter_deye1_path` | Aktiver Weg (`primary`/`fallback`) und Endpoint. |
-| `sensor.deye_deyetest1_app_inverter_deye1_serial` | Gebundene Inverter-SN = `expected_serial`, je Gerät eindeutig. |
-| `sensor.deye_deyetest1_app_inverter_deye1_firmware` | Firmwarewörter R15/R17/R18. |
-| `sensor.deye_deyetest1_app_inverter_deye1_role` | Parallelrolle aus R336 (nur Anzeige). |
-| `sensor.deye_deyetest1_app_inverter_deye1_r65_raw` / `…_r65_status` | R65 Rohwert und ob die letzte Lesung funktionierte. In der Minimalstufe ist fehlendes R65 normal. |
-| `sensor.deye_deyetest1_app_inverter_deye1_energy_resolution` / `…_energy_source` / `…_energy_status` | Effektive Auflösung (kWh/Schritt), Quelle (`r65`/Override), Bestätigung/Sperre. |
-| `sensor.deye_deyetest1_app_inverter_deye1_energy_series` | Aktuelle Energieserie (`g0`, `g1`, … bzw. `<Token>g0`). |
-| `sensor.deye_deyetest1_app_inverter_deye1_capability_conflicts` | Anzahl der Konflikte mit dem Hardwareprofil; die Liste steht im Attribut `conflicts`. |
-| `sensor.deye_deyetest1_app_inverter_deye1_bus_utilisation` | Auslastung des App-Busses (Schätzung, 1,0 = voll). |
-| `sensor.deye_deyetest1_app_inverter_deye1_transport_timeouts` / `…_transport_frame_errors` / `…_transport_resyncs` | Zähler; Zuwachs ist ein Abbruchkriterium (Abschnitt 8). |
-| `sensor.deye_deyetest1_app_inverter_deye1_transport_cooldown` | Wartezeit nach Fehlern (Backoff). |
-| `sensor.deye_deyetest1_app_inverter_deye1_last_success` | Zeitpunkt der letzten erfolgreichen Abfrage; sollte höchstens wenige Intervalle alt sein. |
+| `sensor.deye_deyetest1_app_app_version` | Version of the app; compare with the approved state. |
+| `sensor.deye_deyetest1_app_inverters_online` / `…_inverters_configured` | Number online / configured. |
+| `sensor.deye_deyetest1_app_mqtt_reconnects` | Reconnections to the broker; growing = broker/network problem. |
+| `sensor.deye_deyetest1_app_inverter_deye1_state` | `starting`, `identifying`, `running`, `quarantined`, `offline`, `blocked` (web interface: Starting, Identifying, Online, Quarantined, Offline, Blocked). Expected: `running`. |
+| `sensor.deye_deyetest1_app_inverter_deye1_reason` | Reason in text form (e.g. "no usable identity answer", "serial number differs"); read first in every state except `running`. |
+| `sensor.deye_deyetest1_app_inverter_deye1_path` | Active path (`primary`/`fallback`) and endpoint. |
+| `sensor.deye_deyetest1_app_inverter_deye1_serial` | Bound inverter SN = `expected_serial`, unique per device. |
+| `sensor.deye_deyetest1_app_inverter_deye1_firmware` | Firmware words R15/R17/R18. |
+| `sensor.deye_deyetest1_app_inverter_deye1_role` | Parallel role from R336 (display only). |
+| `sensor.deye_deyetest1_app_inverter_deye1_r65_raw` / `…_r65_status` | R65 raw value and whether the last reading worked. In the minimal stage a missing R65 is normal. |
+| `sensor.deye_deyetest1_app_inverter_deye1_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`r65`/override), confirmation/lock. |
+| `sensor.deye_deyetest1_app_inverter_deye1_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |
+| `sensor.deye_deyetest1_app_inverter_deye1_capability_conflicts` | Number of conflicts with the hardware profile; the list is in the attribute `conflicts`. |
+| `sensor.deye_deyetest1_app_inverter_deye1_bus_utilisation` | Utilisation of the app bus (estimate, 1.0 = full). |
+| `sensor.deye_deyetest1_app_inverter_deye1_transport_timeouts` / `…_transport_frame_errors` / `…_transport_resyncs` | Counters; an increase is an abort criterion (section 8). |
+| `sensor.deye_deyetest1_app_inverter_deye1_transport_cooldown` | Wait time after errors (backoff). |
+| `sensor.deye_deyetest1_app_inverter_deye1_last_success` | Time of the last successful query; should be at most a few intervals old. |
 
-**Inverter-Entities** (nur ausgewählte Sensoren): `sensor.deye_deyetest1_deye1_<schlüssel>`, z. B. `…_serial_number`, `…_operating_state`, `…_fault_word_1` … `…_fault_word_4`, später `…_battery_voltage`, `…_battery_soc`, `…_inverter_frequency`, `…_pv1_power`, `…_pv2_power`. Energiezähler tragen die Serie im Namen, z. B. `…_battery_energy_charge_total_g0`.
+**Inverter entities** (selected sensors only): `sensor.deye_deyetest1_deye1_<key>`, e.g. `…_serial_number`, `…_operating_state`, `…_fault_word_1` … `…_fault_word_4`, later `…_battery_voltage`, `…_battery_soc`, `…_inverter_frequency`, `…_pv1_power`, `…_pv2_power`. Energy counters carry the series in the name, e.g. `…_battery_energy_charge_total_g0`.
 
-| Prüfung | Erwartung / Vorgehen |
+| Check | Expectation / procedure |
 | --- | --- |
-| Identität | `expected_serial` = gebundene Inverter-SN (`…_serial`). Logger-SN separat. Aktiver Endpoint (`…_path`), letzter erfolgreicher Zyklus (`…_last_success`) und Zustand sichtbar; kein `quarantined`/`blocked`. |
-| R22 / R24 | R22: Highbyte MPPT-Zahl, Lowbyte Phasenzahl; Profil erwartet 2/3, also `0x0203`. Das ist eine Erwartung, kein bereits gemessener Wert deiner Geräte. R24: 0 oder 1 bedeutet laut Dokument einen Batterieeingang, 2 zwei. Kein Pack-/BMS-Zähler. `…_capability_conflicts` dokumentieren und betroffene Messungen nicht freigeben. |
-| R65 / Energie | Wenn Energie ausgewählt ist: Rohwert, effektiven Faktor und Quelle (`auto`/Override) festhalten. `R65 <= 0x0104`: 0,1 kWh/Schritt; sonst 1 kWh/Schritt, nur für die dafür kuratierten Zähler. Fehlend ist nicht 0. R65 = `0xFFFF` oder `0` ist keine Version: die App leitet nichts ab und veröffentlicht keine Energie, bis die Auflösung gewählt ist (siehe „Energieauflösung wählen“ unten). Kein Override zum bloßen „Passendmachen“. |
-| Energieserie | Bei unveränderter SN und Auflösung bleibt `…_energy_series` über Neustart und Transportwechsel stabil. Eine bestätigte Änderung der Auflösung, ein anderes Gerät oder ein bewusst bestätigter Historienverlust beginnt eine neue Serie (alte Entity entfällt, ihre Statistik bleibt in HA, ohne Verbindung zur neuen). Bei Verlust der Energiehistorie wird die Energie gesperrt (`energy_history_missing`/`…_inconsistent`/`energy_store_corrupt`) und beim ausdrücklichen Reset beginnt ein zufälliges 8-Zeichen-Token. Nicht selbst `/data` löschen. |
-| Last / Fehler | Anzahl Lese-Blöcke je Gruppe und Gesamtlast in der Weboberfläche, `…_bus_utilisation`, Timeouts, Reconnects, Cooldown. Planbudget ist eine Schätzung; fremde Poller/Cloud/Cache sind nicht enthalten. „Überlastet“, wachsende Queue oder wiederholte Recovery sind kein Anlass für schnellere Wiederholungen. |
-| Qualität in HA | Ausbleibende/ungültige Daten erscheinen als `unknown` (einzelner Wert) bzw. `unavailable` (Gruppe verstummt nach drei Intervallen oder App/Inverter offline), nie als erfundene Nullwerte. Nach Reconnect keine alten Momentanwerte als frische Messung. `Online` allein beweist nicht die Frische jeder Gruppe. |
-| SOC R588 | u16, 1 %, plausibel 0–100. Bei gemeinsamer Batterie können die vier Werte gleich sein; nicht addieren. |
-| Batteriespannung R587 | u16 × 0,01 V; z. B. Rohwert 5200 → 52,00 V. Mit vorhandener BMS-Anzeige und deren tatsächlichen Grenzwerten vergleichen. Das ist keine neue Ladespannungsempfehlung. |
-| Inverterfrequenz R638 | u16 × 0,01 Hz; im laufenden 50-Hz-Inselnetz ungefähr 50 Hz. 0,50 oder 5000 Hz deutet auf Dekodierung/Zuordnung. Zustand und Messstelle beachten; keine Schutzgrenzen daraus ableiten. (Die ähnliche „Lastfrequenz“ R655 ist nur ein Duplikat derselben Quelle und nicht Teil dieser Auswahl.) |
-| PV1/PV2 R672/R673 | Je u16, 1 W. Tagsüber mit vorhandener Anzeige plausibilisieren; Schatten/Abregelung beachten. Nachts 0 ist erwartbar und kein Nachweis fehlender Unterstützung. Drei Stringanschlüsse bedeuten bei deinem 10-kW-Modell zwei MPPT-Messkanäle (2+1 Strings), nicht PV3. PV3–PV10 bleiben gesperrt. |
-| Mehrwortwerte | Beide Wörter aus demselben Lesezyklus und Weg; 32-Bit-Paarung/Wortreihenfolge laut Profil. Das garantiert keinen exakt gleichzeitigen internen DSP-Snapshot. |
+| Identity | `expected_serial` = bound inverter SN (`…_serial`). Logger SN separate. Active endpoint (`…_path`), last successful cycle (`…_last_success`) and state visible; no `quarantined`/`blocked`. |
+| R22 / R24 | R22: high byte MPPT count, low byte phase count; the profile expects 2/3, i.e. `0x0203`. This is an expectation, not a value already measured on your devices. R24: 0 or 1 means one battery input according to the document, 2 means two. No pack/BMS counter. Document `…_capability_conflicts` and do not release the affected measurements. |
+| R65 / energy | If energy is selected: record raw value, effective factor and source (`auto`/override). `R65 <= 0x0104`: 0.1 kWh/step; otherwise 1 kWh/step, only for the counters curated for that. Missing is not 0. R65 = `0xFFFF` or `0` is no version: the app derives nothing and publishes no energy until the resolution is chosen (see "Choosing the energy resolution" below). No override merely to "make it fit". |
+| Energy series | With unchanged SN and resolution `…_energy_series` stays stable across restart and transport change. A confirmed change of resolution, a different device or a deliberately confirmed loss of history begins a new series (old entity is dropped, its statistics stay in HA, unconnected to the new one). On loss of the energy history the energy is locked (`energy_history_missing`/`…_inconsistent`/`energy_store_corrupt`) and on the explicit reset a random 8-character token begins. Do not delete `/data` yourself. |
+| Load / errors | Number of read blocks per group and total load in the web interface, `…_bus_utilisation`, timeouts, reconnects, cooldown. The plan budget is an estimate; foreign pollers/cloud/cache are not included. "Overloaded", a growing queue or repeated recovery are no reason for faster retries. |
+| Quality in HA | Missing/invalid data appears as `unknown` (single value) or `unavailable` (group falls silent after three intervals or app/inverter offline), never as invented zero values. After a reconnect no old instantaneous values as a fresh measurement. `Online` alone does not prove the freshness of every group. |
+| SOC R588 | u16, 1 %, plausible 0–100. With a shared battery the four values may be equal; do not add. |
+| Battery voltage R587 | u16 × 0.01 V; e.g. raw value 5200 → 52.00 V. Compare with the existing BMS display and its actual limits. This is no new charge voltage recommendation. |
+| Inverter frequency R638 | u16 × 0.01 Hz; in the running 50 Hz island grid approximately 50 Hz. 0.50 or 5000 Hz points to decoding/assignment. Mind state and measuring point; derive no protection limits from it. (The similar "load frequency" R655 is only a duplicate of the same source and not part of this selection.) |
+| PV1/PV2 R672/R673 | Each u16, 1 W. Plausibility-check in daytime against an existing display; mind shading/curtailment. 0 at night is expected and no proof of missing support. Three string inputs mean two MPPT measuring channels (2+1 strings) on your 10 kW model, not PV3. PV3–PV10 stay locked. |
+| Multi-word values | Both words from the same read cycle and path; 32-bit pairing/word order per profile. This does not guarantee an exactly simultaneous internal DSP snapshot. |
 
-### Energieauflösung wählen
+### Choosing the energy resolution
 
-Meldet das Gerät R65 = `0xFFFF` (oder `0`), zeigt die Übersicht und die Sensorseite „Der Wechselrichter meldet keine gültige Energieauflösung (R65)“, die Energiewerte sind `unknown`, die Diagnose zeigt Quelle `unknown` und Status `r65_invalid`.
+If the device reports R65 = `0xFFFF` (or `0`), the overview and the sensor page show "The inverter reports no valid energy resolution (R65)", the energy values are `unknown`, the diagnostics show source `unknown` and status `r65_invalid`.
 
-1. Rohwert und Anzeige festhalten: `…_r65_raw` und die Tagesenergie (PV heute) am Inverter-Display.
-2. Im Hinweis **0,1 kWh wählen** (für SG04LP3 üblich) oder **1 kWh wählen**, oder unter **Anlage einrichten → Wechselrichter → Energie-Auflösung** setzen. Das ist die einzige schreibende Änderung der App-Konfiguration; am Gerät wird nichts geschrieben.
-3. Die Wahl beginnt eine **neue Energieserie** (`…_energy_series` wechselt); die alte Reihe wird nie mit anderem Faktor fortgesetzt.
-4. Prüfen: Tagesenergie in HA gegen das Display (z. B. 7,0 statt 70 kWh). Stimmt es nicht, die andere Auflösung wählen; das beginnt wieder eine neue Serie.
+1. Record the raw value and the display: `…_r65_raw` and the daily energy (PV today) on the inverter display.
+2. In the note **Choose 0.1 kWh** (usual for SG04LP3) or **Choose 1 kWh**, or set it under **Set up plant → Inverter → Energy resolution**. This is the only writing change of the app configuration; nothing is written to the device.
+3. The choice begins a **new energy series** (`…_energy_series` changes); the old series is never continued with a different factor.
+4. Check: daily energy in HA against the display (e.g. 7.0 instead of 70 kWh). If it does not match, choose the other resolution; that again begins a new series.
 
-## 8. Abbruch und Rückkehr zum Ausgangszustand
+## 8. Abort and return to the baseline
 
-**Sofort die App stoppen**, sobald neue Inverter-/Parallel-/BMS-Fehler, Inselnetzunterbrechung oder Flackern auftreten. Ebenso bei falscher Identität, unbekannter Serienbindung, kritischem Persistenzfehler (`blocked`) oder neuer Logger-Abmeldung. Keine Wiederanlaufexperimente.
+**Stop the app immediately** as soon as new inverter/parallel/BMS faults, island grid interruption or flicker occur. Likewise on a wrong identity, unknown serial binding, critical persistence error (`blocked`) or a new logger disconnect. No restart experiments.
 
-Für reine Kommunikationsfehler gelten zusätzlich vorsichtige **Test-Abbruchregeln**, keine Deye-Grenzwerte: drei aufeinanderfolgende Timeouts/CRC-/V5-Sequenzfehler (Zuwachs bei `…_transport_timeouts`/`…_transport_frame_errors`), wiederkehrende Cooldowns/Reconnects oder wachsende Queue → stoppen. Neue Cloud-Datenlücken von mehr als zwei vorher üblichen Uploadperioden → stoppen und mit der Ausgangslage vergleichen; bei gleichzeitigem Anlagenfehler nicht auf diese Frist warten.
+For pure communication errors cautious **test abort rules** additionally apply, not Deye limits: three consecutive timeouts/CRC/V5 sequence errors (increase in `…_transport_timeouts`/`…_transport_frame_errors`), recurring cooldowns/reconnects or a growing queue → stop. New cloud data gaps of more than two previously usual upload periods → stop and compare with the baseline; with a simultaneous plant fault do not wait for this period.
 
-1. Im bereitgehaltenen HA-Tab **Einstellungen → Apps → Deye SG04LP3 Monitor → Info → Stoppen**. Stoppen der Monitor-App ist **kein OFF-Befehl an den Inverter**. Auch bei nicht erreichbarer Ingress-Seite die Supervisor-App-Seite verwenden. Nicht HA/Supervisor oder den MQTT-Broker als Ersatz neu starten. Die App meldet beim geordneten Stopp alle Inverter und sich selbst offline (bei hartem Ende über den MQTT-„Last Will“).
-2. Gestoppten Zustand bestätigen (alle Entities `unavailable`). Wenn der Status unklar bleibt, keine weitere Testinstanz starten. Unabhängiges Monitoring und Cloud über mehrere normale Zyklen beobachten.
-3. Logs, Zeitpunkt, aktiven Weg und letzte Konfiguration sichern. Nicht als erste Reaktion Identitäts-/Energie-/Discovery-Dateien löschen, Geräte neu binden oder Fehlermeldungen quittieren. Insbesondere `blocked`/`quarantined` nicht durch Reset umgehen.
-4. Nur falls du zuvor einen unabhängigen lokalen Poller bewusst pausiert hast: dessen ursprünglichen Zustand wiederherstellen. Ein Gateway mit autonomem Polling/Cache kann trotz gestoppter App weiter abfragen; App-Stopp garantiert keinen elektrisch stillen Bus. Bei anhaltenden Problemen Test beenden und die vorhandene Betreuung nutzen.
+1. In the prepared HA tab **Settings → Apps → Deye SG04LP3 Monitor → Info → Stop**. Stopping the monitor app is **no OFF command to the inverter**. Use the Supervisor app page even if the Ingress page is unreachable. Do not restart HA/Supervisor or the MQTT broker as a substitute. On an orderly stop the app reports all inverters and itself offline (on a hard end via the MQTT "Last Will").
+2. Confirm the stopped state (all entities `unavailable`). If the status stays unclear, do not start any further test instance. Observe independent monitoring and cloud over several normal cycles.
+3. Save logs, time, active path and last configuration. As a first reaction do not delete identity/energy/discovery files, rebind devices or acknowledge error messages. In particular do not bypass `blocked`/`quarantined` by a reset.
+4. Only if you deliberately paused an independent local poller beforehand: restore its original state. A gateway with autonomous polling/cache may keep polling despite the stopped app; stopping the app guarantees no electrically silent bus. With persistent problems end the test and use the existing support.
 
-### Wo die Daten der App liegen
+### Where the app's data lives
 
-Alles liegt im Datenverzeichnis `/data` der App (bleibt bei Neustart und Update erhalten, ist im HA-Backup der App enthalten; nur per SSH-Zugriff auf das Host-System sichtbar, **nicht zum Bearbeiten gedacht**):
+Everything lives in the app's data directory `/data` (preserved across restart and update, included in the app's HA backup; visible only via SSH access to the host system, **not meant for editing**):
 
-| Datei | Inhalt |
+| File | Content |
 | --- | --- |
-| `instance_id` | Instanzkennung (Teil aller Entity-IDs; mit der Option `instance_id` fest vorgeben) |
-| `plant.a.json`, `plant.b.json` | Verbindungen und Wechselrichter, wie in der Weboberfläche eingerichtet (zwei Slots; der neueste vollständige gilt) |
-| `selection.a.json`, `selection.b.json` | gespeicherte Sensorauswahl und Anlagenmerkmale (zwei Slots; der neueste vollständige gilt) |
-| `identity.json` | Bindungen Inverter-`id` ↔ Seriennummer |
-| `energy.json`, `energy-generations.json` | Energieauflösung/-serie je Inverter und deren Historie |
-| `discovery.json` | Liste der veröffentlichten HA-Entities (für das Aufräumen) |
-| `capabilities.json` | Cache der Hardwareprüfung (darf neu aufgebaut werden) |
+| `instance_id` | Instance identifier (part of all entity IDs; fix it with the option `instance_id`) |
+| `plant.a.json`, `plant.b.json` | Connections and inverters as set up in the web interface (two slots; the newest complete one applies) |
+| `selection.a.json`, `selection.b.json` | saved sensor selection and plant features (two slots; the newest complete one applies) |
+| `identity.json` | Bindings inverter `id` ↔ serial number |
+| `energy.json`, `energy-generations.json` | Energy resolution/series per inverter and their history |
+| `discovery.json` | List of the published HA entities (for cleanup) |
+| `capabilities.json` | Cache of the hardware check (may be rebuilt) |
 
-Löschen einer dieser Dateien ist ein Eingriff mit Folgen (neue Bindung, neue Energieserie, verwaiste HA-Entities). Wenn du eine Rückkehr zum Ausgangszustand brauchst, genügt: App stoppen und deinstallieren/belassen; Home Assistant behält die Statistik bereits angelegter Entities, entfernte Entities musst du bei nicht erreichbarer App von Hand in HA löschen.
+Deleting one of these files is an intervention with consequences (new binding, new energy series, orphaned HA entities). If you need to return to the baseline, it suffices to stop the app and uninstall/keep it; Home Assistant keeps the statistics of entities already created, removed entities you must delete by hand in HA if the app is unreachable.
 
-### Wartungsbereich der Weboberfläche (Reset)
+### Maintenance area of the web interface (reset)
 
-Nur nach Ursachenklärung und nur bewusst; jede Aktion erklärt ihre Wirkung und verlangt das Eintippen eines Bestätigungstextes:
+Only after clarifying the cause and only deliberately; each action explains its effect and requires typing a confirmation text:
 
-- **Identität neu binden** (je Inverter): vergisst die gespeicherte Seriennummer; der Inverter wird neu erkannt und neu gebunden. Gesperrt, solange am Inverter eine erwartete Seriennummer eingetragen ist (dann diese unter **Anlage einrichten** ändern).
-- **Zurücksetzen → Seriennummer-Bindung** (je Inverter): wie oben für diesen einen Inverter; die anderen laufen weiter.
-- **Zurücksetzen → Energiezähler-Verlauf** (je Inverter): beginnt eine **neue Zählerreihe** (neue Energie-Entities mit neuer Serie; die alte Statistik bleibt in HA, ungekoppelt).
-- **Alle Bindungen zurücksetzen** (**global**): löscht die Bindungen **aller** Inverter, jeder wird neu erkannt (vorgesehen für eine beschädigte `identity.json`).
-- **Cleanup-Liste leeren**: danach räumt die App entfernte Entities nicht mehr automatisch auf. Während des Tests nicht verwenden.
+- **Rebind identity** (per inverter): forgets the saved serial number; the inverter is recognised and bound anew. Locked as long as an expected serial number is entered on the inverter (then change it under **Set up plant**).
+- **Reset → Serial number binding** (per inverter): as above for this one inverter; the others keep running.
+- **Reset → Energy counter history** (per inverter): begins a **new counter series** (new energy entities with a new series; the old statistics stay in HA, unconnected).
+- **Reset all bindings** (**global**): deletes the bindings of **all** inverters, each is recognised anew (intended for a damaged `identity.json`).
+- **Empty cleanup list**: afterwards the app no longer cleans up removed entities automatically. Do not use during the test.
 
-Ein Reset ist **kein** Mittel, um `quarantined`/`blocked` zu überspielen.
+A reset is **not** a means to bypass `quarantined`/`blocked`.
 
-## 9. Harte Grenze dieses Tests
+## 9. Hard limit of this test
 
-Die App sendet an Inverter **ausschließlich FC03-Lesezugriffe** in der zum Transport passenden Rahmung; ein Sendeguard am untersten Pfad erzwingt das unabhängig von jeder Option. `allow_writes: false` bleibt für jedes Gerät gesetzt (die Option hat in dieser Version ohnehin keine Wirkung). Kein FC06/FC16, keine Schreibprobe, keine Befehls-/Steuerentitäten (die App veröffentlicht nur `sensor`/`binary_sensor`, abonniert nur die HA-Birth-Nachricht), keine Gateway- oder Logger-Adminaktion durch die App.
+The app sends **only FC03 read accesses** to inverters, in the framing matching the transport; a send guard at the lowest path enforces this independently of any option. `allow_writes: false` stays set for every device (the option has no effect in this version anyway). No FC06/FC16, no write probe, no command/control entities (the app publishes only `sensor`/`binary_sensor`, subscribes only to the HA birth message), no gateway or logger admin action by the app.
 
-Auch „nur kurz“ ausgeschlossen: R80 OFF/ON, „No Battery“ R111, Parallelrollen/-anzahl R336/R337, ToU, Remote-Mode oder Sollwerte ändern; Master-/Slaveausfall simulieren; AC/Batterie/CAN trennen; Buchsenketten zwischen ModeBUS, Meter-485 und BMS ausprobieren. Alle Konfiguration von Gateway und Logger (Protokollmodus, IP, Polling, Upload, Neustart) ändert **nur du selbst**; die App ändert nichts daran. Eine getrennt begründete Änderung an deiner Anlage ist **nicht Teil dieses Lesetests**.
+Also excluded "just briefly": R80 OFF/ON, "No Battery" R111, parallel roles/count R336/R337, ToU, remote mode or changing setpoints; simulating master/slave failure; disconnecting AC/battery/CAN; trying socket chains between ModeBUS, Meter-485 and BMS. All configuration of gateway and logger (protocol mode, IP, polling, upload, restart) is changed **only by you**; the app changes nothing there. A separately justified change to your plant is **not part of this read test**.
 
-## 10. Ergebnisblatt und Belege
+## 10. Result sheet and evidence
 
-Pro Stufe notieren: Datum/Uhrzeit, freigegebener Commit/Image-Digest, HA-/Supervisor-Version, reale Endpoints/Unit-IDs/SNs, Auswahlrevision und Leseplan (Anzahl Sensoren/Blöcke laut Weboberfläche), andere aktive Poller, Dauer, Zahl erfolgreicher/fehlgeschlagener Zyklen, maximale Antwortzeit/Queue, R22/R24, gegebenenfalls R65/Faktor/Energieserie, Cloud-Lücken, neue Fehler sowie Zeitpunkt des App-Stopps. Unbekannte Werte als **nicht geprüft** markieren. Zugangsdaten nicht ins Ergebnisblatt aufnehmen.
+Per stage note: date/time, approved commit/image digest, HA/Supervisor version, real endpoints/unit IDs/SNs, selection revision and read plan (number of sensors/blocks per the web interface), other active pollers, duration, number of successful/failed cycles, maximum response time/queue, R22/R24, where applicable R65/factor/energy series, cloud gaps, new faults and the time of the app stop. Mark unknown values as **not checked**. Do not include credentials in the result sheet.
 
-**Bestanden** heißt nur: Diese konkrete Version/Lesemenge funktionierte über die beobachtete Zeit auf den geprüften Wegen ohne neue Auffälligkeiten. Es beweist weder Schreibbarkeit noch unterbrechungsfreien Slave-/Masterwechsel, maximale Pollrate oder die Gleichwertigkeit aller CON-Buchsen.
+**Passed** means only: this specific version/read set worked over the observed time on the checked paths without new anomalies. It proves neither writability nor uninterrupted slave/master switchover, maximum poll rate or the equivalence of all CON sockets.
 
-Grundlagen im Repository: `docs/SPEC.md`, `deye_monitor/DOCS.md` (Optionen, Weboberfläche, Zustandsdateien), `deye_monitor/config.yaml` (Optionsschema), `e2e/` (End-to-End-Abnahme mit echtem Home Assistant und Fake-Invertern; kein echtes Gerät).
+Foundations in the repository: `docs/SPEC.md`, `deye_monitor/DOCS.md` (options, web interface, state files), `deye_monitor/config.yaml` (options schema), `e2e/` (end-to-end acceptance with a real Home Assistant and fake inverters; no real device).
 
-## Anhang A – Migrationsweg über die App-Optionen (YAML)
+## Appendix A – Migration path via the app options (YAML)
 
-Ältere Installationen und diese Beispiele tragen Verbindungen und Wechselrichter noch in den **App-Optionen** (Einstellungen → Apps → Deye Monitor → Konfiguration). Beim Start übernimmt die App sie **einmalig** in die Weboberfläche, **nur wenn dort noch keine Anlage gespeichert ist**; die Oberfläche weist darauf hin („Verbindungen und Wechselrichter wurden … übernommen. Bitte entferne sie aus den App-Optionen“). Danach gilt ausschließlich, was in der Weboberfläche steht; abweichende Einträge in den Optionen werden nur gemeldet und nie übernommen. Neue Anlagen richtest du im Assistenten ein.
+Older installations and these examples still carry connections and inverters in the **app options** (Settings → Apps → Deye Monitor → Configuration). On start the app takes them over **once** into the web interface, **only if no plant is saved there yet**; the interface points this out ("Connections and inverters were taken over from the app options into the web interface. Please remove them from the app options"). Afterwards only what is in the web interface applies; deviating entries in the options are only reported and never taken over. You set up new plants in the wizard.
 
-Die folgenden YAML-Beispiele sind vollständige **Supervisor-Optionen**, keine `config.yaml`-App-Manifeste. Alle IPs aus `192.0.2.1/24`, Seriennummern und Namen sind erfundene Beispiele: durch die oben bestätigten Werte ersetzen. Die Sensorliste steht **nicht** im YAML (das Optionsschema kennt keine); sie liegt in der Weboberfläche. Die Beispiele allein begrenzen also keine Auswahl.
+The following YAML examples are complete **Supervisor options**, not `config.yaml` app manifests. All IPs from `192.0.2.1/24`, serial numbers and names are invented examples: replace them with the values confirmed above. The sensor list is **not** in the YAML (the options schema has none); it lives in the web interface. The examples alone therefore limit no selection.
 
-Hinweise zu den Optionen: Das Schema verlangt für `max_read_registers` mindestens 6 (die RTU-Identitätsprobe liest bis zu sechs Register), `mqtt: {}` muss als Block stehen bleiben, die Intervalle sind flache Optionen `poll_*_s` je Inverter. `allow_writes` ist eine Reserve ohne Wirkung (auf `false` lassen; `true` wird nur geloggt, es gibt keine Schreibschicht). TLS-Optionen (`tls`, `tls_ca_file`, …) betreffen nur einen externen Broker und sind für den Supervisor-Dienst `mqtt: {}` nicht nötig.
+Notes on the options: the schema requires at least 6 for `max_read_registers` (the RTU identity probe reads up to six registers), `mqtt: {}` must stay as a block, the intervals are flat `poll_*_s` options per inverter. `allow_writes` is a reserve without effect (leave it at `false`; `true` is only logged, there is no write layer). TLS options (`tls`, `tls_ca_file`, …) concern only an external broker and are not needed for the Supervisor service `mqtt: {}`.
 
-**Stufe 1 – ein Inverter am Gateway** (nur für einen bestätigten **Modbus-TCP→RTU**-Gateway-Modus; bei einem transparenten Gateway `transport: rtu_over_tcp`):
+**Stage 1 – one inverter on the gateway** (only for a confirmed **Modbus TCP→RTU** gateway mode; for a transparent gateway use `transport: rtu_over_tcp`):
 
 ```yaml
 instance_id: deyetest1
@@ -260,7 +260,7 @@ mqtt: {}
 log_level: info
 ```
 
-**Stufe 2 – derselbe Inverter über den Logger:**
+**Stage 2 – the same inverter via the logger:**
 
 ```yaml
 instance_id: deyetest1
@@ -291,7 +291,7 @@ mqtt: {}
 log_level: info
 ```
 
-**Stufe 3 – vier separate Gateways mit je Unit-ID 1:**
+**Stage 3 – four separate gateways, each with unit ID 1:**
 
 ```yaml
 instance_id: deyetest1

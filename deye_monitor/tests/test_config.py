@@ -597,3 +597,23 @@ def test_rtu_late_window_option() -> None:
     cfg = parse_config({"endpoints": [gw(1, rtu_late_window_s=3)], "inverters": [inv(1)]})
     assert cfg.endpoints[0].rtu_late_window_s == 3
     assert parse_config(minimal()).endpoints[0].rtu_late_window_s is None  # transport default
+
+
+def test_read_block_above_80_is_accepted_but_limited_with_one_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    data = minimal()
+    data["endpoints"][0]["max_read_registers"] = 100
+    with caplog.at_level(logging.WARNING, logger="deye_monitor.config"):
+        cfg = parse_config(data)
+    ep = cfg.endpoints[0]
+    assert (ep.max_read_registers, ep.read_block_limit) == (100, 80)
+    assert [r.getMessage() for r in caplog.records if "max_read_registers" in r.getMessage()] == [
+        "endpoint 'gw1': max_read_registers 100 is above 80 and is limited to 80"
+    ]
+    data["endpoints"][0]["max_read_registers"] = 80
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="deye_monitor.config"):
+        cfg = parse_config(data)
+    assert cfg.endpoints[0].read_block_limit == 80
+    assert not [r for r in caplog.records if "max_read_registers" in r.getMessage()]

@@ -1,6 +1,6 @@
 # Deye SG04LP3 Monitor
 
-> **Status: device loop with MQTT publisher (0.2.2, experimental).** The app validates its
+> **Status: device loop with MQTT publisher (0.2.3, experimental).** The app validates its
 > configuration, polls the inverters read-only (Modbus function code 03) and publishes the
 > chosen sensors through MQTT Device Discovery: entities appear in Home Assistant. The Ingress web
 > interface (sidebar: Deye Monitor) sets up your connections and inverters (a setup assistant guides
@@ -20,4 +20,4 @@ three-phase) hybrid inverters and publishes the values through MQTT discovery.
 
 See the *Documentation* tab (`DOCS.md`) for the current status, the options and the web interface.
 
-First test against real devices: see `docs/LIVE-READ-RUNBOOK.md` in the repository (German).
+First test against real devices: see `docs/LIVE-READ-RUNBOOK.md` in the repository.

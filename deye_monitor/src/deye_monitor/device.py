@@ -186,6 +186,7 @@ class Route:
     transport: ReadTransport
     scheduler: BusScheduler
     max_read_registers: int
+    max_read_registers_configured: int | None = None  # as configured; differs when capped
     bus_gap_s: float = 0.05  # effective gap of the canonical bus (maximum of its endpoints)
     response_time_s: float = 0.25  # budget assumption (capped by the endpoint timeout)
     bad_until: float = 0.0  # a fallback that answered with a foreign serial is not tried before
@@ -315,6 +316,10 @@ class InverterRuntime:
             "last_success_wall": self.last_success_wall,
             "bus_utilisation": self.bus_utilisation() if self.bus_utilisation else None,
             "transport": {r.name: _counters(r) for r in self.routes},
+            "max_read_registers": {
+                "configured": self.route.max_read_registers_configured,
+                "effective": self.route.max_read_registers,
+            },
         }
 
     def mark_internal_error(self, exc: BaseException) -> None:
@@ -821,10 +826,10 @@ class InverterRuntime:
             return
         signed = raw - 0x10000 if raw & 0x8000 else raw
         offset, basis = firmware_offset(entry, self._main_firmware(), signed)
-        self.identity_info.setdefault("firmware_offsets", {})[entry.key] = {
-            "offset": offset,
-            "basis": basis,
-        }
+        info: dict[str, Any] = {"offset": offset, "basis": basis}
+        if offset and signed == 0:
+            info["unavailable"] = "raw_zero_with_offset"  # parallel slaves report raw 0
+        self.identity_info.setdefault("firmware_offsets", {})[entry.key] = info
 
     def _update_suggestions(self, snapshot: Snapshot) -> None:
         """Suggest plant features from the settings that were read (the user confirms, T10)."""

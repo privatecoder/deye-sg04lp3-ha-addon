@@ -89,6 +89,8 @@ def decode(
         raw = _signed(field, bits)
         if entry.fw_offsets is not None:
             offset, _ = firmware_offset(entry, main_firmware, raw)
+            if offset and raw == 0:  # parallel slaves report 0: not available, not -100 C
+                return None
             return _scale(entry, raw, energy_resolution, offset)
         return _scale(entry, raw, energy_resolution)
     if t == "bitfield":

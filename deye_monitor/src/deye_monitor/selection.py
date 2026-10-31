@@ -814,7 +814,7 @@ def specs_from_config(cfg: AppConfig) -> dict[str, InverterSpec]:
             id=inv.id,
             profile=profile,
             hardware=load_hardware(profile.hardware),
-            max_read_registers=ep.max_read_registers,
+            max_read_registers=ep.read_block_limit,
             energy_auto=inv.energy_resolution.value == "auto",
             poll=inv.poll,
             response_time_s=min(0.25, ep.timeout_s),

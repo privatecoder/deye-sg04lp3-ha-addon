@@ -68,7 +68,7 @@ def default_connector(ep: EndpointConfig) -> Connector:
 def transport_settings(ep: EndpointConfig) -> TransportSettings:
     return TransportSettings(
         timeout_s=ep.timeout_s,
-        max_read_registers=ep.max_read_registers,
+        max_read_registers=ep.read_block_limit,
         rtu_late_window_s=ep.rtu_late_window_s,
     )
 
@@ -263,7 +263,8 @@ class Runtime:
             unit=unit,
             transport=self.transports[endpoint_id],
             scheduler=self.schedulers[ep.bus],
-            max_read_registers=ep.max_read_registers,
+            max_read_registers=ep.read_block_limit,
+            max_read_registers_configured=ep.max_read_registers,
             bus_gap_s=self.schedulers[ep.bus].gap_s,
             response_time_s=min(0.25, ep.timeout_s),
         )

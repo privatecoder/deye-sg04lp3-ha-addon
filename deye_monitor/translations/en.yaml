@@ -40,7 +40,7 @@ configuration:
           2 x timeout).
       max_read_registers:
         name: Max registers per read
-        description: Upper limit per read request, 6-100. Default 60.
+        description: Upper limit per read request, 6-100. Default 60. Values above 80 are limited to 80.
       request_gap_ms:
         name: Request gap (ms)
         description: Pause between requests on this bus. Default 50.

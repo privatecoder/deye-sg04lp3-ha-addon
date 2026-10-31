@@ -16,8 +16,8 @@ An MQTT broker is required (the Mosquitto app is used automatically if installed
 ## Documentation
 
 - App documentation: [`deye_monitor/DOCS.md`](deye_monitor/DOCS.md)
-- First live read test (German): [`docs/LIVE-READ-RUNBOOK.md`](docs/LIVE-READ-RUNBOOK.md)
-- Specification and plan (German): [`docs/SPEC.md`](docs/SPEC.md), [`docs/PLAN.md`](docs/PLAN.md)
+- First live read test (English): [`docs/LIVE-READ-RUNBOOK.md`](docs/LIVE-READ-RUNBOOK.md)
+- Specification and plan (English): [`docs/SPEC.md`](docs/SPEC.md), [`docs/PLAN.md`](docs/PLAN.md)
 
 ## Development
 

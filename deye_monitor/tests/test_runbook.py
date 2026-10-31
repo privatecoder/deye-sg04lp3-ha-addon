@@ -72,7 +72,7 @@ MORE = ["battery_voltage", "battery_soc", "inverter_frequency", "pv1_power", "pv
 def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None:
     blocks, template_size, r65, addresses = _plan_blocks(MINIMAL, tmp_path)
     assert blocks == 12 and not r65
-    assert "**6 Sensoren, 12 Abfrageblöcke**" in RUNBOOK and "**12 Lese-Blöcke**" in RUNBOOK
+    assert "**6 sensors, 12 polling blocks**" in RUNBOOK and "**12 read blocks**" in RUNBOOK
     # no energy, battery, AC or PV registers; the internal identity/status/settings reads only
     assert addresses == {
         0,
@@ -100,8 +100,8 @@ def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None
     (tmp_path / "more").mkdir()
     more_blocks, _, r65_more, _ = _plan_blocks(MINIMAL + MORE, tmp_path / "more")
     assert more_blocks == 15 and not r65_more
-    assert "**11 Sensoren, 15 Abfrageblöcke**" in RUNBOOK
-    assert f"{template_size} Sensoren" in RUNBOOK
+    assert "**11 sensors, 15 polling blocks**" in RUNBOOK
+    assert f"{template_size} sensors" in RUNBOOK
 
 
 def test_the_default_template_figures_in_the_runbook(tmp_path: Path) -> None:
@@ -109,7 +109,7 @@ def test_the_default_template_figures_in_the_runbook(tmp_path: Path) -> None:
     manager = SelectionManager(SelectionStore(tmp_path, specs_from_config(cfg)))
     plan = manager.plan("deye1")
     assert len(plan.blocks) == 30 and plan.reads_r65
-    assert "30 Lese-Blöcke" in RUNBOOK
+    assert "30 read blocks" in RUNBOOK
 
 
 def test_the_documented_diagnostic_entities_exist() -> None:
@@ -152,7 +152,7 @@ def test_the_runbook_keeps_the_read_only_boundary() -> None:
     assert "allow_writes: true" not in RUNBOOK
     for forbidden in ("FC06", "FC16", "R80", "R336/R337"):
         assert forbidden in RUNBOOK  # named as excluded actions
-    assert "Wartungsbereich" in RUNBOOK and "/data" in RUNBOOK
+    assert "Maintenance area" in RUNBOOK and "/data" in RUNBOOK
 
 
 def test_docs_and_readme_link_to_the_runbook() -> None:
@@ -165,15 +165,15 @@ def test_the_first_start_instructions_use_the_texts_of_the_interface() -> None:
         encoding="utf-8"
     )
     for phrase in (
-        "Bitte Sensoren auswählen",
-        "Auswahl jetzt treffen",
-        "Nur Basis",
-        "Alle abwählen",
-        "Vorlage unverändert übernehmen",
+        "Please choose sensors",
+        "Choose now",
+        "Basics only",
+        "Deselect all",
+        "Accept the template unchanged",
     ):
         assert phrase in RUNBOOK, phrase
         assert phrase in texts, phrase
-    assert "Platzhalter" not in RUNBOOK  # the workaround of the first version is gone
+    assert "placeholder" not in RUNBOOK  # the workaround of the first version is gone
     assert "127.0.0.1" not in RUNBOOK
 
 
@@ -184,20 +184,20 @@ def test_the_runbook_sets_the_plant_up_in_the_web_interface() -> None:
         encoding="utf-8"
     )
     for phrase in (
-        "Anlage einrichten",
+        "Set up plant",
         "Gateway (Modbus TCP → RTU)",
-        "Gateway transparent (RTU über TCP)",
-        "WiFi-Logger (Solarman V5)",
-        "Verbindung prüfen",
-        "Einrichtung starten",
+        "Gateway transparent (RTU over TCP)",
+        "WiFi logger (Solarman V5)",
+        "Check connection",
+        "Start setup",
     ):
         assert phrase in RUNBOOK, phrase
         assert phrase in texts, phrase
-    assert "Schreiben: nicht verfügbar" in RUNBOOK  # shown as label "Schreiben" + "nicht verfügbar"
-    assert "'plant.inv.writes': 'Schreiben'" in texts
-    assert "'plant.writes_unavailable': 'nicht verfügbar'" in texts
-    appendix = RUNBOOK.index("## Anhang A")
+    assert "Writing: not available" in RUNBOOK  # shown as label "Writing" + "not available"
+    assert "'plant.inv.writes': 'Writing'" in texts
+    assert "'plant.writes_unavailable': 'not available'" in texts
+    appendix = RUNBOOK.index("## Appendix A")
     assert all(RUNBOOK.index(block) > appendix for block in re.findall(r"```yaml\n", RUNBOOK))
-    assert "Migrationsweg" in RUNBOOK[appendix:]
+    assert "Migration path" in RUNBOOK[appendix:]
     assert "bei gestoppter App den Inverter in den Optionen" not in RUNBOOK
     assert "plant.a.json" in RUNBOOK

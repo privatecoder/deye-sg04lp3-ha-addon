@@ -115,7 +115,7 @@ entries:
   source: "V105.8 registers.json inverter: R0 (TXT 169-184)"
   confidence: document_only
   default_enabled: true
-  notes: "0x0500 (V105.8) and 0x0005 (live SUN-10K, FW 0x1175; kellerza/sunsynk identity.py DEVICE_TYPES lists both) mark the three-phase low-voltage family only; it does not identify SG04 vs other LV generations and says
+  notes: "0x0500 (V105.8) and 0x0005 (V104.2 of 22.12.2022, p. 4, documents 0X0005 = Three phase LV Hybrid explicitly; live SUN-10K, FW 0x1175: logger and Waveshare Modbus TCP-RTU gateway both return 0x0005; kellerza/sunsynk identity.py DEVICE_TYPES lists both) mark the three-phase low-voltage family only; it does not identify SG04 vs other LV generations and says
     nothing about power or MPPT count."
 - key: id_device_type
   name:
@@ -518,7 +518,7 @@ entries:
   source: "V105.8 registers.json inverter: R24 (TXT 349-358)"
   confidence: document_only
   default_enabled: true
-  notes: "Code for the number of battery inputs; says nothing about whether a battery is connected. Every code other than 0/1/2 is undefined (V105.8 range [0,4], live code 5): shown raw, no conflict, the profile applies. In the older Deye document (modbus-en.pdf, before V105.1) R24-R29 were 'reserve SN byte 01...09' and R23 was the grid voltage class; live, FW 0x1175 returns R24=5 through the logger, so undefined values carry no statement."
+  notes: "Code for the number of battery inputs; says nothing about whether a battery is connected. Every code other than 0/1/2 is undefined (V105.8 range [0,4], live code 5): shown raw, no conflict, the profile applies. In V100.0 R24 was empty, R25-R29 were 'reserve SN byte' and R23 was the grid voltage class; R23-R34 were reassigned with V104.2. Live, FW 0x1175 returns R24=5 through logger and Waveshare gateway alike, so the value comes from the inverter; the firmware copies R22/R24 from internal sources (Codex), producer unproven. Undefined values carry no statement."
 - key: id_battery_input_code
   name:
     de: Batterieeingangs-Code (intern)
@@ -1454,7 +1454,7 @@ entries:
   source: "V105.8 registers.json inverter: R586 (TXT 3517-3524)"
   confidence: firmware_dependent_offset_1151_code_1175_live
   default_enabled: true
-  notes: "Offset by main firmware (R15): 0x1151 (direct MCU2 path, own producer/exporter evidence) signed16(raw)/10 without\
+  notes: "Raw 0 with an applied offset (-1000) means not available (parallel slaves report raw 0 = -100 C after the offset), never -100 C (diagnostics: identity.firmware_offsets.battery_temperature.unavailable). Community and a third-party dump (raw 1320 = 32.0 C = R217) consistently use (raw-1000)*0.1; 1151 without offset is only proven in the direct MCU2 export. Offset by main firmware (R15): 0x1151 (direct MCU2 path, own producer/exporter evidence) signed16(raw)/10 without\
     \ offset; 0x1175 (live, Logger path) (raw-1000)/10, observed raw 1176 = 17.6 C = BMS value. Another firmware: the offset is\
     \ applied only if raw/10 > 80 C and (raw-1000)/10 lies in -40..80 C (diagnostics: identity.firmware_offsets)."
 - key: battery_voltage
@@ -1717,7 +1717,7 @@ entries:
     store_byte: 142916
     effect: zero_fill
   default_enabled: false
-  notes: Zero-filled in MCU2 1151 and 1175; R589 belongs to battery 2 although it lies inside 586-592.
+  notes: "Constant 0 from FW 1151/1175 (export sets it to 0: 1151 0x202F2, 1175 0x22E44; zero-filled in MCU2 1151 and 1175); not offered in templates or the default selection. R589 belongs to battery 2 although it lies inside 586-592."
 - key: battery2_current
   name:
     de: Batterie 2 Strom
@@ -1761,7 +1761,7 @@ entries:
   source: "V105.8 registers.json inverter: R602 (TXT 3637-3644)"
   confidence: unresolved
   default_enabled: false
-  notes: Battery 2 field; not offered for this hardware profile.
+  notes: "Battery 2 field; not offered for this hardware profile. Constant 0 from FW 1151/1175 (export 1151 0x2037C, 1175 0x22ECE); R601 likewise (1151 0x2037A, 1175 0x22ECC). The unit is not corrected here."
 - key: bms_charge_voltage
   name:
     de: BMS Ladespannung
@@ -1855,6 +1855,7 @@ entries:
   source: "V105.8 registers.json inverter: R212 (TXT 1644-1651)"
   confidence: document_only
   default_enabled: true
+  notes: "1 A per count (confirmed by a third-party dump)."
 - key: bms_discharge_current_limit
   name:
     de: BMS Entladestromgrenze
@@ -1886,6 +1887,7 @@ entries:
   source: "V105.8 registers.json inverter: R213 (TXT 1651-1658)"
   confidence: document_only
   default_enabled: true
+  notes: "1 A per count (confirmed by a third-party dump)."
 - key: bms_soc
   name:
     de: BMS SOC
@@ -2043,13 +2045,17 @@ entries:
   default_enabled: false
 - key: bms_offgrid_discharge_limit_raw
   name:
-    de: BMS Off-Grid-Entladestrom roh (R219)
-    en: BMS off-grid discharge limit raw (R219)
+    de: BMS Off-Grid-Entladestrom (R219)
+    en: BMS off-grid discharge limit (R219)
   description:
-    de: "Entladegrenze im Inselbetrieb laut BMS als Rohzahl; Bedeutung nicht bestätigt."
-    en: "Off-grid discharge limit according to the BMS as a raw number; meaning not confirmed."
+    de: "Maximaler Entladestrom im Inselbetrieb laut Batteriemanagement (BMS)."
+    en: "Maximum discharge current in island operation according to the BMS."
   addr: 219
-  type: raw
+  type: u16
+  scale: 1
+  unit: A
+  device_class: current
+  state_class: measurement
   category: battery
   point: bms
   group: settings
@@ -2065,11 +2071,11 @@ entries:
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: unresolved
+  release: profile_dependent
   source: "V105.8 registers.json inverter: R219 (TXT 1695-1702)"
-  confidence: unresolved
+  confidence: document_only
   default_enabled: false
-  notes: Unit cell is blank; the 1 A of R218 is not inherited.
+  notes: "Unit cell is blank in the document; A as for R218 (third-party dump: R218 = R219 = 420 A)."
 - key: grid_voltage_a
   name:
     de: Netzspannung Phase A
@@ -3877,7 +3883,7 @@ entries:
     en: "Power at the GEN port, phase A, as a raw number; unit not confirmed."
   low: 664
   high: 668
-  type: u32
+  type: s32
   category: power
   point: gen_port
   group: ac
@@ -3897,7 +3903,7 @@ entries:
   source: "V105.8 registers.json inverter: R664 (TXT 3832-3834), R668 (TXT 3840-3842)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
   default_enabled: false
-  notes: "Word pair is assembled, but physical signedness/polarity is unresolved: raw 32-bit value only, no unit."
+  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
 - key: gen_power_raw_b
   name:
     de: GEN-Port Leistung Phase B (roh)
@@ -3907,7 +3913,7 @@ entries:
     en: "Power at the GEN port, phase B, as a raw number; unit not confirmed."
   low: 665
   high: 669
-  type: u32
+  type: s32
   category: power
   point: gen_port
   group: ac
@@ -3927,7 +3933,7 @@ entries:
   source: "V105.8 registers.json inverter: R665 (TXT 3834-3836), R669 (TXT 3842-3844)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
   default_enabled: false
-  notes: "Word pair is assembled, but physical signedness/polarity is unresolved: raw 32-bit value only, no unit."
+  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
 - key: gen_power_raw_c
   name:
     de: GEN-Port Leistung Phase C (roh)
@@ -3937,7 +3943,7 @@ entries:
     en: "Power at the GEN port, phase C, as a raw number; unit not confirmed."
   low: 666
   high: 670
-  type: u32
+  type: s32
   category: power
   point: gen_port
   group: ac
@@ -3957,7 +3963,7 @@ entries:
   source: "V105.8 registers.json inverter: R666 (TXT 3836-3838), R670 (TXT 3844-3846)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
   default_enabled: false
-  notes: "Word pair is assembled, but physical signedness/polarity is unresolved: raw 32-bit value only, no unit."
+  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
 - key: gen_power_raw_total
   name:
     de: GEN-Port Leistung gesamt (roh)
@@ -3967,7 +3973,7 @@ entries:
     en: "Total power at the GEN port as a raw number; unit not confirmed."
   low: 667
   high: 671
-  type: u32
+  type: s32
   category: power
   point: gen_port
   group: ac
@@ -3987,7 +3993,7 @@ entries:
   source: "V105.8 registers.json inverter: R667 (TXT 3838-3840), R671 (TXT 3846-3848)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
   default_enabled: false
-  notes: "Word pair is assembled, but physical signedness/polarity is unresolved: raw 32-bit value only, no unit."
+  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
 - key: ac_solar_power_raw_a
   name:
     de: AC-Solar Leistung Phase A (roh)
@@ -6011,7 +6017,7 @@ entries:
   source: "V105.8 registers.json inverter: R80 (TXT 667-676)"
   confidence: document_only
   default_enabled: true
-  notes: 0 = software OFF, 1 = ON; controls operation, not electrical isolation. Read only.
+  notes: "0 = software OFF, 1 = ON; controls operation, not electrical isolation. Read only. Never write 0: software OFF triggers fault F19."
 - key: battery_chemistry
   name:
     de: Batterietyp (R98)

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.3
+
+Findings from comparing the sources (community projects, document history V100.0 to V105.8, firmware
+analysis) and a third live finding: through the Waveshare gateway (Modbus TCP to RTU) master 1 returns
+the same R0 = 0x0005, R22 = 0xFFFF and R24 = 5 as through the logger, so these values come from the
+inverter, not from the logger.
+
+- R586 battery temperature: with an applied offset (-1000) a raw 0 is "not available" (parallel
+  slaves report 0, which would read as -100 C), no value is published; the diagnostics note
+  `identity.firmware_offsets.battery_temperature.unavailable`.
+- R664 to R671 (generator port power, raw sensors, off by default): decoded as signed 32 bit instead
+  of unsigned (unsigned showed jumps of 65 kW).
+- R219 BMS off-grid discharge current is now a current in A (like R218; a third-party dump shows
+  420/420 A) instead of a raw number.
+- `max_read_registers` is limited to 6 to 80 (was 100): 87 and 89 registers in one read work, 131
+  fails. The default 60 and the 50 ms pause between requests are unchanged.
+- Hint for an unusable R65: 0.1 kWh is marked as recommended (a third-party capture of a SUN-10K-SG04LP3
+  also shows R65 = 0xFFFF with counters in 0.1 kWh). Still no automatic choice.
+- Profile notes: R0 0x0005 is documented in V104.2 (22.12.2022); R24 history corrected (V100.0: R24
+  empty, R25 to R29 reserve SN byte, R23 grid class; reassigned with V104.2); R586 offset evidence;
+  R596, R601, R602 are constant 0 from firmware 1151/1175; R212/R213 are 1 A; R80 = 0 is software OFF
+  and triggers F19 (never write it).
+
 ## 0.2.2
 
 Second live read test (same SUN-10K, Solarman logger):

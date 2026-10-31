@@ -177,7 +177,7 @@ async def run_test(
     target = live_target(runtime, ep)
     if target is None:
         target = temporary_target(runtime, ep)
-    blocks = identity_blocks(ep.max_read_registers)
+    blocks = identity_blocks(ep.read_block_limit)
     outcome: str | None = None
     words: dict[int, int] = {}
     ok = 0

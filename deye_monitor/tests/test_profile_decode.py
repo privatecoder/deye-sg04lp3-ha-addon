@@ -83,6 +83,24 @@ def test_battery_temperature_offset_depends_on_the_main_firmware(p: Profile) -> 
     assert fw(p, 3000, 0x9999) == 300.0  # also implausible with the offset: left as it is
 
 
+def test_battery_temperature_raw_zero_with_offset_is_not_available(p: Profile) -> None:
+    # parallel slaves report raw 0: with the -1000 offset that would read -100 C
+    assert fw(p, 0, 0x1175) is None
+    assert fw(p, 0, 0x1151) == 0.0  # no offset applied: a plain 0 C
+    assert fw(p, 0, None) == 0.0
+
+
+def test_bms_offgrid_discharge_limit_is_a_current_like_r218(p: Profile) -> None:
+    assert d(p, "bms_offgrid_discharge_limit_raw", {219: 420}) == 420
+    assert d(p, "bms_offgrid_charge_limit", {218: 420}) == 420
+    assert p.entry("bms_offgrid_discharge_limit_raw").unit == "A"
+
+
+def test_generator_port_power_words_are_signed(p: Profile) -> None:
+    assert d(p, "gen_power_raw_a", {664: 0xFFFE, 668: 0xFFFF}) == -2
+    assert d(p, "gen_power_raw_a", {664: 3000, 668: 0}) == 3000
+
+
 def test_plain_scales(p: Profile) -> None:
     assert d(p, "grid_voltage_a", {598: 2305}) == 230.5
     assert d(p, "grid_frequency", {609: 5001}) == 50.01
@@ -207,7 +225,7 @@ def test_no_value_is_scaled_without_a_scale(p: Profile) -> None:
     ]
     assert raw_numeric
     assert all(e.release == "unresolved" for e in raw_numeric)
-    assert d(p, "gen_power_raw_a", {664: 0xFFFF, 668: 0xFFFF}) == 0xFFFFFFFF
+    assert d(p, "gen_power_raw_a", {664: 0xFFFF, 668: 0xFFFF}) == -1
 
 
 def test_out_of_range_words_are_rejected(p: Profile) -> None:

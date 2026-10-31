@@ -32,6 +32,9 @@ from deye_monitor.scheduler import canonical_bus_key, normalize_host
 
 log = logging.getLogger(__name__)
 
+# Larger single reads fail on gateways and loggers (87 and 89 registers work, 131 does not).
+MAX_READ_BLOCK = 80
+
 OPTIONS_ENV = "DEYE_MONITOR_OPTIONS"
 DATA_DIR_ENV = "DEYE_MONITOR_DATA"
 DEFAULT_OPTIONS_PATH = "/data/options.json"
@@ -96,6 +99,11 @@ class EndpointConfig(_Model):
     max_read_registers: Annotated[int, Field(strict=True, ge=6, le=100)] = 60
     request_gap_ms: Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)] = 50.0
     queue_size: Annotated[int, Field(strict=True, ge=1, le=1000)] = 32
+
+    @property
+    def read_block_limit(self) -> int:
+        """Registers per read actually used: the configured value, capped at ``MAX_READ_BLOCK``."""
+        return min(self.max_read_registers, MAX_READ_BLOCK)
 
     @model_validator(mode="before")
     @classmethod
@@ -501,6 +509,15 @@ def parse_config(data: object) -> AppConfig:
         cfg = AppConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigError(format_validation_error(exc)) from None
+    for ep in cfg.endpoints:
+        if ep.max_read_registers > MAX_READ_BLOCK:
+            log.warning(
+                "endpoint '%s': max_read_registers %d is above %d and is limited to %d",
+                ep.id,
+                ep.max_read_registers,
+                MAX_READ_BLOCK,
+                MAX_READ_BLOCK,
+            )
     for inv in cfg.inverters:
         if inv.allow_writes:
             log.warning(
