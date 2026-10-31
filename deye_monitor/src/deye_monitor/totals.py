@@ -278,8 +278,10 @@ class PlantSeries:
     def follow(self, signature: Sequence[tuple[str, str]]) -> bool:
         """Adopt ``signature``. Returns ``True`` when that started a new series."""
         sig = tuple(sorted(signature))
-        if self.signature == sig and self.generation >= 0:
-            return False
+        if self.signature == sig and self.generation >= 0 and self.generation >= self._high:
+            if not self.persist_failed:
+                return False
+            return self._save()  # retry an unsaved generation; True once it is safe to publish
         started = (
             self.generation >= 0 or self._high >= 0 or self._store.status is not LoadStatus.MISSING
         )
@@ -288,13 +290,21 @@ class PlantSeries:
         self.generation = max(self.generation, self._high) + 1 if started else 0
         self._high = max(self._high, self.generation)
         self.signature = sig
+        self._save()
+        return started or self.generation == 0
+
+    def _save(self) -> bool:
+        assert self.signature is not None
         try:
-            self._store.commit({"generation": self.generation, "signature": [list(p) for p in sig]})
-            self.persist_failed = False
+            self._store.commit(
+                {"generation": self.generation, "signature": [list(p) for p in self.signature]}
+            )
         except OSError:
             self.persist_failed = True
             log.error("plant totals: the series state could not be written")
-        return started or self.generation == 0
+            return False
+        self.persist_failed = False
+        return True
 
 
 def _valid_series_document(doc: dict[str, Any]) -> bool:

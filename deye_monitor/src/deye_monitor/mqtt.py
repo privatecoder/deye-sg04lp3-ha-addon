@@ -507,7 +507,7 @@ class MqttPublisher:
         app_meta = DeviceMeta(ns.app_device_id, "Deye Monitor", "app")
         states = tuple(s.value for s in InverterState)
         app_comps = app_components(ns)
-        if self.totals is not None:
+        if self.totals is not None and not self.totals.series.persist_failed:
             expire = {m.key: self.totals.expire_after(m) for m in METRICS}
             app_comps.update(plant_components(ns, self.totals.series.series, expire))
         targets = {ns.discovery_topic(ns.app_device_id): DeviceTarget(app_meta, app_comps)}
@@ -756,8 +756,13 @@ class MqttPublisher:
 
     async def _publish_plant(self, publish: Callable[[str, bytes, bool], Any]) -> None:
         assert self.totals is not None
-        self.totals.dirty = False
         self._last_plant_publish = self._clock()
+        if self.totals.series.persist_failed:
+            # an unsaved generation is not published; retry the save, then bring the entities up
+            if self.totals.sync_series():
+                self._discovery_dirty = True
+            return
+        self.totals.dirty = False
         body = {"timestamp": timestamp(time.time()), **self.totals.payload(self._clock())}
         await publish(self.ns.plant_state_topic, encode(body), False)
 

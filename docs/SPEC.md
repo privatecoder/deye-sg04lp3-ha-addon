@@ -242,7 +242,10 @@ total `null` (never a partial sum); members without PV entries add 0 to PV. Ener
 the members' total counters; the plant series `g<n>` (`/data/plant-totals.json`: generation +
 signature of members and their own series) advances when the membership or any member series
 changes and is never reused (after a lost file it continues after the highest series in the discovery
-inventory). Battery state comes from the single member whose R336 says parallel master. Battery
+inventory; a saved generation behind the discovery high-water mark is never reused either: the next
+one above both is allocated and saved first). If saving the generation fails, no plant entities or
+states are published for it; the save is retried on each plant cycle and the entities appear once it
+succeeds. Battery state comes from the single member whose R336 says parallel master. Battery
 power per member is battery voltage x battery current (positive = discharging); the BMS bank view is
 `-(BMS voltage x BMS current)` because R216 is positive while charging.
 
