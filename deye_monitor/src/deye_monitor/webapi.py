@@ -1002,6 +1002,20 @@ class WebApi:
         except ValidationError as exc:
             raise _validation_error(exc) from None
 
+    @staticmethod
+    def _v5_fallback_default(
+        inverter: InverterConfig, body: Any, plant: PlantConfig
+    ) -> InverterConfig:
+        """Unset ``fallback_unit_id`` on a Solarman V5 fallback is 1 (the logger answers only there)."""
+        if (
+            inverter.fallback_endpoint is None
+            or (isinstance(body, dict) and body.get("fallback_unit_id") is not None)
+            or all(e.id != inverter.fallback_endpoint for e in plant.endpoints)
+            or plant.endpoint(inverter.fallback_endpoint).transport is not Transport.SOLARMAN_V5_TCP
+        ):
+            return inverter
+        return inverter.model_copy(update={"fallback_unit_id": 1})
+
     def _inverter_input(self, body: Any, *, inverter_id: str | None) -> InverterConfig:
         data = _object(body, required=["name", "endpoint", "unit_id"], optional=[*_INVERTER_FIELDS])
         if inverter_id is not None:
@@ -1113,7 +1127,8 @@ class WebApi:
         def build(plant: PlantConfig) -> PlantConfig:
             if any(i.id == inverter.id for i in plant.inverters):
                 raise ChangeError("id_taken", 409)
-            return self._plant_checked(list(plant.endpoints), [*plant.inverters, inverter])
+            created = self._v5_fallback_default(inverter, body, plant)
+            return self._plant_checked(list(plant.endpoints), [*plant.inverters, created])
 
         return await self._plant_change(expected, build)
 
@@ -1124,9 +1139,10 @@ class WebApi:
         inverter = self._inverter_input(body, inverter_id=inverter_id)
 
         def build(plant: PlantConfig) -> PlantConfig:
+            updated = self._v5_fallback_default(inverter, body, plant)
             return self._plant_checked(
                 list(plant.endpoints),
-                [inverter if i.id == inverter_id else i for i in plant.inverters],
+                [updated if i.id == inverter_id else i for i in plant.inverters],
             )
 
         return await self._plant_change(expected, build)

@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher (0.2.5, experimental).** The app validates its
+> **Status: device loop with MQTT publisher (0.2.6, experimental).** The app validates its
 > configuration, then connects to the configured endpoints (read-only, Modbus function code 03
 > only), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
@@ -10,7 +10,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.5 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.6 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -177,7 +177,7 @@ When several endpoints reach one physical bus under different names, give them t
 | `endpoint` | `id` of the primary endpoint. |
 | `unit_id` | Modbus unit address of the inverter, 1 to 247. |
 | `fallback_endpoint` | Optional second path to the same inverter. Used only after repeated failures and only if the same serial number answers there. |
-| `fallback_unit_id` | Unit address on the fallback path (default: `unit_id`). |
+| `fallback_unit_id` | Unit address on the fallback path. Default: `unit_id`, but 1 if the fallback endpoint is a Solarman V5 logger. |
 | `expected_serial` | Optional 10-character serial number. A device with a different serial number is quarantined (no data from it is used). |
 | `profile` | Register profile, default `sg04lp3_lv_v105_8`. |
 | `energy_resolution` | `auto` (derived from register 65), `0.1` or `1` (kWh). |
@@ -189,6 +189,23 @@ When several endpoints reach one physical bus under different names, give them t
 
 On one bus (same host and port, or the same `bus_id`) every `unit_id` can belong to only one inverter.
 Separate gateways may all use unit 1.
+
+#### Modbus addresses: gateway versus logger
+
+The address depends on the **connection type of each route**, so the primary and the fallback of one
+inverter can use different addresses:
+
+* **RS485 gateway** (`modbus_tcp`, `rtu_over_tcp`, `serial_rtu`): the address is the inverter's own
+  Modbus address, the parallel setting “Modbus SN”. In a parallel system the master is usually 1 and
+  the slaves are 2, 3, …
+* **Solarman V5 logger** (`solarman_v5_tcp`): the address must **always be 1**, also for parallel
+  slaves. Any other address fails.
+
+Example, four inverters in parallel: through the gateway `unit_id` is 1, 2, 3, 4; through each
+inverter's own logger the fallback is `fallback_unit_id: 1` (the default for a V5 fallback). The
+web interface prefills 1 and shows the matching help text per route. An address other than 1 on a
+logger route only shows a warning (in the form and after a failed connection check); saving stays
+allowed.
 
 ### `mqtt`
 

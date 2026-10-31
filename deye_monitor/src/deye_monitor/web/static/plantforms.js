@@ -30,15 +30,17 @@ function field(name, label, control, help) {
   const error = h('p', { class: 'field-error', id: errorId, role: 'alert', hidden: true });
   const describedBy = [help ? helpId : null, errorId].filter(Boolean).join(' ');
   control.setAttribute('aria-describedby', describedBy);
+  const helpEl = help ? h('p', { class: 'help', id: helpId }, help) : null;
   const el = h('div', { class: 'field wide', 'data-field': name },
     h('label', { for: controlId }, label),
     control,
-    help ? h('p', { class: 'help', id: helpId }, help) : null,
+    helpEl,
     error);
   return {
     name,
     el,
     control,
+    helpEl,
     setError(message) {
       error.textContent = message || '';
       error.hidden = !message;
@@ -301,16 +303,41 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
     h('option', { value: '' }, '—'),
     endpoints.map((ep) => h('option', { value: ep.id, selected: ep.id === (f.endpoint || defaultEndpoint) }, label(ep))));
   const endpointField = register(field('endpoint', t('inv.endpoint'), endpointSelect, t('inv.endpoint_help')));
+  const isV5 = (endpointId) => (endpoints.find((ep) => ep.id === endpointId) || {}).transport === 'solarman_v5_tcp';
   const unitField = register(field('unit_id', t('inv.unit'), numberInput(f.unit_id ?? 1), t('inv.unit_help')));
+  // A V5 logger only answers on address 1; the hint warns but never blocks saving.
+  const unitWarning = h('p', { class: 'help warn-text', 'data-warning': 'unit_id', role: 'status', hidden: true }, t('inv.unit_v5_warning'));
+  unitField.control.after(unitWarning);
+  let unitTouched = f.unit_id !== undefined;
+  unitField.control.addEventListener('input', () => { unitTouched = true; });
 
   const fallbackSelect = h('select', { class: 'select' },
     h('option', { value: '' }, t('inv.fallback_none')),
     endpoints.map((ep) => h('option', { value: ep.id, selected: ep.id === f.fallback_endpoint }, label(ep))));
   const fallbackField = register(field('fallback_endpoint', t('inv.fallback'), fallbackSelect, t('inv.fallback_help')));
-  const fallbackUnitField = register(field('fallback_unit_id', t('inv.fallback_unit'), numberInput(f.fallback_unit_id ?? f.unit_id ?? 1)));
+  const fallbackUnitField = register(field('fallback_unit_id', t('inv.fallback_unit'), numberInput(f.fallback_unit_id ?? f.unit_id ?? 1), t('inv.unit_help')));
+  const fallbackUnitWarning = h('p', { class: 'help warn-text', 'data-warning': 'fallback_unit_id', role: 'status', hidden: true }, t('inv.unit_v5_warning'));
+  fallbackUnitField.control.after(fallbackUnitWarning);
   let fallbackUnitTouched = f.fallback_unit_id !== undefined && f.fallback_unit_id !== f.unit_id;
   fallbackUnitField.control.addEventListener('input', () => { fallbackUnitTouched = true; });
-  unitField.control.addEventListener('input', () => { if (!fallbackUnitTouched) fallbackUnitField.control.value = unitField.control.value; });
+
+  // Per route: the default address, the help text and the warning follow the connection type.
+  function syncUnits({ endpointChanged = false } = {}) {
+    if (endpointChanged && !unitTouched) unitField.control.value = 1;
+    if (!fallbackUnitTouched) {
+      fallbackUnitField.control.value = isV5(fallbackSelect.value) ? 1 : unitField.control.value;
+    }
+    for (const [x, warning, endpointId] of [[unitField, unitWarning, endpointSelect.value], [fallbackUnitField, fallbackUnitWarning, fallbackSelect.value]]) {
+      const v5 = isV5(endpointId);
+      x.helpEl.textContent = t(v5 ? 'inv.unit_help_logger' : 'inv.unit_help');
+      const value = numberOf(x.control);
+      warning.hidden = !(v5 && value !== undefined && value !== 1);
+    }
+  }
+  endpointSelect.addEventListener('change', () => syncUnits({ endpointChanged: true }));
+  fallbackSelect.addEventListener('change', () => syncUnits());
+  unitField.control.addEventListener('input', () => syncUnits());
+  fallbackUnitField.control.addEventListener('input', () => syncUnits());
 
   const serialField = register(field('expected_serial', t('inv.expected_serial'), textInput(f.expected_serial || '', { maxlength: 10 }), t('inv.expected_serial_help')));
   const energySelect = h('select', { class: 'select' },
@@ -372,6 +399,7 @@ export function inverterForm({ initial = null, editing = false, endpoints, exist
     serialField.el, energyField.el, details,
     h('p', { class: 'note writes-note' }, t('inv.writes_note')));
   refresh();
+  syncUnits();
   return {
     el,
     fields,
@@ -389,7 +417,7 @@ function testOutcomeText(result) {
   return t(`test.outcome.${result.outcome}`);
 }
 
-export function testResultView(result) {
+export function testResultView(result, { unit = null } = {}) {
   const ok = result.ok;
   const advice = ok ? null : tOr(`test.hint.${result.outcome}.${result.transport}`, `test.hint.${result.outcome}`, {});
   const model = result.model;
@@ -403,6 +431,7 @@ export function testResultView(result) {
     facts.push(['test.model', parts.join(' · ')]);
   }
   const notes = [];
+  if (!ok && result.transport === 'solarman_v5_tcp' && typeof unit === 'number' && unit !== 1) notes.push(['warn', t('inv.unit_v5_warning')]);
   if (result.serial_vs_expected === true) notes.push(['ok', t('test.expected_ok')]);
   if (result.serial_vs_expected === false) notes.push(['bad', t('test.expected_bad')]);
   if (result.serial_vs_bound === true) notes.push(['ok', t('test.bound_ok')]);
@@ -431,7 +460,7 @@ export function testPanel({ build, intro = null, extra = null }) {
     out.replaceChildren(h('p', { class: 'muted', role: 'status' }, t('test.running')));
     try {
       const result = await mutate('POST', 'api/plant/test', body);
-      const view = testResultView(result);
+      const view = testResultView(result, { unit: body.unit_id });
       out.replaceChildren(view);
       view.focus({ preventScroll: false });
     } catch (error) {

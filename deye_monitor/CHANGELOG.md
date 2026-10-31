@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.6
+
+The Modbus address depends on the connection type (field finding: four SG04LP3 in parallel).
+
+- Through an RS485 gateway the address is the inverter's parallel “Modbus SN” (master 1, slaves 2,
+  3, …); through a Solarman V5 logger it is always 1, also for slaves.
+- Inverter form: per route the address help text follows the connection type; an unedited address
+  is prefilled with 1 again when the connection is switched; an unedited fallback address is 1 for
+  a logger fallback. A logger route with an address other than 1 shows a non-blocking warning, also
+  in the connection check after a failed probe.
+- Config and API: an unset `fallback_unit_id` defaults to 1 if the fallback endpoint is a Solarman
+  V5 logger (otherwise still the primary's `unit_id`). Explicit values are untouched.
+
 ## 0.2.5
 
 Small UI and test hardening.

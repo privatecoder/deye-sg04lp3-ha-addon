@@ -200,6 +200,8 @@ progress.load-bar.over::-moz-progress-bar { background: var(--err); }
 .feature[hidden] { display: none; }
 input.locked { background: var(--line); color: var(--muted); cursor: not-allowed; }
 .help { color: var(--muted); font-size: .9rem; margin-bottom: .5rem; }
+.help.warn-text { color: var(--warn); }
+.help.warn-text[hidden] { display: none; }
 .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .5rem; }
 .option { display: flex; gap: .6rem; align-items: flex-start; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; background: var(--card); }
 .option:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }

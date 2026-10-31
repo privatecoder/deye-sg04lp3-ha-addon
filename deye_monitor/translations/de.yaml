@@ -70,7 +70,7 @@ configuration:
           genutzt und nur, wenn dieselbe Seriennummer antwortet.
       fallback_unit_id:
         name: Unit-ID Ersatzverbindung
-        description: 'Unit-ID auf dem Ersatzweg. Standard: die Unit-ID.'
+        description: 'Unit-ID auf dem Ersatzweg. Standard: die Unit-ID, bei einem Solarman-V5-Logger 1.'
       expected_serial:
         name: Erwartete Seriennummer
         description: Optional 10-stellige Seriennummer des Wechselrichters; abweichende Geräte werden

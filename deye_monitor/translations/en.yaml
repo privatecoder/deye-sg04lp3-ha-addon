@@ -70,7 +70,7 @@ configuration:
           only if the same serial number answers.
       fallback_unit_id:
         name: Fallback unit ID
-        description: Unit ID on the fallback path. Defaults to the unit ID.
+        description: Unit ID on the fallback path. Defaults to the unit ID, or 1 for a Solarman V5 logger.
       expected_serial:
         name: Expected serial
         description: Optional 10-character inverter serial number; mismatching devices are quarantined.

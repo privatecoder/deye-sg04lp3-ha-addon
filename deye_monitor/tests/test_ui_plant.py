@@ -443,3 +443,77 @@ async def test_the_identifier_of_an_existing_connection_and_inverter_is_visibly_
                 "nicht mehr ändern"
             )
             await dialog.get_by_role("button", name="Abbrechen").click()
+
+
+async def test_modbus_address_prefill_help_and_hint_follow_the_connection_type(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await seed(rig, inverter=False)
+        await rig.add_server("lg1", "solarman_v5_tcp")
+        status, body = await rig.call(
+            "POST", "/api/plant/endpoints", rig.endpoint_body("lg1", "solarman_v5_tcp")
+        )
+        assert status == 200, body
+        page = (await open_page(browser, url + "#/plant")).page
+        await page.get_by_role("button", name="Wechselrichter hinzufügen").click()
+        unit_help = page.locator('dialog [data-field="unit_id"] .help:not(.warn-text)')
+        unit_warning = page.locator('dialog [data-field="unit_id"] .warn-text')
+        fallback_unit = field(page, "fallback_unit_id")
+        await field(page, "name").fill("Slave")
+
+        await dialog_select(page, "endpoint", "gw1")
+        await expect(unit_help).to_contain_text("Modbus SN")
+        await expect(unit_help).to_contain_text("Slaves 2, 3")
+        await field(page, "unit_id").fill("2")  # edited: no longer prefilled
+        await dialog_select(page, "endpoint", "lg1")
+        await expect(field(page, "unit_id")).to_have_value("2")
+        await expect(unit_help).to_contain_text("immer 1, auch bei parallelen Slaves")
+        await expect(unit_warning).to_be_visible()
+        await expect(unit_warning).to_contain_text("nur auf Adresse 1")
+
+        await field(page, "unit_id").fill("1")
+        await expect(unit_warning).to_be_hidden()
+        await dialog_select(page, "endpoint", "gw1")
+        await dialog_select(page, "endpoint", "lg1")
+        await expect(field(page, "unit_id")).to_have_value("1")
+
+        await dialog_select(page, "endpoint", "gw1")
+        await field(page, "unit_id").fill("3")
+        await dialog_select(page, "fallback_endpoint", "lg1")
+        await expect(fallback_unit).to_have_value("1")  # the logger fallback is 1, not the master unit
+        await expect(page.locator('dialog [data-field="fallback_unit_id"] .help:not(.warn-text)')).to_contain_text(
+            "immer 1"
+        )
+        await expect(page.locator('dialog [data-field="fallback_unit_id"] .warn-text')).to_be_hidden()
+        await fallback_unit.fill("4")
+        await expect(page.locator('dialog [data-field="fallback_unit_id"] .warn-text')).to_be_visible()
+        await fallback_unit.fill("1")
+
+        await page.locator("dialog").get_by_role("button", name="Speichern", exact=True).click()
+        await expect(page.locator(".toast.ok")).to_be_visible()
+        saved = rig.service.plant.inverters[0]
+        assert (saved.unit_id, saved.fallback_endpoint, saved.fallback_unit_id) == (3, "lg1", 1)
+
+
+async def test_a_v5_address_other_than_one_does_not_block_saving_and_warns_in_the_check(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await rig.add_server("lg1", "solarman_v5_tcp")
+        status, body = await rig.call(
+            "POST", "/api/plant/endpoints", rig.endpoint_body("lg1", "solarman_v5_tcp")
+        )
+        assert status == 200, body
+        page = (await open_page(browser, url + "#/plant")).page
+        await page.get_by_role("button", name="Wechselrichter hinzufügen").click()
+        await field(page, "name").fill("Slave")
+        await dialog_select(page, "endpoint", "lg1")
+        await field(page, "unit_id").fill("2")  # the fake logger serves unit 1 only: the probe fails
+        await page.locator("dialog").get_by_role("button", name="Verbindung prüfen").click()
+        result = page.locator("dialog .test-result.fail")
+        await expect(result).to_be_visible()
+        await expect(result.locator(".hint.warn")).to_contain_text("nur auf Adresse 1")
+        await page.locator("dialog").get_by_role("button", name="Speichern", exact=True).click()
+        await expect(page.locator(".toast.ok")).to_be_visible()
+        assert rig.service.plant.inverters[0].unit_id == 2

@@ -414,12 +414,43 @@ def plant_problems(
     return problems
 
 
+def _v5_fallback_defaults(data: Any) -> Any:
+    """A Solarman V5 logger only answers on unit 1, so an unset ``fallback_unit_id`` on such a
+    fallback defaults to 1 instead of the primary's unit. Explicit values stay untouched."""
+    if not isinstance(data, dict):
+        return data
+    endpoints = data.get("endpoints")
+    inverters = data.get("inverters")
+    if not isinstance(endpoints, list | tuple) or not isinstance(inverters, list | tuple):
+        return data
+    v5 = {
+        e.get("id")
+        for e in endpoints
+        if isinstance(e, dict) and e.get("transport") == Transport.SOLARMAN_V5_TCP.value
+    }
+    fixed = []
+    for i in inverters:
+        if (
+            isinstance(i, dict)
+            and i.get("fallback_endpoint") in v5
+            and i.get("fallback_unit_id") is None
+        ):
+            i = {**i, "fallback_unit_id": 1}
+        fixed.append(i)
+    return {**data, "inverters": fixed}
+
+
 class PlantConfig(_Model):
     """Connections and inverters: what the web interface edits and ``/data/plant.json`` stores.
     May be empty (a fresh installation)."""
 
     endpoints: tuple[EndpointConfig, ...] = ()
     inverters: tuple[InverterConfig, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _defaults(cls, data: Any) -> Any:
+        return _v5_fallback_defaults(data)
 
     @model_validator(mode="after")
     def _domain(self) -> PlantConfig:
@@ -458,6 +489,11 @@ class AppConfig(_Model):
             if e.id == endpoint_id:
                 return e
         raise KeyError(endpoint_id)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _defaults(cls, data: Any) -> Any:
+        return _v5_fallback_defaults(data)
 
     @model_validator(mode="after")
     def _domain(self) -> AppConfig:

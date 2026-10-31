@@ -12,6 +12,7 @@ import pytest
 from deye_monitor.config import (
     ConfigError,
     EnergyResolution,
+    PlantConfig,
     Transport,
     load_config,
     parse_config,
@@ -163,6 +164,25 @@ def test_fallback_unit_override() -> None:
     assert parse_config(data).inverters[0].fallback_unit_id == 5
     data["inverters"][0].pop("fallback_endpoint")
     assert "fallback_unit_id" in bad(data)
+
+
+def test_fallback_unit_defaults_to_one_for_a_v5_fallback_and_keeps_explicit_values() -> None:
+    data = {
+        "endpoints": [gw(1), logger(1)],
+        "inverters": [inv(1, "gw1", unit_id=3, fallback_endpoint="logger1")],
+    }
+    assert parse_config(data).inverters[0].fallback_unit_id == 1
+    assert PlantConfig.model_validate(data).inverters[0].fallback_unit_id == 1
+    data["inverters"][0]["fallback_unit_id"] = 3
+    assert parse_config(data).inverters[0].fallback_unit_id == 3
+    # a gateway fallback keeps following the primary's unit
+    swapped = {
+        "endpoints": [gw(1), logger(1)],
+        "inverters": [inv(1, "logger1", unit_id=1, fallback_endpoint="gw1")],
+    }
+    assert parse_config(swapped).inverters[0].fallback_unit_id == 1
+    swapped["inverters"][0]["unit_id"] = 2
+    assert parse_config(swapped).inverters[0].fallback_unit_id == 2
 
 
 @pytest.mark.parametrize(
