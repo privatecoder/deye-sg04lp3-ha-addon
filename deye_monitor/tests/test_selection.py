@@ -380,7 +380,7 @@ def test_loading_reports_and_discards_unknown_keys(tmp_path: Path) -> None:
     assert ("unknown_field", "deye1.old_field") in codes
     assert ("unknown_inverter", "gone") in codes
     sel = m.selection("deye1")
-    assert m.revision == 4 and sel.features.battery is False and sel.features.bms is False
+    assert m.revision == 4 and sel.features.battery is False and sel.features.bms is True
     assert sel.added == frozenset() and sel.removed == {"battery_soc", "gen_voltage_a"}
     assert placeholder not in sel.effective
 

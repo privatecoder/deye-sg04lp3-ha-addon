@@ -2,6 +2,8 @@
 
 ## 0.2.11
 
+- The server-side feature default `bms` is now `true` too (the wizard shows the server's draft, so the client default alone had no effect). A plant without a saved answer gets the BMS sensors in its template (65 instead of 59 for the default plant).
+
 - **Setup wizard, BMS question**: "Does the battery talk to the inverter (BMS cable)?" now
   defaults to "Yes, with communication" when a battery is present (it was "No", which deselected
   all BMS sensors). The device setting R98 (battery type) is read as a suggestion like the other

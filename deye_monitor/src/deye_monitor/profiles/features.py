@@ -44,7 +44,7 @@ class Features(BaseModel):
     utility_grid: bool = True
     grid_port_use: GridPortUse = "utility"
     battery: bool = True
-    bms: bool = False
+    bms: bool = True
     gen_port_mode: GenPortMode = "unused"
     mppt1_used: bool = True
     mppt2_used: bool = True

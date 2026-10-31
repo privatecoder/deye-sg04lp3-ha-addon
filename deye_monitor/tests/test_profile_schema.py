@@ -520,7 +520,7 @@ def test_predicate_negatives_and_evaluation() -> None:
     bad(all_of=[{}], feature="battery", equals=True)
     bad(bogus=1)
 
-    f = Features(battery=True, gen_port_mode="ac_coupled")
+    f = Features(battery=True, bms=False, gen_port_mode="ac_coupled")
     assert Predicate.model_validate({}).evaluate(f)
     assert Predicate.model_validate({}).is_always
     assert Predicate.model_validate({"feature": "battery", "equals": True}).evaluate(f)
@@ -541,7 +541,7 @@ def test_predicate_negatives_and_evaluation() -> None:
         }
     )
     assert nested.evaluate(f)
-    assert not nested.evaluate(Features(parallel=True))
+    assert not nested.evaluate(Features(parallel=True, bms=False))
     assert nested.features_used() == {Feature.BATTERY, Feature.BMS, Feature.PARALLEL}
 
 
