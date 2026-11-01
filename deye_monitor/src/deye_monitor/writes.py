@@ -408,12 +408,15 @@ class WriteService:
         except READ_ERRORS as exc:
             raise Refused("read_failed", 409, error=type(exc).__name__) from None
 
-    async def _guarded_word(self, inv: InverterRuntime, register: int) -> int | None:
+    async def _guarded_word(
+        self, inv: InverterRuntime, register: int, expected: str | None = None
+    ) -> int | None:
         """One register of ``inv`` on its PRIMARY route, only if the serial number read in the same
-        bus critical section is the bound one (a changed connection may be another device)."""
+        bus critical section is the bound one (a changed connection may be another device) and,
+        when ``expected`` is given, the bound one is the serial saved with an operation."""
         route = inv.routes[0]
         bound = inv.book.bound(inv.id)
-        if bound is None:
+        if bound is None or (expected is not None and bound != expected):
             return None
 
         async def read() -> int | None:
@@ -429,17 +432,19 @@ class WriteService:
         except READ_ERRORS:
             return None
 
-    async def _observed_word(self, inv: InverterRuntime, register: int) -> int | None:
+    async def _observed_word(
+        self, inv: InverterRuntime, register: int, expected: str | None = None
+    ) -> int | None:
         """Read-back of one register after a write. A failed exchange (an unanswered write starts
         the endpoint cooldown) is retried ONCE after the cooldown: reading is harmless, writing
         is never repeated."""
-        word = await self._guarded_word(inv, register)
+        word = await self._guarded_word(inv, register, expected)
         if word is not None:
             return word
         remaining = float(getattr(inv.routes[0].transport, "cooldown_remaining_s", 0.0))
         if 0 < remaining <= MAX_COOLDOWN_WAIT_S:
             await self.sleep(remaining + 0.05)
-            return await self._guarded_word(inv, register)
+            return await self._guarded_word(inv, register, expected)
         return None
 
     @staticmethod
@@ -835,11 +840,12 @@ class WriteService:
                 self._record("result", op)
                 return op
             op["status"], op["reason"], op["response"] = sent.status, sent.reason, sent.response
+            sent_at = self._last_send if self._last_send is not None else self.clock()
             self._record("result", op)
             await self.sleep(self.settings.observe_delay_s)
             await self._observe(permit, op, desc)
             if op["peers"]:
-                self._schedule_late(op, desc)
+                self._schedule_late(op, desc, sent_at)
             self._record("result", op)
             return op
 
@@ -986,21 +992,36 @@ class WriteService:
     async def _peer_reads(
         self, op: Mapping[str, Any], desc: WriteDescriptor
     ) -> list[dict[str, Any]]:
-        """A fresh read-only observation of the peers recorded with ``op`` (never a write)."""
+        """A fresh read-only observation of the peers recorded with ``op`` (never a write). Each
+        read is bound to the peer serial saved in the operation: another device behind the same
+        id is ``unavailable`` / ``identity_changed``, its value is never compared."""
         out = []
         for peer in op["peers"]:
-            word = await self._peer_word(peer["id"], desc)
+            expected = peer.get("serial")
+            inv = self.runtime.inverters.get(peer["id"])
+            observed = None if inv is None else inv.book.bound(peer["id"])
+            changed = expected is not None and observed != expected
+            word = (
+                None
+                if inv is None or changed
+                else await self._observed_word(inv, desc.register, expected)
+            )
             out.append(
                 {
                     "id": peer["id"],
                     "word": word,
                     "value": None if word is None else desc.display(desc.field_of(word)),
                     "state": self._peer_state(desc, word, op["requested_field"]),
+                    "reason": "identity_changed" if changed else None,
+                    "expected_serial": expected,
+                    "observed_serial": observed,
                 }
             )
         return out
 
-    async def _late_observe(self, op: dict[str, Any], desc: WriteDescriptor, delay: float) -> None:
+    async def _late_observe(
+        self, op: dict[str, Any], desc: WriteDescriptor, delay: float, sent_at: float
+    ) -> None:
         """The second peer observation, a read-only look at a later moment: it shows whether the
         peers followed, it does not say why."""
         late = op["late_observation"]
@@ -1014,7 +1035,11 @@ class WriteService:
                     read = reads[peer["id"]]
                     peer["late_word"], peer["late_value"] = read["word"], read["value"]
                     peer["late_state"] = read["state"]
+                    peer["late_reason"] = read["reason"]
+                    peer["late_expected_serial"] = read["expected_serial"]
+                    peer["late_observed_serial"] = read["observed_serial"]
                 late["status"], late["at"] = LATE_DONE, self.wall()
+                late["observed_after_s"] = round(self.clock() - sent_at, 1)
         except asyncio.CancelledError:
             late["status"] = LATE_INTERRUPTED
             raise
@@ -1024,15 +1049,16 @@ class WriteService:
         finally:
             self._record("late_observation", op)
 
-    def _schedule_late(self, op: dict[str, Any], desc: WriteDescriptor) -> None:
-        delay = max(0.0, self.settings.late_observe_delay_s - self.settings.observe_delay_s)
+    def _schedule_late(self, op: dict[str, Any], desc: WriteDescriptor, sent_at: float) -> None:
+        """Due ``late_observe_delay_s`` after the send, however long the first look took."""
+        delay = max(0.0, self.settings.late_observe_delay_s - (self.clock() - sent_at))
         op["late_observation"] = {
             "status": LATE_PENDING,
             "after_s": self.settings.late_observe_delay_s,
             "due_at": self.wall() + delay,
             "at": None,
         }
-        task = asyncio.ensure_future(self._late_observe(op, desc, delay))
+        task = asyncio.ensure_future(self._late_observe(op, desc, delay, sent_at))
         self._late.add(task)
         task.add_done_callback(self._late.discard)
 

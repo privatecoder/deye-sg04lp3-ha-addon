@@ -17,11 +17,11 @@ Owner collection round.
   R65-R209 and R339-R429, all nine settings included, to every slave; a slave's differing value is
   overwritten by a later master snapshot) plus the two field anchors (R108, R130). Owner decision:
   a parallel slave is not written. The role is read fresh at the preview and at the send point;
-  slave or unreadable role is rejected as `parallel_slave` (no permit, no FC16), a single inverter
+  slave role is rejected as `parallel_slave`, a failed R336 read as `read_failed` (no permit, no FC16), a single inverter
   or parallel mode off is unaffected, and the lock follows the current role. The dialog and the
   plant page say so with a link to the master; the release checkboxes of a slave are disabled. On
-  the master the app says that the value is distributed (usually within about 20 s in the owner's
-  plant, not guaranteed). Persistence across a restart is still unproven.
+  the master the app says that the value is distributed (in one owner test, R108 reached all
+  slaves within about 18 s; no latency is guaranteed). Persistence across a restart is still unproven.
 - **Inverter page**: “Change settings” sits directly below the page head, above the feature and
   sensor steps.
 - **Plant card**: the member list has a gap between its items.

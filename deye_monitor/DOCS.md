@@ -383,10 +383,10 @@ settings behave the same. Therefore a **slave is locked for writing**: the dialo
 show “In parallel operation the master distributes these settings to all units. Writing is only
 possible on the master.” with a link to the master, and the release checkboxes of a slave are
 disabled. The lock is decided from a fresh role read (R336) at the preview **and** at the send
-point (`parallel_slave`, nothing is sent); an unreadable role also locks, a single inverter or a
+point (`parallel_slave`, nothing is sent); an R336 read that fails is rejected as `read_failed` and a role word that does not decode locks as `parallel_slave` (nothing is sent), a single inverter or a
 plant with parallel mode off is unaffected, and the lock follows the current role. On the master
-the app says that the value is distributed to the slaves (usually within about 20 s in the
-owner's plant, not guaranteed); the 30 s observation shows whether they follow. Matching values
+the app says that the value is distributed to the slaves (in one owner test, R108 reached all
+slaves within about 18 s; no latency is guaranteed); the 30 s observation shows whether they follow. Matching values
 still do not prove synchronization.
 
 **Statuses** (also in the audit log, `/data/write-audit.jsonl`): `rejected` (nothing was sent),

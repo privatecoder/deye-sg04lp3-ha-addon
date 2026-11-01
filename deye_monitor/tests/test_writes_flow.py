@@ -654,10 +654,12 @@ async def test_plant_writes_are_paced_and_the_observation_waits(
         await write(rig, "deye1", "grid_charge_current", 50)
         await asyncio.sleep(0.05)  # the later peer observation waits its remaining 29 s
         # no pacing before the first write, then the observation delay, then the later look
-        assert waits == [1.0, 29.0]
+        # (the real clock barely moves: the later look is due 30 s after the send, not 29 s)
+        assert len(waits) == 2 and waits[0] == 1.0 and 29.0 < waits[1] <= 30.0
         await write(rig, "deye2", "grid_charge_current", 55)
         await asyncio.sleep(0.05)
-        assert len(waits) == 5 and 4.0 < waits[2] <= 5.0 and waits[3:] == [1.0, 29.0]
+        assert len(waits) == 5 and 4.0 < waits[2] <= 5.0 and waits[3] == 1.0
+        assert 29.0 < waits[4] <= 30.0
 
 
 async def test_writes_are_serialised_across_the_plant(

@@ -273,19 +273,30 @@ export function openSettingsDialog(invId) {
 
   // -- pieces -----------------------------------------------------------------------------------
 
+  // The label says what was really waited when the look came more than a second off its schedule.
+  function lateSeconds(late) {
+    const planned = (late && late.after_s) || 30;
+    const real = late && late.observed_after_s;
+    return typeof real === 'number' && Math.abs(real - planned) > 1 ? Math.round(real) : planned;
+  }
+
+  function unavailableText(reason) {
+    return reason === 'identity_changed' ? t('writes.peer.identity_changed') : t('writes.peer.unavailable');
+  }
+
   function lateCell(op, p, late) {
     if (!late) return h('td', {}, '–');
     if (late.status === 'pending') return h('td', { class: 'late pending' }, h('span', { class: 'late-countdown' }, t('writes.peer.late_wait', { s: Math.max(0, Math.ceil((view.lateDue - Date.now()) / 1000)) })));
     if (late.status !== 'done') return h('td', { class: 'late' }, t('writes.peer.late_missing'));
     const word = p.late_word;
     return h('td', { class: `late late-state ${p.late_state}` },
-      word === null || word === undefined ? t('writes.peer.unavailable') : `${fmtValue(op, p.late_value)} (${hex(word)}) · ${t(`writes.peer.${p.late_state}`)}`);
+      word === null || word === undefined ? unavailableText(p.late_reason) : `${fmtValue(op, p.late_value)} (${hex(word)}) · ${t(`writes.peer.${p.late_state}`)}`);
   }
 
   function peerTable(op, peers, withLater, late) {
     if (!peers.length) return h('p', { class: 'muted' }, t('writes.peers_none'));
     return h('table', { class: 'peer-table' },
-      h('thead', {}, h('tr', {}, h('th', {}, t('writes.peer.name')), h('th', {}, t('writes.peer.baseline')), withLater ? h('th', {}, t('writes.peer.later')) : null, withLater ? h('th', {}, t('writes.peer.state')) : null, withLater ? h('th', {}, t('writes.peer.late', { s: (late && late.after_s) || 30 })) : null)),
+      h('thead', {}, h('tr', {}, h('th', {}, t('writes.peer.name')), h('th', {}, t('writes.peer.baseline')), withLater ? h('th', {}, t('writes.peer.later')) : null, withLater ? h('th', {}, t('writes.peer.state')) : null, withLater ? h('th', {}, t('writes.peer.late', { s: lateSeconds(late) })) : null)),
       h('tbody', {}, peers.map((p) => h('tr', { 'data-peer': p.id },
         h('th', { scope: 'row' }, p.name || p.id),
         h('td', {}, p.baseline_word === null || p.baseline_word === undefined ? t('writes.peer.unavailable') : `${fmtValue(op, p.baseline_value)} (${hex(p.baseline_word)})`),
@@ -306,7 +317,7 @@ export function openSettingsDialog(invId) {
     return h('div', { class: 'rereads' }, reads.map((read) => h('div', { class: 'reread', 'data-reread-at': String(read.at) },
       h('p', { class: 'muted small' }, t('writes.reread.at', { time: when(read.at) })),
       h('ul', {}, read.peers.map((p) => h('li', { 'data-peer': p.id }, `${names.get(p.id) || p.id}: `,
-        p.word === null || p.word === undefined ? t('writes.peer.unavailable') : `${fmtValue(op, p.value)} (${hex(p.word)}) · ${t(`writes.peer.${p.state}`)}`))))));
+        p.word === null || p.word === undefined ? unavailableText(p.reason) : `${fmtValue(op, p.value)} (${hex(p.word)}) · ${t(`writes.peer.${p.state}`)}`))))));
   }
 
   function rowView(row) {
@@ -367,7 +378,7 @@ export function openSettingsDialog(invId) {
       r.attribution === 'not_established' ? h('p', { class: 'banner warn' }, t('writes.result.unknown_note')) : null,
       h('h4', {}, t('writes.result.peers')),
       peerTable(op, r.peers || [], true, r.late_observation),
-      (r.peers || []).length ? h('p', { class: 'muted small' }, t('writes.peer.late_note', { s: (r.late_observation && r.late_observation.after_s) || 30 })) : null,
+      (r.peers || []).length ? h('p', { class: 'muted small' }, t('writes.peer.late_note', { s: lateSeconds(r.late_observation) })) : null,
       parallelRole(r.inverter) === 'master' && (r.peers || []).length ? h('p', { class: 'muted small master-hint' }, t('writes.master_hint')) : null,
       h('div', { class: 'actions left' }, rereadButton(r)),
       rereadsView(op, r),
