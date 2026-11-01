@@ -5,6 +5,7 @@ strictly ascending. No neighbour-only repair. A stored 23:59 is a valid incumben
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,7 +13,7 @@ from tests.plant_helpers import plant_rig
 from tests.write_helpers import build_plant, confirm, err, fast, fc16, preview, write
 
 
-async def refused(rig, key: str, value: object) -> tuple[int, dict]:  # type: ignore[no-untyped-def]
+async def refused(rig, key: str, value: object) -> tuple[int, dict[str, Any]]:  # type: ignore[no-untyped-def]
     status, body = await preview(rig, "deye1", key, value)
     assert rig.servers["gw1"].responder.writes == [] and fc16(rig.servers["gw1"]) == []
     return status, body

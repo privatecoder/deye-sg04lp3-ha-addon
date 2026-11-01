@@ -36,6 +36,22 @@ async def release(page: Page, inverter: str, operations: list[str]) -> None:
     await expect(page.locator(".toast.ok")).to_be_visible()
 
 
+# every element inside the dialog that sticks out past the dialog's content box (or scrolls itself)
+_OVERFLOWING = """(() => {
+  const d = document.querySelector('dialog');
+  const box = d.getBoundingClientRect();
+  const bad = [];
+  if (d.scrollWidth > d.clientWidth) bad.push('dialog ' + d.scrollWidth + '>' + d.clientWidth);
+  for (const e of d.querySelectorAll('*')) {
+    const r = e.getBoundingClientRect();
+    if (r.width && (r.right > box.right + 0.5 || e.scrollWidth > e.clientWidth + 0.5))
+      bad.push(e.tagName.toLowerCase() + '.' + e.className + ' ' +
+               (e.textContent || '').trim().slice(0, 40));
+  }
+  return bad;
+})()"""
+
+
 async def test_release_preview_confirm_and_result(
     browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -144,11 +160,8 @@ async def test_english_texts_the_bit_operation_and_a_rejected_value(
         await dialog.get_by_role("button", name="Write now").click()
         await expect(dialog.locator(".write-status")).to_have_text("Read-back confirmed")
         assert rig.servers["gw1"].responder.regs[130] == 0x0001
-        assert (
-            await page.evaluate(
-                "(d => d.scrollWidth > d.clientWidth)(document.querySelector('dialog'))"
-            )
-        ) is False
+        bad = await page.evaluate(_OVERFLOWING)
+        assert not bad, "\n".join(bad)
         await shot(page, "writes-result-phone-en")
         await s.check()
 

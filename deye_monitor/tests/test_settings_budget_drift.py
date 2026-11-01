@@ -110,11 +110,14 @@ async def test_a_periodic_snapshot_records_drift_once_and_never_reasserts(
         assert op["status"] == "readback_confirmed"
         writes = len(rig_.servers["gw1"].responder.writes)
         await svc.snapshot("deye1")
-        assert svc.operation(op["operation_id"])["drift"] is None  # unchanged: nothing to record
+        current = svc.operation(op["operation_id"])
+        assert current is not None and current["drift"] is None  # unchanged: nothing to record
         rig_.servers["gw1"].responder.regs[108] = 77  # changed behind our back (LCD, cloud)
         await svc.snapshot("deye1")
         await svc.snapshot("deye1")
-        drift = svc.operation(op["operation_id"])["drift"]
+        after = svc.operation(op["operation_id"])
+        assert after is not None
+        drift = after["drift"]
         assert drift["word"] == 77
         assert [x["event"] for x in audit_lines(rig_)].count("drift") == 1  # recorded once
         assert len(rig_.servers["gw1"].responder.writes) == writes  # never reasserted

@@ -358,6 +358,7 @@ dialog.modal::backdrop { background: rgb(0 0 0 / 55%); }
 .peer-table, .audit-table { width: 100%; border-collapse: collapse; font-size: .9rem; margin: .25rem 0 .75rem; }
 .peer-table th, .peer-table td, .audit-table th, .audit-table td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 .peer-table thead th, .audit-table thead th { color: var(--muted); font-weight: 500; }
+.peer-table th, .peer-table td, .audit-table th, .audit-table td { overflow-wrap: anywhere; }
 .peer-state.different { color: var(--warn); }
 .peer-state.unavailable { color: var(--muted); }
 .writes-dialog .verify { margin-top: .5rem; }

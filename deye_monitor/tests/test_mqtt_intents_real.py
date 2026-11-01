@@ -185,7 +185,7 @@ async def test_a_command_is_refused_at_receipt_while_the_unit_is_unavailable(
 class Clock:
     def __init__(self, svc: WriteService) -> None:
         self.now = svc.clock()
-        svc.clock = self  # type: ignore[method-assign,assignment]
+        svc.clock = self
 
     def __call__(self) -> float:
         return self.now

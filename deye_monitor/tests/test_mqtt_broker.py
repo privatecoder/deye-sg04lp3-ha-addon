@@ -19,7 +19,13 @@ import pytest
 from deye_monitor.config import MqttConfig, PollConfig
 from deye_monitor.device import InverterState, Snapshot
 from deye_monitor.ha_discovery import Namespace
-from deye_monitor.mqtt import InverterInfo, MqttPublisher, PublisherSettings, aiomqtt_factory
+from deye_monitor.mqtt import (
+    Connection,
+    InverterInfo,
+    MqttPublisher,
+    PublisherSettings,
+    aiomqtt_factory,
+)
 from deye_monitor.mqtt_discovery import valid_discovery_document
 from deye_monitor.profiles.schema import load_profile
 from deye_monitor.store import JsonStore
@@ -410,6 +416,9 @@ class _BlockingOffline:
     async def subscribe(self, topic: str, *, qos: int) -> None:
         await self.inner.subscribe(topic, qos=qos)
 
+    async def unsubscribe(self, topic: str) -> None:
+        await self.inner.unsubscribe(topic)
+
     def messages(self) -> Any:
         return self.inner.messages()
 
@@ -425,7 +434,7 @@ async def test_outer_deadline_cancelling_the_withdrawal_still_fires_the_will(
     proxies: list[_BlockingOffline] = []
 
     @contextlib.asynccontextmanager
-    async def factory() -> AsyncIterator[_BlockingOffline]:
+    async def factory() -> AsyncIterator[Connection]:
         async with real() as conn:
             proxy = _BlockingOffline(conn)
             proxies.append(proxy)
