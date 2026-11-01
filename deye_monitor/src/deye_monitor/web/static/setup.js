@@ -317,6 +317,7 @@ export function setupView(invId) {
     const plantTipEl = plant.length ? h('span', { class: 'sensor-desc plant-tip' }, plantTip) : null;
     const plantWarn = h('span', { class: 'plant-warn', role: 'status', hidden: true });
     const description = localText(entry.description);
+    const noticeEl = entry.notice ? h('span', { class: 'sensor-desc sensor-notice' }, t(`sensor.notice.${entry.notice}`)) : null;
     const row = h('div', { class: 'sensor', 'data-key': entry.key },
       h('label', { class: 'sensor-main', for: id },
         input,
@@ -325,9 +326,11 @@ export function setupView(invId) {
           h('span', { class: 'sensor-desc', id: `${id}-desc` }, description || ''),
           h('span', { class: 'sensor-meta' },
             entry.hint ? h('span', { class: `chip hint-${entry.hint}` }, t(`sensor.hint.${entry.hint}`)) : null,
+            entry.notice ? h('span', { class: 'chip hint-notice' }, t('sensor.notice')) : null,
             expert ? h('span', { class: 'chip' }, t(`point.${entry.point}`)) : null,
             plantChip,
             warn, note),
+          noticeEl,
           plantTipEl,
           plantWarn)),
       h('span', { class: 'sensor-actions' }, state_, reset));
@@ -683,7 +686,7 @@ export function setupView(invId) {
     h('header', { class: 'page-head' },
       h('div', {}, h('h1', {}, base.name, h('span', { class: 'muted id' }, ` ${base.id}`)), refs.status),
       state.inverters.length > 1 ? h('button', { class: 'btn', type: 'button', disabled: !canEdit(), onClick: transfer }, t('overview.transfer')) : null),
-    refs.banner, refs.awaiting, step1, step2, writes ? writes.el : null,
+    refs.banner, refs.awaiting, writes ? writes.el : null, step1, step2,
     h('div', { class: 'action-bar', role: 'region', 'aria-label': t('setup.actions') },
       h('div', { class: 'bar-info' }, refs.budget, refs.dirtyNote),
       h('div', { class: 'bar-actions' },

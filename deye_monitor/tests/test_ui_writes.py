@@ -4,8 +4,11 @@ device: the plant rig only knows local fake servers."""
 
 from __future__ import annotations
 
+import asyncio
 import re
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from playwright.async_api import Browser, Page, expect
@@ -13,7 +16,7 @@ from playwright.async_api import Browser, Page, expect
 from tests.plant_helpers import plant_ui
 from tests.test_ui import browser, shot  # noqa: F401
 from tests.test_ui_plant import open_page
-from tests.write_helpers import build_plant, fast, fc16, settle
+from tests.write_helpers import FAST, build_plant, fast, fc16, settle
 
 pytestmark = pytest.mark.ui
 
@@ -162,3 +165,119 @@ async def test_an_inverter_without_release_offers_no_way_to_change_settings(
         await expect(released.page.locator("#open-writes")).to_be_enabled()
         assert all(f.responder.writes == [] for f in rig.servers.values())
         await released.check()
+
+
+async def test_the_later_observation_and_reading_the_others_again(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await build_plant(rig, regs={"deye2": {"r128": 20}})
+        fast(rig, replace(FAST, late_observe_delay_s=2.0))
+        s = await open_page(browser, url + "#/inv/deye1")
+        page = s.page
+        await page.locator("#open-writes").click()
+        dialog = page.locator("dialog")
+        row = dialog.locator('article.write-row[data-operation="grid_charge_current"]')
+        await row.locator("input[type=text]").fill("50")
+        await row.get_by_role("button", name="Vorschau").click()
+        await dialog.get_by_role("button", name="Jetzt schreiben").click()
+        result = dialog.locator("section.write-result")
+        peer = result.locator('tr[data-peer="deye2"]')
+        await expect(result.locator("thead")).to_contain_text("Vorher")
+        await expect(result.locator("thead")).to_contain_text("Nach 1 s")
+        await expect(result.locator("thead")).to_contain_text("Nach 2 s")
+        await expect(peer.locator(".peer-state")).to_have_text("anders")
+        await expect(peer.locator(".late-countdown")).to_contain_text("wird gelesen in")
+        rig.servers["gw2"].responder.regs[128] = 50  # the other unit follows
+        await expect(peer.locator("td.late-state")).to_contain_text("50 A (0x0032) · gleich")
+        # the first observation stays what it was
+        await expect(peer.locator(".peer-state")).to_have_text("anders")
+        await result.get_by_role("button", name="Andere erneut lesen").click()
+        await expect(result.locator(".reread li")).to_contain_text("50 A (0x0032) · gleich")
+        # the same button is in the log entry
+        await expect(dialog.locator(".audit-table button[data-reread]")).to_have_count(1)
+        assert len(fc16(rig.servers["gw1"])) == 1 and fc16(rig.servers["gw2"]) == []
+        await s.check()
+
+
+async def roles_known(rig: Any) -> None:
+    """The status view knows the role once the settings were polled (the UI reads it from there)."""
+    for _ in range(200):
+        _status, body = await rig.call("GET", "/api/inverters")
+        roles = [(i["status"].get("identity") or {}).get("role") for i in body["inverters"]]
+        if len(roles) == 2 and all(roles):
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError("roles were not read")
+
+
+async def test_a_slave_cannot_be_written_and_points_to_the_master(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await build_plant(
+            rig,
+            enable=("deye1", "deye2"),
+            operations=["grid_charge_current"],
+            regs={"deye1": {"r336": 0x0001}, "deye2": {"r336": 0x0003}},
+        )
+        await roles_known(rig)
+        s = await open_page(browser, url + "#/inv/deye1")
+        page = s.page
+        notice = page.locator(".writes-panel .slave-locked")
+        await expect(notice).to_contain_text("verteilt der Master diese Einstellungen")
+        await expect(notice.locator("a.master-link")).to_have_attribute("href", "#/inv/deye2")
+        await expect(page.locator("#open-writes")).to_be_disabled()
+        await shot(page, "writes-slave-de")
+        # the master offers the dialog and says that it distributes the value
+        master_view = await open_page(browser, url + "#/inv/deye2")
+        page = master_view.page
+        await expect(page.locator("#open-writes")).to_be_enabled()
+        await expect(page.locator(".writes-panel .master-hint")).to_contain_text("an die Slaves")
+        # plant page: the release of a slave cannot be extended
+        plant_view = await open_page(browser, url + "#/plant")
+        page = plant_view.page
+        slave = page.locator('article.inverter[data-inverter="deye1"] details.writes-section')
+        await expect(slave.locator(".slave-locked")).to_be_visible()
+        await expect(slave.locator('input[data-operation="grid_charge_current"]')).to_be_disabled()
+        master = page.locator('article.inverter[data-inverter="deye2"] details.writes-section')
+        await expect(master.locator('input[data-operation="grid_charge_current"]')).to_be_enabled()
+        assert all(f.responder.writes == [] for f in rig.servers.values())
+        await s.check()
+        await master_view.check()
+        await plant_view.check()
+
+
+async def test_the_picker_notices_and_the_missing_sensors(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await build_plant(rig, enable=())
+        s = await open_page(browser, url + "#/inv/deye1")
+        page = s.page
+        grid = page.locator('.sensor[data-key="grid_selected_power_total"]')
+        grid_notice = await grid.locator(".sensor-notice").text_content() or ""
+        assert "nicht mit ihr zusammenzählen" in grid_notice
+        assert await grid.locator(".chip.hint-notice").count() == 1
+        bms = page.locator('.sensor[data-key="bms_discharge_voltage"] .sensor-notice')
+        assert "BMS-Protokoll" in (await bms.text_content() or "")
+        for key in (
+            "temp_dc_transformer",
+            "bms_offgrid_charge_limit",
+            "bms_offgrid_discharge_limit_raw",
+            "load_frequency",
+        ):
+            assert await page.locator(f'.sensor[data-key="{key}"]').count() == 0, key
+        # the settings section sits directly below the page head, above the steps
+        order = await page.evaluate(
+            "[...document.querySelectorAll('#view > *, main > *')].map(e => e.className)"
+        )
+        panel = await page.evaluate(
+            "(() => { const p = document.querySelector('.writes-panel');"
+            " const s = document.querySelector('[data-group]');"
+            " const after = p && s && p.compareDocumentPosition(s);"
+            " return !!(after & Node.DOCUMENT_POSITION_FOLLOWING);"
+            " })()"
+        )
+        assert panel, order
+        await s.check()

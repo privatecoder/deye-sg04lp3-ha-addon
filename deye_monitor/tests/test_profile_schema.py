@@ -327,7 +327,7 @@ def test_hardware_profile_values() -> None:
     assert (hw.mppt_channels, hw.battery_inputs, hw.gen_port) == (2, 1, True)
     strings = {kw: (s.mppt1, s.mppt2) for kw, s in hw.strings_by_rated_kw.items()}
     assert strings == {5: (1, 1), 6: (1, 1), 8: (1, 1), 10: (2, 1), 12: (2, 1)}
-    assert hw.expected_device_type == 0x0500
+    assert hw.device_types == [0x0500, 0x0005]
     assert (hw.expected_mppt_count, hw.expected_phase_count) == (2, 3)
     # three string sockets on a 10 kW unit are still two MPPT measurement channels
     assert hw.mppt_channels == 2 and sum(strings[10]) == 3

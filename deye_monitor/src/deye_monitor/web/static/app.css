@@ -126,6 +126,7 @@ code { font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; background: v
 .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .chip.prefilled { background: var(--info-soft); color: var(--primary); border-color: transparent; }
 .chip.match { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.chip.hint-notice { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .chip.hint-unresolved { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .chip.state-running { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
 .chip.state-offline, .chip.state-blocked { background: var(--err-soft); color: var(--err); border-color: transparent; }
@@ -177,6 +178,7 @@ progress.load-bar.over::-moz-progress-bar { background: var(--err); }
 .bus { display: inline-flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
 .note { color: var(--muted); font-size: .9rem; }
 .hints { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; gap: .4rem; }
+.members { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; gap: .4rem; }
 .hint { padding: .5rem .75rem; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: .9rem; display: flex; gap: .75rem; justify-content: space-between; align-items: center; flex-wrap: wrap; }
 .hint-text { display: grid; gap: .15rem; }
 .hint-detail { font-family: ui-monospace, monospace; font-size: .8rem; opacity: .85; overflow-wrap: anywhere; }

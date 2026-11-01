@@ -15,7 +15,12 @@ own (no startup, reconnect, schedule or MQTT trigger):
    through the write guard. No retry, no FC06, no fallback endpoint, no fan-out, no rollback.
 3. After ``observe_delay_s`` the target and all peers are read back (bus locks released in the
    meantime). Statuses: ``rejected`` (nothing sent), ``sent`` (unresolved), ``failed`` (device
-   exception), ``readback_confirmed``, ``outcome_unknown``.
+   exception), ``readback_confirmed``, ``outcome_unknown``. A second, read-only peer observation
+   follows at ``late_observe_delay_s`` (a later observation, never an attribution; the write
+   serialisation is not held while it waits), and the owner can read the peers again at any time.
+
+In a parallel plant the master distributes the whole settings block to every slave, so a slave is
+locked for writing: the role is read fresh at the preview and again at the send point.
 
 A valid acknowledgement and a matching read-back prove the value in MCU1's settings RAM only, not
 that MCU2 adopted it, not persistence, and not that peers follow: peer values are observed and
@@ -55,6 +60,7 @@ from deye_monitor.write_ops import (
     BY_KEY,
     DESCRIPTORS,
     HARDWARE,
+    LATE_OBSERVE_DELAY_S,
     OBSERVE_DELAY_S,
     PACING_S,
     PERMIT_S,
@@ -92,6 +98,11 @@ R133 = 133  # GEN port usage
 R336 = 336  # parallel role
 GEN_SMART_LOAD = 1
 MAX_COOLDOWN_WAIT_S = 15.0
+PARALLEL_SLAVE = "parallel_slave"
+MAX_REREADS = 20
+LATE_PENDING = "pending"
+LATE_DONE = "done"
+LATE_INTERRUPTED = "interrupted"
 READ_ERRORS = (TransportError, ModbusError, V5LoggerError, QueueFull)
 
 
@@ -100,6 +111,7 @@ class WriteSettings:
     """Application limits of the write flow (contract defaults)."""
 
     observe_delay_s: float = OBSERVE_DELAY_S
+    late_observe_delay_s: float = LATE_OBSERVE_DELAY_S
     pacing_s: float = PACING_S
     permit_s: float = PERMIT_S
 
@@ -242,6 +254,7 @@ class WriteService:
         self._lock = asyncio.Lock()  # one plant write at a time
         self._last_send: float | None = None
         self._tasks: set[asyncio.Task[dict[str, Any]]] = set()
+        self._late: set[asyncio.Task[None]] = set()
         self._open = True
         self._load()
 
@@ -256,6 +269,11 @@ class WriteService:
                 # an unfinished intent after a restart: never replayed, outcome not known
                 record["status"] = UNKNOWN
                 record["reason"] = "restart"
+                with contextlib.suppress(AuditError):
+                    self.audit.append("restart", record, self.wall())
+            late = record.get("late_observation")
+            if late and late.get("status") == LATE_PENDING:
+                late["status"] = LATE_INTERRUPTED  # the later read did not happen
                 with contextlib.suppress(AuditError):
                     self.audit.append("restart", record, self.wall())
         while len(self._ops) > MAX_OPERATIONS:
@@ -283,13 +301,21 @@ class WriteService:
         op = self._ops.get(operation_id)
         return None if op is None else self.operation_view(op)
 
-    @staticmethod
-    def operation_view(op: Mapping[str, Any]) -> dict[str, Any]:
-        """Public form of a record: no raw frames."""
+    def operation_view(self, op: Mapping[str, Any]) -> dict[str, Any]:
+        """Public form of a record: no raw frames; a pending later observation says how long it
+        still takes (the server clock, so the browser needs no synchronised time)."""
         view = {k: v for k, v in op.items() if k != "response"}
         response = dict(op.get("response") or {})
         response.pop("raw", None)
         view["response"] = response
+        late = op.get("late_observation")
+        if late:
+            view["late_observation"] = {
+                **late,
+                "in_s": max(0.0, late["due_at"] - self.wall())
+                if late.get("status") == LATE_PENDING
+                else 0.0,
+            }
         return view
 
     # -- enablement -----------------------------------------------------------------------------
@@ -307,10 +333,15 @@ class WriteService:
         """End of the generation: permits are void, a write in flight is awaited briefly."""
         self._open = False
         self.revoke_all()
+        for late in list(self._late):
+            late.cancel()  # a later look is no write: it ends with the generation
         tasks = list(self._tasks)
         if tasks:
             with contextlib.suppress(Exception):
                 await asyncio.wait(tasks, timeout=10)
+        if self._late:
+            with contextlib.suppress(Exception):
+                await asyncio.wait(list(self._late), timeout=10)
 
     # -- reading helpers ------------------------------------------------------------------------
 
@@ -430,6 +461,18 @@ class WriteService:
         }
 
     @staticmethod
+    def _slave_locked(role: Mapping[str, Any]) -> bool:
+        """The master distributes the settings block to every slave (a slave's own value would be
+        overwritten): only a unit that is known to be a master, or known not to be in a parallel
+        system at all, may be written. An unreadable role in an unknown system also locks."""
+        parallel = role.get("parallel")
+        return parallel is None or (parallel is True and role.get("master") is not True)
+
+    def _check_role(self, inv: InverterRuntime, words: Mapping[int, int]) -> None:
+        if self._slave_locked(self._role(inv, words)):
+            raise Refused(PARALLEL_SLAVE, 409)
+
+    @staticmethod
     def _fingerprint(inv: InverterRuntime, words: Mapping[int, int]) -> WriteRelease:
         return WriteRelease(
             profile=inv.hardware.name, words=tuple(words[a] for a in FINGERPRINT_ADDRESSES)
@@ -482,6 +525,7 @@ class WriteService:
             words = await self._context(inv, addresses)
             self._identity(inv, words)
             self._check_release(inv, words)
+            self._check_role(inv, words)
         except Refused as exc:
             return [self._locked(d, exc.key) for d in descs]
         cap = model_cap(words[20], words[21])
@@ -561,13 +605,14 @@ class WriteService:
         if desc.needs_battery and not inv.features.battery:
             raise Refused("no_battery", 409)
         field_new = parse_value(desc, value)
+        words = await self._context(inv, self._addresses(desc))
+        serial, firmware = self._identity(inv, words)
+        self._check_release(inv, words)
+        self._check_role(inv, words)
         peers = await self._peer_baselines(inverter_id, desc)
         missing = [p["id"] for p in peers.values() if p["baseline_word"] is None]
         if missing:
             raise Refused("peer_unavailable", 409, peers=missing)
-        words = await self._context(inv, self._addresses(desc))
-        serial, firmware = self._identity(inv, words)
-        self._check_release(inv, words)
         cap = model_cap(words[20], words[21])
         locked = self._precondition(desc, words, cap)
         if locked is not None:
@@ -756,6 +801,8 @@ class WriteService:
             "verification": None,
             "drift": None,
             "attribution": None,
+            "late_observation": None,
+            "peer_rereads": [],
         }
 
     async def _execute(self, permit: Permit, op: dict[str, Any]) -> dict[str, Any]:
@@ -791,6 +838,8 @@ class WriteService:
             self._record("result", op)
             await self.sleep(self.settings.observe_delay_s)
             await self._observe(permit, op, desc)
+            if op["peers"]:
+                self._schedule_late(op, desc)
             self._record("result", op)
             return op
 
@@ -842,6 +891,7 @@ class WriteService:
         except READ_ERRORS as exc:
             raise Refused("read_failed", 409, error=type(exc).__name__) from None
         self._check_release(inv, words)
+        self._check_role(inv, words)  # before the comparison: a role change is its own reason
         if words != permit.context:
             raise Refused("conflict", 409)
         fresh = words[desc.register]
@@ -906,14 +956,8 @@ class WriteService:
             op["attribution"] = "not_established"
         peers = []
         for peer_id, baseline in permit.peers.items():
-            peer = self.runtime.inverters.get(peer_id)
-            later = None if peer is None else await self._observed_word(peer, desc.register)
+            later = await self._peer_word(peer_id, desc)
             base = baseline["baseline_word"]
-            state = (
-                "unavailable"
-                if later is None
-                else ("same" if desc.field_of(later) == permit.field else "different")
-            )
             peers.append(
                 {
                     "id": peer_id,
@@ -923,11 +967,91 @@ class WriteService:
                     "baseline_value": None if base is None else desc.display(desc.field_of(base)),
                     "later_word": later,
                     "later_value": None if later is None else desc.display(desc.field_of(later)),
-                    "state": state,
+                    "state": self._peer_state(desc, later, permit.field),
                     "changed": None if later is None or base is None else later != base,
                 }
             )
         op["peers"] = peers
+
+    async def _peer_word(self, peer_id: str, desc: WriteDescriptor) -> int | None:
+        peer = self.runtime.inverters.get(peer_id)
+        return None if peer is None else await self._observed_word(peer, desc.register)
+
+    @staticmethod
+    def _peer_state(desc: WriteDescriptor, word: int | None, field_requested: int) -> str:
+        if word is None:
+            return "unavailable"
+        return "same" if desc.field_of(word) == field_requested else "different"
+
+    async def _peer_reads(
+        self, op: Mapping[str, Any], desc: WriteDescriptor
+    ) -> list[dict[str, Any]]:
+        """A fresh read-only observation of the peers recorded with ``op`` (never a write)."""
+        out = []
+        for peer in op["peers"]:
+            word = await self._peer_word(peer["id"], desc)
+            out.append(
+                {
+                    "id": peer["id"],
+                    "word": word,
+                    "value": None if word is None else desc.display(desc.field_of(word)),
+                    "state": self._peer_state(desc, word, op["requested_field"]),
+                }
+            )
+        return out
+
+    async def _late_observe(self, op: dict[str, Any], desc: WriteDescriptor, delay: float) -> None:
+        """The second peer observation, a read-only look at a later moment: it shows whether the
+        peers followed, it does not say why."""
+        late = op["late_observation"]
+        try:
+            await self.sleep(delay)
+            if not self._open:
+                late["status"] = LATE_INTERRUPTED
+            else:
+                reads = {r["id"]: r for r in await self._peer_reads(op, desc)}
+                for peer in op["peers"]:
+                    read = reads[peer["id"]]
+                    peer["late_word"], peer["late_value"] = read["word"], read["value"]
+                    peer["late_state"] = read["state"]
+                late["status"], late["at"] = LATE_DONE, self.wall()
+        except asyncio.CancelledError:
+            late["status"] = LATE_INTERRUPTED
+            raise
+        except Exception as exc:  # the first observation and the record stay valid
+            log.error("late observation of %s failed (%s)", op["operation_id"], type(exc).__name__)
+            late["status"] = LATE_INTERRUPTED
+        finally:
+            self._record("late_observation", op)
+
+    def _schedule_late(self, op: dict[str, Any], desc: WriteDescriptor) -> None:
+        delay = max(0.0, self.settings.late_observe_delay_s - self.settings.observe_delay_s)
+        op["late_observation"] = {
+            "status": LATE_PENDING,
+            "after_s": self.settings.late_observe_delay_s,
+            "due_at": self.wall() + delay,
+            "at": None,
+        }
+        task = asyncio.ensure_future(self._late_observe(op, desc, delay))
+        self._late.add(task)
+        task.add_done_callback(self._late.discard)
+
+    async def observe_again(self, operation_id: str) -> dict[str, Any]:
+        """Owner request: read the other inverters again (read-only), appended to the audit."""
+        if not self._open:
+            raise Refused("writes_stopped", 409)
+        op = self._ops.get(operation_id)
+        if op is None:
+            raise Refused("unknown_operation", 404)
+        if not op.get("peers") or op.get("status") in (REJECTED, PENDING):
+            raise Refused("nothing_to_observe", 409)
+        desc = BY_KEY[op["operation"]]
+        reads = await self._peer_reads(op, desc)
+        rereads = op.setdefault("peer_rereads", [])
+        rereads.append({"at": self.wall(), "peers": reads})
+        del rereads[:-MAX_REREADS]
+        self._record("peer_reread", op)
+        return self.operation_view(op)
 
     # -- owner verification -------------------------------------------------------------------
 

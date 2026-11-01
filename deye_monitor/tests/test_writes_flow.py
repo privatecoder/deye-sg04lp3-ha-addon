@@ -639,11 +639,12 @@ async def test_plant_writes_are_paced_and_the_observation_waits(
     async with plant_rig(tmp_path, monkeypatch) as rig:
         await build_plant(rig, enable=("deye1", "deye2"))
         svc = fast(rig, WriteSettings())  # the contract defaults
-        assert (svc.settings.observe_delay_s, svc.settings.pacing_s, svc.settings.permit_s) == (
-            1.0,
-            5.0,
-            30.0,
-        )
+        assert (
+            svc.settings.observe_delay_s,
+            svc.settings.late_observe_delay_s,
+            svc.settings.pacing_s,
+            svc.settings.permit_s,
+        ) == (1.0, 30.0, 5.0, 30.0)
         waits: list[float] = []
 
         async def record(seconds: float) -> None:
@@ -651,9 +652,12 @@ async def test_plant_writes_are_paced_and_the_observation_waits(
 
         svc.sleep = record
         await write(rig, "deye1", "grid_charge_current", 50)
-        assert waits == [1.0]  # no pacing before the first write, then the observation delay
+        await asyncio.sleep(0.05)  # the later peer observation waits its remaining 29 s
+        # no pacing before the first write, then the observation delay, then the later look
+        assert waits == [1.0, 29.0]
         await write(rig, "deye2", "grid_charge_current", 55)
-        assert len(waits) == 3 and 4.0 < waits[1] <= 5.0 and waits[2] == 1.0
+        await asyncio.sleep(0.05)
+        assert len(waits) == 5 and 4.0 < waits[2] <= 5.0 and waits[3:] == [1.0, 29.0]
 
 
 async def test_writes_are_serialised_across_the_plant(
@@ -1013,3 +1017,207 @@ def test_a_torn_trailing_line_does_not_corrupt_the_next_record(tmp_path: Path) -
     log.append("intent", {"operation_id": "b", "status": "sent"}, 3.0)
     loaded = log.load()
     assert loaded["a"]["status"] == "sent" and loaded["b"]["status"] == "sent"
+
+
+# -- delayed peer observation, read again ---------------------------------------------------------
+
+
+async def test_the_later_peer_observation_is_a_second_read_only_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, regs={"deye2": {"r128": 20}})
+        svc = fast(rig)
+        gate = asyncio.Event()
+
+        async def slow(seconds: float) -> None:
+            if seconds >= 1:  # only the wait for the later look
+                await gate.wait()
+
+        svc.sleep = slow
+        _, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        _status, body = await confirm(rig, body["preview"]["operation_id"])
+        op = body["operation"]
+        assert op["status"] == "readback_confirmed"
+        late = op["late_observation"]
+        assert late["status"] == "pending" and late["after_s"] == 30.0 and late["in_s"] > 0
+        assert op["peers"][0]["state"] == "different"
+        assert "late_word" not in op["peers"][0]
+        # the write serialisation is not held while the later look waits
+        assert not svc._lock.locked()
+        rig.servers["gw2"].responder.regs[128] = 50  # the peer caught up meanwhile
+        gate.set()
+        for _ in range(100):
+            _status, body = await rig.call("GET", f"/api/writes/operations/{op['operation_id']}")
+            if body["operation"]["late_observation"]["status"] == "done":
+                break
+            await asyncio.sleep(0.02)
+        later = body["operation"]
+        assert later["late_observation"]["status"] == "done"
+        peer = later["peers"][0]
+        assert (peer["state"], peer["late_state"], peer["late_word"]) == ("different", "same", 50)
+        events = [(x["event"], x["record"]["operation_id"]) for x in audit_lines(rig)]
+        assert ("late_observation", op["operation_id"]) in events
+        assert "propagat" not in json.dumps(later) and "synchron" not in json.dumps(later)
+        assert len(fc16(rig.servers["gw1"])) == 1 and fc16(rig.servers["gw2"]) == []
+
+
+async def test_a_generation_change_cancels_the_pending_later_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        svc = fast(rig)
+        never = asyncio.Event()
+
+        async def slow(seconds: float) -> None:
+            if seconds >= 1:
+                await never.wait()
+
+        svc.sleep = slow
+        op = await write(rig, "deye1", "grid_charge_current", 50)
+        assert op["late_observation"]["status"] == "pending"
+        await svc.close()
+        record = svc.operation(op["operation_id"])
+        assert record is not None and record["late_observation"]["status"] == "interrupted"
+
+
+async def test_the_owner_can_read_the_other_inverters_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, regs={"deye2": {"r128": 20}})
+        fast(rig)
+        op = await write(rig, "deye1", "grid_charge_current", 50)
+        url = f"/api/writes/operations/{op['operation_id']}/peers"
+        writes_before = len(fc16(rig.servers["gw1"]))
+        rig.servers["gw2"].responder.regs[128] = 50
+        status, body = await rig.call("POST", url, {})
+        assert status == 200, body
+        reread = body["operation"]["peer_rereads"]
+        assert len(reread) == 1 and reread[0]["peers"][0]["state"] == "same"
+        rig.servers["gw2"].responder.regs[128] = 7
+        _status, body = await rig.call("POST", url, {})
+        assert [r["peers"][0]["state"] for r in body["operation"]["peer_rereads"]] == [
+            "same",
+            "different",
+        ]
+        assert [x["event"] for x in audit_lines(rig)].count("peer_reread") == 2
+        # reading only: no further frame with a write, none to the peer
+        assert len(fc16(rig.servers["gw1"])) == writes_before and fc16(rig.servers["gw2"]) == []
+        status, body = await rig.call("POST", "/api/writes/operations/" + "0" * 32 + "/peers", {})
+        assert status == 404 and err(body) == "unknown_operation"
+
+
+async def test_a_rejected_operation_has_nothing_to_read_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        fast(rig)
+        _, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        rig.servers["gw1"].responder.regs[128] = 33
+        _status, body = await confirm(rig, body["preview"]["operation_id"])
+        assert body["operation"]["status"] == "rejected"
+        status, body = await rig.call(
+            "POST", f"/api/writes/operations/{body['operation']['operation_id']}/peers", {}
+        )
+        assert status == 409 and err(body) == "nothing_to_observe"
+
+
+async def test_a_pending_later_look_is_interrupted_by_a_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        svc = fast(rig)
+        never = asyncio.Event()
+
+        async def slow(seconds: float) -> None:
+            if seconds >= 1:
+                await never.wait()
+
+        svc.sleep = slow
+        op = await write(rig, "deye1", "grid_charge_current", 50)
+        again = WriteService(svc.runtime, directory=rig.directory)
+        record = again.operation(op["operation_id"])
+        assert record is not None and record["late_observation"]["status"] == "interrupted"
+        assert (
+            AuditLog(rig.directory / AUDIT_FILE).load()[op["operation_id"]]["late_observation"][
+                "status"
+            ]
+            == "interrupted"
+        )
+        never.set()
+
+
+# -- slaves are locked: the master distributes the settings --------------------------------
+
+SLAVE = {"r336": 0x0001}  # parallel mode on, not the master
+MASTER = {"r336": 0x0003}
+
+
+async def test_a_slave_is_locked_for_preview_and_for_the_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, regs={"deye1": SLAVE})
+        status, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        assert status == 409 and err(body) == "parallel_slave"
+        status, body = await rig.call("POST", "/api/inverters/deye1/writes/current", {})
+        assert status == 200
+        assert {(r["state"], r["reason"]) for r in body["operations"]} == {
+            ("locked", "parallel_slave")
+        }
+        assert fc16(rig.servers["gw1"]) == [] and rig.servers["gw1"].responder.writes == []
+
+
+async def test_the_lock_follows_the_current_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, regs={"deye1": SLAVE})
+        status, _body = await preview(rig, "deye1", "grid_charge_current", 50)
+        assert status == 409
+        rig.servers["gw1"].responder.regs[336] = 0x0003  # another unit gave up, this one is master
+        op = await write(rig, "deye1", "grid_charge_current", 50)
+        assert op["status"] == "readback_confirmed"
+        assert op["role"] == {"parallel": True, "master": True}
+        assert len(fc16(rig.servers["gw1"])) == 1
+
+
+async def test_a_role_change_between_preview_and_confirm_rejects_without_a_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, regs={"deye1": MASTER})
+        _, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        assert body["preview"]["inverter"]["role"] == {"parallel": True, "master": True}
+        rig.servers["gw1"].responder.regs[336] = 0x0001  # no longer the master
+        _status, body = await confirm(rig, body["preview"]["operation_id"])
+        assert body["operation"]["status"] == "rejected"
+        assert body["operation"]["reason"] == "parallel_slave"
+        assert fc16(rig.servers["gw1"]) == [] and rig.servers["gw1"].responder.writes == []
+
+
+async def test_an_unreadable_role_locks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        monkeypatch.setattr(
+            WriteService,
+            "_role",
+            staticmethod(lambda inv, words: {"parallel": None, "master": None}),
+        )
+        status, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        assert status == 409 and err(body) == "parallel_slave"
+        assert fc16(rig.servers["gw1"]) == []
+
+
+def test_only_a_known_master_or_a_known_single_unit_may_be_written() -> None:
+    locked = WriteService._slave_locked
+    assert not locked({"parallel": False, "master": False})
+    assert not locked({"parallel": False, "master": None})
+    assert not locked({"parallel": True, "master": True})
+    assert locked({"parallel": True, "master": False})
+    assert locked({"parallel": True, "master": None})
+    assert locked({"parallel": None, "master": None})

@@ -36,6 +36,7 @@ CURRENT_CAP_SOURCE: Final = (
 )
 
 OBSERVE_DELAY_S: Final = 1.0
+LATE_OBSERVE_DELAY_S: Final = 30.0  # second, later peer observation (owner field: ~18 s)
 PACING_S: Final = 5.0
 PERMIT_S: Final = 30.0
 

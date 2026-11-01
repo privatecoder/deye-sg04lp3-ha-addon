@@ -216,6 +216,7 @@ def entry_view(e: Entry) -> dict[str, Any]:
         ),
         # Text key for the UI: a decoded value whose meaning depends on the build, or a raw word.
         "hint": e.release if e.release in ("profile_dependent", "unresolved") else None,
+        "notice": e.picker_notice,
         "category": e.category,
         "point": e.point,
         "group": e.group,
@@ -406,6 +407,7 @@ class WebApi:
             r.add_get("/api/writes/operations/{operation}", self._writes_operation)
             r.add_post("/api/writes/operations/{operation}/confirm", self._writes_confirm)
             r.add_post("/api/writes/operations/{operation}/verification", self._writes_verify)
+            r.add_post("/api/writes/operations/{operation}/peers", self._writes_peers_again)
             r.add_get("/api/inverters/{inverter}/writes/operations", self._writes_operations)
             r.add_post("/api/inverters/{inverter}/writes/current", self._writes_current)
             r.add_post("/api/inverters/{inverter}/writes/preview", self._writes_preview)
@@ -1482,6 +1484,17 @@ class WebApi:
             raise ChangeError("invalid_request", field="state")
         try:
             operation = self._writes().verify(operation_id, data["state"], note, user.id)
+        except Refused as exc:
+            raise self._refusal(exc) from None
+        return json_response({"operation": operation})
+
+    async def _writes_peers_again(self, request: web.Request) -> web.Response:
+        """Read the other inverters again (reads only; appended to the audit)."""
+        operation_id = self._operation_of(request)
+        _, body, _ = await self._mutation(request, revision=False)
+        _object(body)
+        try:
+            operation = await self._writes().observe_again(operation_id)
         except Refused as exc:
             raise self._refusal(exc) from None
         return json_response({"operation": operation})

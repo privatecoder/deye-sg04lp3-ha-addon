@@ -43,6 +43,8 @@ EntryType = Literal[
 ]
 SupportStatus = Literal["supported", "placeholder", "unsupported_for_profile", "unverified"]
 Release = Literal["confirmed", "profile_dependent", "unresolved"]
+# One-line notice shown with the entry in the sensor picker (texts live in the web interface)
+PickerNotice = Literal["bms_protocol", "grid_copy"]
 Platform = Literal["sensor", "binary_sensor"]
 PollKey = Literal["fast_s", "energy_s", "settings_s", "identity_s"]
 
@@ -213,6 +215,7 @@ class Entry(_Model):
     # "Only zeros" is worth a hint for this entry: ``None`` follows the category default of
     # ``observes_zero``; a profile sets it where the default is wrong for the entry.
     observe_zero: bool | None = None
+    picker_notice: PickerNotice | None = None
     internal: bool = False
     mandatory: bool = False
     notes: str | None = None

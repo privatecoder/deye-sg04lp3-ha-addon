@@ -127,5 +127,8 @@ def test_the_raw_words_are_off_but_the_alarm_bits_and_decoded_views_stay(
     template = template_selection(p, hw, Features())
     assert not template & RAW_WORDS
     assert template >= ALARM_BITS and {"active_warnings", "active_faults"} <= template
-    for key in RAW_WORDS | BMS_OFF | {"ups_power_total"}:
+    for key in RAW_WORDS | {"bms_discharge_voltage", "ups_power_total"}:
         assert p.entry(key).selectable  # still selectable by hand
+    for key in ("bms_offgrid_charge_limit", "bms_offgrid_discharge_limit_raw", "load_frequency"):
+        assert not p.entry(key).selectable  # firmware placeholders and duplicates: not offered
+    assert not p.entry("temp_dc_transformer").selectable

@@ -3,7 +3,7 @@
 **Only the owner performs this test, on site, with the plant in a state in which an unexpected
 value would do no harm.** Agents and automated tests never write to a real device: they use fake
 inverters only. This document does not authorise anything by itself; it describes what the app
-does (version 0.3.0) and a careful order for the first write. Read `DOCS.md`, “Writing settings”,
+does (version 0.3.2) and a careful order for the first write. Read `DOCS.md`, “Writing settings”,
 first.
 
 Prerequisite: the read test (`docs/LIVE-READ-RUNBOOK.md`) was successful for the same version, all
@@ -25,17 +25,23 @@ master, which are slaves, whether a GRID charge or a Smart Load circuit is in us
 - A write is acknowledged and read back **from the inverter's communication processor (MCU1)**.
   This does not prove that the power-stage processor (MCU2) adopted the value, that it survives a
   restart, or that the inverter behaves as intended. You check the display and the effect.
-- In a parallel plant it is **not proven** that a value written to the master reaches the slaves,
-  nor that a slave keeps its own value. The app therefore writes the one inverter you chose and
-  only observes the others (same / different / unavailable). Matching values prove nothing about
-  synchronisation.
+- In a parallel plant the master copies its whole settings block to every slave (firmware
+  evidence; all nine settings are in it), and a slave's own value is overwritten by a later master
+  snapshot. The app therefore **writes only a parallel master (or a single inverter)**: a slave is
+  locked (“In parallel operation the master distributes these settings to all units. Writing is
+  only possible on the master.”), decided from a fresh role read at the preview and again at the
+  send point. Owner field observation: R108 written on the master reached all slaves within about
+  18 s, and R130 reached all four units; this is not proven for the other settings, for slave
+  writes, or across a restart. The app observes the other inverters (same / different /
+  unavailable) after 1 s and again after 30 s, and you can read them again at any time; matching
+  values prove nothing about synchronisation.
 
 ## 2. Preparation (nothing is written yet)
 
 - [ ] You have the display (LCD) or the cloud app of the inverter at hand and can read the setting
   you are going to change **before** the test: write down the value of the setting on every
   inverter of the plant (display), with date and time. This is your baseline.
-- [ ] Decide **one slave** inverter (not the master) as the target.
+- [ ] The target is the **master** of the parallel plant (or the single inverter): slaves are locked for writing.
 - [ ] Choose **one inactive, reversible setting**. No address is harmless in general; decide for
   your plant. Candidates, only if the condition holds:
   - GRID charge current (R128): only with an unused GRID input, GRID charge disabled (R130 bit 0
@@ -66,7 +72,8 @@ master, which are slaves, whether a GRID charge or a Smart Load circuit is in us
    before the change. The preview sends nothing. If the app refuses (model unknown, GEN port not
    Smart Load, a peer unreachable, value outside the range, conflict), it explains why; fix the
    cause rather than trying around it.
-3. Confirm within 30 seconds. The app writes once, waits about a second and reads back.
+3. Confirm within 30 seconds. The app writes once, waits about a second and reads back; the other
+   inverters are read after 1 s and once more after 30 s (a countdown shows when).
 4. Read the result:
    - `Read-back confirmed`: the device acknowledged and the register holds exactly the requested
      word. Now check the **display** of the target (and the other inverters) and record what you
@@ -76,8 +83,9 @@ master, which are slaves, whether a GRID charge or a Smart Load circuit is in us
    - `Outcome unknown`: the answer is missing or malformed, or the read-back differs. **Do not
      repeat the write.** Look at the display, then at the current value in the dialog. A matching
      value later does not prove that the command set it.
-5. Look at the other inverters in the result table: each is shown with its value before and after,
-   and “same / different / unavailable” relative to the requested value. Record this in your
+5. Look at the other inverters in the result table: each is shown with its value before, after 1 s
+   and after 30 s, and “same / different / unavailable” relative to the requested value; “Read other
+   inverters again” reads them once more (read only, recorded in the audit log). Record this in your
    notes; it is the observation that decides whether a later parallel use is safe for you.
 
 ## 5. Restore (a new operation)
@@ -98,7 +106,7 @@ display. Release the setting again (plant page, uncheck, save) when the test is 
 
 ## 7. What counts as a successful first test
 
-The setting was written on one slave only, read back exactly, the display agrees, the other
+The setting was written on the master only, read back exactly, the display agrees, the other
 inverters kept their values (or you know and accept what they did), the restore worked as a new
 operation, and no other value on any inverter changed. Only then consider the next setting, and
 only the same way: one inverter, one setting, preview, confirmation, display check.

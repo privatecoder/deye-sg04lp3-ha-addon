@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.3.2
+
+Owner collection round.
+
+- **Writes, delayed peer observation**: field fact: R108 written on the master reached all slaves
+  within about 18 s (the 1 s observation still showed the old value). After the 1 s observation
+  the service now reads the other inverters once more at 30 s (read only, same wording
+  same / different / unavailable, recorded in the audit log as a later observation, not as an
+  attribution). The result shows “Before / After 1 s / After 30 s” with a countdown; the write
+  serialisation is not held while it waits. New button “Read other inverters again” in the result
+  and in the log entry: a fresh read-only observation, appended to the audit log. Matching values
+  still do not prove synchronization. A pending later observation is cancelled with its
+  generation and shown as interrupted after a restart.
+- **Writes, slaves are locked**: firmware evidence (master copies the whole settings block
+  R65-R209 and R339-R429, all nine settings included, to every slave; a slave's differing value is
+  overwritten by a later master snapshot) plus the two field anchors (R108, R130). Owner decision:
+  a parallel slave is not written. The role is read fresh at the preview and at the send point;
+  slave or unreadable role is rejected as `parallel_slave` (no permit, no FC16), a single inverter
+  or parallel mode off is unaffected, and the lock follows the current role. The dialog and the
+  plant page say so with a link to the master; the release checkboxes of a slave are disabled. On
+  the master the app says that the value is distributed (usually within about 20 s in the owner's
+  plant, not guaranteed). Persistence across a restart is still unproven.
+- **Inverter page**: “Change settings” sits directly below the page head, above the feature and
+  sensor steps.
+- **Plant card**: the member list has a gap between its items.
+- **Sensor catalogue**: no longer offered (and dropped from stored choices): DC transformer
+  temperature R540 (firmware writes a fixed 25.0 °C), BMS off-grid charge/discharge limits
+  R218/R219 (firmware writes literal 0) and load frequency R655 (duplicate of R638). New notices
+  in the picker: R211 BMS discharge voltage (depends on the BMS protocol) and the selected grid
+  power values R622-R625/R690 (possibly only a copy of the internal grid power).
+- **R0**: 0x0005 and 0x0500 are two equal documented words of the three-phase LV hybrid family
+  (MCU1 C070 writes the family word as the bytes 00 05). The hardware profile field
+  `also_accepted_device_types` became `device_types: [0x0500, 0x0005]`.
+
 ## 0.3.1
 
 - **Sensor list**: an input of a plant total with alternative sources (battery SOC and temperature:

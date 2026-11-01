@@ -1597,12 +1597,12 @@ entries:
   requires: {}
   supported_on:
   - sg04lp3_eu
-  support_status: supported
+  support_status: unsupported_for_profile
   release: profile_dependent
   source: "V105.8 registers.json inverter: R540 (TXT 3331-3338)"
   confidence: document_only
   default_enabled: false
-  notes: (raw-1000)/10 per document offset example; no firmware producer evidence.
+  notes: "Not offered (owner decision, 0.3.2): the firmware overwrites the input with the fixed raw 1250 (25.0 °C) in the normal thermal-packet path (MCU2 1175 0x31676, 1151 0x2D66E; Codex fixed-values-1), so the value is a placeholder, not a measurement. This does not prove the absence of a physical sensor. (raw-1000)/10 per document offset example."
 - key: temp_heatsink
   name:
     de: Temperatur Kühlkörper
@@ -2037,6 +2037,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R211 (TXT 1637-1644)"
   confidence: document_only
+  picker_notice: bms_protocol
   default_enabled: false
 - key: bms_charge_current_limit
   name:
@@ -2255,11 +2256,12 @@ entries:
       equals: true
   supported_on:
   - sg04lp3_eu
-  support_status: supported
+  support_status: unsupported_for_profile
   release: profile_dependent
   source: "V105.8 registers.json inverter: R218 (TXT 1689-1695)"
   confidence: document_only
   default_enabled: false
+  notes: "Not offered (owner decision, 0.3.2): MCU1 C070 writes the literal 0 into the BMS report fields behind R218/R219 (0x24E2A, 0x24E48/0x24E4A) whatever the BMS sends; a zero is never a real 0 A limit (Codex fixed-values-1)."
 - key: bms_offgrid_discharge_limit_raw
   name:
     de: BMS Off-Grid-Entladestrom
@@ -2287,12 +2289,12 @@ entries:
       equals: true
   supported_on:
   - sg04lp3_eu
-  support_status: supported
+  support_status: unsupported_for_profile
   release: profile_dependent
   source: "V105.8 registers.json inverter: R219 (TXT 1695-1702)"
   confidence: document_only
   default_enabled: false
-  notes: "Unit cell is blank in the document; A as for R218 (third-party dump: R218 = R219 = 420 A)."
+  notes: "Not offered (owner decision, 0.3.2): MCU1 C070 writes the literal 0 into the BMS report fields behind R218/R219 (0x24E2A, 0x24E48/0x24E4A) whatever the BMS sends (Codex fixed-values-1). Unit cell is blank in the document; A as for R218 (third-party dump: R218 = R219 = 420 A)."
 - key: grid_voltage_a
   name:
     de: Netzspannung Phase A
@@ -2933,6 +2935,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R622 (TXT 3716-3719), R687 (TXT 3954-3957)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
+  picker_notice: grid_copy
   default_enabled: false
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
@@ -2967,6 +2970,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R623 (TXT 3719-3721), R688 (TXT 3957-3959)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
+  picker_notice: grid_copy
   default_enabled: false
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
@@ -3001,6 +3005,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R624 (TXT 3721-3723), R689 (TXT 3959-3961)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
+  picker_notice: grid_copy
   default_enabled: false
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
@@ -3034,6 +3039,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R625 (TXT 3723-3725), R690 (TXT 3961-3963)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
+  picker_notice: grid_copy
   default_enabled: true
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
@@ -3960,7 +3966,7 @@ entries:
   requires: {}
   supported_on:
   - sg04lp3_eu
-  support_status: supported
+  support_status: unsupported_for_profile
   release: profile_dependent
   source: "V105.8 registers.json inverter: R655 (TXT 3811-3818)"
   confidence: document_only
@@ -3977,9 +3983,9 @@ entries:
     effect: copy
     ram_word: 53720
     load_byte: 143726
+  observe_zero: false
   default_enabled: false
-  notes: "Same source as R638 (one RAM word copied to both registers): no independent LOAD/EPS frequency measurement. Signedness\
-    \ not stated; read as unsigned."
+  notes: "Not offered (owner decision, 0.3.2): same source as R638 (one RAM word copied to both registers), so no independent LOAD/EPS frequency measurement; use inverter_frequency (R638). Signedness not stated; read as unsigned."
 - key: gen_voltage_a
   name:
     de: GEN-Port Spannung Phase A

@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher and an opt-in write layer (0.3.1, experimental).**
+> **Status: device loop with MQTT publisher and an opt-in write layer (0.3.2, experimental).**
 > The app validates its configuration, then connects to the configured endpoints (read-only
 > by default: Modbus function code 03 only; the nine settings under “Writing settings” can be
 > released per inverter and are written only from the web interface), identifies each inverter, binds and checks its serial number, polls the selected
@@ -11,7 +11,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.3.1 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.3.2 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -367,7 +367,27 @@ required):
    automatic rollback. Writes of the whole plant are serialised with at least 5 seconds between
    them (a conservative field workaround, not a vendor guarantee).
 4. After 1 second the app reads the target register back and the same register of every other
-   inverter and shows the result.
+   inverter and shows the result. It reads the other inverters once more after 30 seconds (read
+   only; a countdown shows when) and the result table then has the columns “Before / After 1 s /
+   After 30 s”. The write serialisation is not held while it waits. “Read other inverters again”
+   (in the result and in the log entry) reads them once more at any time; each reading is
+   appended to the audit log as a later observation - never as an attribution.
+
+**Parallel plants: only the master is written.** In a parallel system the master copies its whole
+settings block (R65-R209 and R339-R429, so all nine settings) to every slave, and a slave's own
+value is overwritten by a later master snapshot. That follows from the firmware (Codex analysis of
+MCU2 1175 and MCU1 C070) and from two field observations: R108 written on the master reached all
+slaves within about 18 s, and R130 reached all four units. Persistence across a restart is not
+proven, no delay is guaranteed (the transfer is staged), and none of this shows that the other
+settings behave the same. Therefore a **slave is locked for writing**: the dialog and the release
+show “In parallel operation the master distributes these settings to all units. Writing is only
+possible on the master.” with a link to the master, and the release checkboxes of a slave are
+disabled. The lock is decided from a fresh role read (R336) at the preview **and** at the send
+point (`parallel_slave`, nothing is sent); an unreadable role also locks, a single inverter or a
+plant with parallel mode off is unaffected, and the lock follows the current role. On the master
+the app says that the value is distributed to the slaves (usually within about 20 s in the
+owner's plant, not guaranteed); the 30 s observation shows whether they follow. Matching values
+still do not prove synchronization.
 
 **Statuses** (also in the audit log, `/data/write-audit.jsonl`): `rejected` (nothing was sent),
 `sent` (in progress), `failed` (the device answered with an exception code), `readback_confirmed`
@@ -381,14 +401,15 @@ pending permit.
 shows the value in the settings memory of the inverter's communication processor (MCU1). It does
 not show that MCU2 adopted it, that it survives a restart, that the setting has the intended
 effect, or that other inverters follow. Other inverters are only observed and reported as
-same / different / unavailable, with their values before and after - never as “propagated”.
+same / different / unavailable, with their values before and after 1 s and after 30 s - never as
+“propagated”.
 After `outcome_unknown` a later matching value is recorded but does not show that this command
 caused it. External writers (the display, the cloud) are not excluded: Modbus has no
 compare-and-swap. Your own check of the display or the effect is recorded separately (“Checked at
 the device”). A change made by someone else later is noticed the next time the dialog reads the
 values and recorded as drift; the app never reasserts a setting by itself.
 
-**First test.** Use the owner-only procedure `docs/FIRST-WRITE-RUNBOOK.md`: one slave, one
+**First test.** Use the owner-only procedure `docs/FIRST-WRITE-RUNBOOK.md`: the master (slaves are locked), one
 inactive and reversible setting, baseline and display check first, restore as a new operation.
 Never use these buttons to “try something” on a plant you depend on.
 
@@ -519,13 +540,21 @@ card (totals and the status of every member).
 
    | Answer | Preselected | Not preselected |
    | --- | --- | --- |
-   | Battery with BMS communication | BMS SOC, temperature, voltage, current, charge/discharge current limits, charge voltage; inverter battery voltage, current, power and energies | inverter battery SOC and temperature (same source), BMS discharge voltage, BMS off-grid limits |
+   | Battery with BMS communication | BMS SOC, temperature, voltage, current, charge/discharge current limits, charge voltage; inverter battery voltage, current, power and energies | inverter battery SOC and temperature (same source), BMS discharge voltage |
    | Battery without BMS | inverter battery SOC, temperature, voltage, current, energies | all BMS values |
    | Public grid | grid voltage and frequency, selected grid power, grid energies | internal GRID-terminal power |
    | Generator on the GRID port | grid voltage and frequency, internal GRID-terminal power, inverter frequency | utility grid power and energy counters |
    | Island (grid port unused) | inverter frequency; no grid values | grid values |
    | Any | load power and voltage L1-L3, inverter output power total, active warnings and faults, the named alarm bits | UPS/EPS power (equals the load power off-grid), raw alarm and fault words 1-4 |
    | Parallel operation | parallel role and serial number | (slaves: BMS values and temperature stay inactive, the plant device carries SOC and temperature) |
+
+   **Not offered at all** (the firmware writes a fixed value, or the value duplicates another):
+   the DC transformer temperature (R540, fixed 25.0 °C), the BMS off-grid charge/discharge limits
+   (R218/R219, literal 0) and the load frequency (R655, a copy of the inverter frequency R638,
+   which stays). A stored choice of one of them is dropped on loading. **Notices in the list:**
+   the BMS discharge-voltage limit (R211) depends on the BMS protocol and not every BMS provides
+   it; the “selected grid power” values (R622-R625, R687-R690) are, depending on the configuration,
+   only a copy of the internal grid power and must not be added to it.
 
 3. **Transfer to other inverters** (button on card or setup page). Choose the targets, optionally
    leave out the plant features, look at the preview per target (which sensors are added or

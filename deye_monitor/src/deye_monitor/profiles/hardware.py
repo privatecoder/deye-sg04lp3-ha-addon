@@ -34,8 +34,9 @@ class HardwareProfile(_Model):
     strings_by_rated_kw: dict[int, StringsPerMppt]
     battery_inputs: Annotated[int, Field(ge=0)]
     gen_port: bool
-    expected_device_type: int  # R0
-    also_accepted_device_types: list[int] = []  # further R0 codes for the same family
+    # R0 family words: MCU1 C070 writes the family word as the bytes 00 05 (read as 0x0005), the
+    # documented V105.8 value is 0x0500; both are the same family
+    device_types: Annotated[list[int], Field(min_length=1)]
     expected_mppt_count: int  # R22 high byte
     expected_phase_count: int  # R22 low byte
     battery_input_codes: dict[int, int]  # R24 code -> number of battery inputs
@@ -101,11 +102,12 @@ def capability_conflicts(
     """
     out: list[CapabilityConflict] = []
     r0 = words.get(0)
-    accepted = {hardware.expected_device_type, *hardware.also_accepted_device_types}
-    if r0 is not None and r0 != NOT_REPORTED and r0 not in accepted:
+    if r0 is not None and r0 != NOT_REPORTED and r0 not in hardware.device_types:
         out.append(
             CapabilityConflict(
-                "device_type", f"R0=0x{r0:04x}, expected 0x{hardware.expected_device_type:04x}"
+                "device_type",
+                f"R0=0x{r0:04x}, expected "
+                + " or ".join(f"0x{word:04x}" for word in hardware.device_types),
             )
         )
     r22 = words.get(22)

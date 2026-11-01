@@ -1,3 +1,3 @@
 """Deye SG04LP3 Monitor - Home Assistant app (read-only by default, opt-in writing)."""
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"

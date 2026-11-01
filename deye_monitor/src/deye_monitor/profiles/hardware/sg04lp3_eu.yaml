@@ -12,8 +12,7 @@ strings_by_rated_kw:
   12: {mppt1: 2, mppt2: 1}
 battery_inputs: 1
 gen_port: true
-expected_device_type: 0x0500   # R0: three-phase LV hybrid family (does not identify SG04 alone)
-also_accepted_device_types: [0x0005]  # same family; kellerza/sunsynk identity.py DEVICE_TYPES lists 0x005 and 0x500 as three-phase LV, V105.8 names 0x0500 only
+device_types: [0x0500, 0x0005]  # R0 family words (three-phase LV hybrid; does not identify SG04 alone): V105.8 documents 0x0500; MCU1 C070 writes the word as the bytes 00 05, read as 0x0005 (V104.2 documents 0x0005 too)
 expected_mppt_count: 2         # R22 high byte
 expected_phase_count: 3        # R22 low byte
 battery_input_codes:           # R24: code for the number of battery inputs
