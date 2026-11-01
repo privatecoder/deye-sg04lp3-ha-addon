@@ -41,6 +41,7 @@ from deye_monitor.config import (
 )
 from deye_monitor.device import CONFLICT_POINTS, InverterRuntime
 from deye_monitor.mqtt import MqttPublisher
+from deye_monitor.mqtt_settings import SettingsPlane
 from deye_monitor.observation import ObservationState
 from deye_monitor.plant import MAX_ENDPOINTS, MAX_INVERTERS, PlantService
 from deye_monitor.profiles.plan import ReadPlan
@@ -54,7 +55,12 @@ from deye_monitor.selection import (
     SelectionManager,
 )
 from deye_monitor.totals import PLANT_INPUTS
-from deye_monitor.write_ops import OPERATION_KEYS, Refused
+from deye_monitor.write_ops import (
+    CURRENT_CAP_BY_RATED_W,
+    HARDWARE_BRANCH_CHARGE_CAP,
+    OPERATION_KEYS,
+    Refused,
+)
 from deye_monitor.writes import WriteService
 
 log = logging.getLogger(__name__)
@@ -636,7 +642,10 @@ class WebApi:
                 "transport": self.runtime.cfg.endpoint(runtime.route.endpoint_id).transport.value,
                 "serial_pinned": runtime.cfg.expected_serial is not None,
             },
-            "status": status_view(runtime, bus_load),
+            "status": {
+                **status_view(runtime, bus_load),
+                "write_entities": self._entity_view(inverter_id),
+            },
             "selection": selection_view(sel, self.manager.plan(inverter_id, sel), bus_load),
         }
 
@@ -963,6 +972,20 @@ class WebApi:
         assert self.plant is not None
         return self.plant
 
+    def _entity_view(self, inverter_id: str) -> dict[str, Any] | None:
+        plane: SettingsPlane | None = getattr(self.publisher, "plane", None)
+        if plane is None or inverter_id not in plane.inverter_ids():
+            return None
+        return plane.view(inverter_id)
+
+    def _entity_views(self, inverters: Any) -> dict[str, Any]:
+        """Per inverter: what its Home Assistant write entities show now and why (``None`` while
+        there is no MQTT publisher)."""
+        plane: SettingsPlane | None = getattr(self.publisher, "plane", None)
+        if plane is None:
+            return {}
+        return {i.id: plane.view(i.id) for i in inverters if i.id in plane.inverter_ids()}
+
     def _plant_view(self) -> dict[str, Any]:
         service = self._plant_service()
         plant = service.plant
@@ -1007,6 +1030,11 @@ class WebApi:
             "limits": {"endpoints": MAX_ENDPOINTS, "inverters": MAX_INVERTERS},
             "writes": {
                 "operations": WriteService.catalogue_views(),
+                "current_caps": [
+                    {"rated_w": w, "amps": a} for w, a in sorted(CURRENT_CAP_BY_RATED_W.items())
+                ],
+                "charge_branch_cap": HARDWARE_BRANCH_CHARGE_CAP,
+                "entities": self._entity_views(plant.inverters),
                 "inverters": {
                     i.id: {
                         "allow_writes": i.allow_writes,

@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher and an opt-in write layer (0.4.0).**
+> **Status: device loop with MQTT publisher and an opt-in write layer (0.4.1).**
 > The app validates its configuration, then connects to the configured endpoints (read-only
 > by default: Modbus function code 03 only; the 38 settings under “Writing settings” can be
 > released per inverter and are written from the web interface or from Home Assistant entities), identifies each inverter, binds and checks its serial number, polls the selected
@@ -11,7 +11,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.4.0 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.4.1 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 

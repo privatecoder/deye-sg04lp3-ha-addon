@@ -154,6 +154,7 @@ class Runtime:
         self.inverters: dict[str, InverterRuntime] = {}
         self.writes = WriteService(self, directory=base)
         self.settings_polling = False  # the MQTT entities poll the settings snapshot (set by app)
+        self.settings_retry_s: Callable[[str], float | None] = lambda _i: None  # set by app
         self._tasks: list[asyncio.Task[None]] = []
         self._unit_owner: dict[tuple[str, int], str] = {}
         self._buses: dict[str, str] = {ep.id: ep.bus for ep in cfg.endpoints}
@@ -283,15 +284,19 @@ class Runtime:
         keep all intervals: ticks are coalesced (never caught up) and requests are served in
         FIFO order across inverters. With the settings entities active the periodic settings
         snapshot of every inverter with released writes is part of the load (its own requests,
-        split at the block limit, at ``poll_settings_s``)."""
+        split at the block limit, at ``poll_settings_s``, or at the retry delay while a snapshot is
+        being repeated)."""
         load = dict.fromkeys(self.schedulers, 0.0)
         for inv in self.inverters.values():
             bus = self._buses[inv.route.endpoint_id]
             plan = (candidates or {}).get(inv.id) or inv.current_plan()
             load[bus] += plan.budget.utilisation + PROBE_SHARE
-            if self.settings_polling and (extra := settings_poll_budget(inv)) is not None:
-                load[self._buses[inv.routes[0].endpoint_id]] += float(extra["utilisation"])
+            if self.settings_polling and (extra := self._settings_budget(inv)) is not None:
+                load[self._buses[inv.routes[0].endpoint_id]] += float(extra["load"])
         return load
+
+    def _settings_budget(self, inv: InverterRuntime) -> dict[str, float | int] | None:
+        return settings_poll_budget(inv, self.settings_retry_s(inv.id))
 
     def settings_snapshots(self) -> dict[str, dict[str, float | int]]:
         """Per inverter: requests per periodic settings snapshot, block limit, cadence, cycle
@@ -300,7 +305,7 @@ class Runtime:
             return {}
         out = {}
         for inverter_id, inv in self.inverters.items():
-            if (budget := settings_poll_budget(inv)) is not None:
+            if (budget := self._settings_budget(inv)) is not None:
                 out[inverter_id] = budget
         return out
 

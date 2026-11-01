@@ -8,7 +8,6 @@ import { t, errorText, localText } from './i18n.js';
 import { h, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant, mutate, reloadAfterPlantChange } from './state.js';
 
-const CAPS = '5 kW 120 A · 6 kW 150 A · 8 kW 190 A · 10 kW 210 A · 12 kW 240 A';
 const GROUPS = ['battery', 'grid_charge', 'smart_load', 'tou'];
 const SLOT_RE = /^tou_slot(\d)_(start|power|soc|grid_charge)$/;
 
@@ -38,11 +37,28 @@ function slaveNotice() {
 
 const catalogue = () => (state.plant && state.plant.writes && state.plant.writes.operations) || [];
 
+// Model limits by rated power, as the server derives them from its constants.
+function capsText() {
+  const writes = (state.plant && state.plant.writes) || {};
+  const caps = (writes.current_caps || []).map((c) => `${c.rated_w / 1000} kW ${c.amps} A`).join(' · ');
+  return writes.charge_branch_cap ? `${caps}; ${t('writes.range.branch', { amps: writes.charge_branch_cap })}` : caps;
+}
+
+// What the Home Assistant entities of this inverter show and why (from the last fresh read).
+function entityLine(id) {
+  const view = state.plant && state.plant.writes && state.plant.writes.entities && state.plant.writes.entities[id];
+  if (!view) return null;
+  const text = view.status === 'exposed'
+    ? t('writes.entities.exposed')
+    : t('writes.entities.other', { status: t(`writes.entities.${view.status}`), reason: view.reason || '–' });
+  return h('p', { class: `note entities-state ${view.status}`, 'data-entities': id }, t('writes.entities.label'), ' ', text);
+}
+
 function rangeText(op) {
   if (op.whole_word_bool) return t('writes.range.word01');
   if (op.kind === 'bit') return t('writes.range.bit');
   if (op.kind === 'time') return t('writes.range.time');
-  if (op.current_cap) return t('writes.range.cap', { caps: CAPS });
+  if (op.current_cap) return t('writes.range.cap', { caps: capsText() });
   if (op.power_cap) return t('writes.range.power');
   return t('writes.range.unit', { min: fmtNumber(op, op.min), max: fmtNumber(op, op.max), unit: op.unit });
 }
@@ -121,6 +137,7 @@ export function writesSection(inv, { onChanged }) {
   return h('details', { class: 'writes-section', 'data-writes': inv.id, open: cfg.allow_writes || undefined },
     h('summary', {}, h('span', { class: 'writes-title' }, t('plant.inv.writes')), ' ', h('span', { class: `chip ${cfg.allow_writes && cfg.operations.length ? 'warn' : ''}` }, summary)),
     h('p', { class: 'help' }, t('writes.intro')),
+    entityLine(inv.id),
     slave ? slaveNotice() : null,
     h('label', { class: 'option writes-master', for: `writes-allow-${inv.id}` }, master,
       h('span', { class: 'opt-text' }, h('span', { class: 'opt-title' }, t('writes.allow')), h('span', { class: 'opt-help' }, t('writes.allow_help')))),

@@ -290,6 +290,9 @@ class SettingsSnapshot:
     settings: Mapping[str, SettingState]
 
 
+RETRY_FIRST_S = 5.0  # a snapshot that was not fresh is repeated after this, then doubled
+
+
 def settings_read_requests(keys: Collection[str], step: int) -> int:
     """Modbus requests of ONE settings snapshot (``snapshot``): the identity block plus the runs of
     the other words of the released ``keys``, each split at the endpoint's block limit ``step``."""
@@ -311,10 +314,20 @@ def settings_read_requests(keys: Collection[str], step: int) -> int:
     return requests + (-(-run // step) if run else 0)
 
 
-def settings_poll_budget(inv: InverterRuntime) -> dict[str, float | int] | None:
+def settings_poll_budget(
+    inv: InverterRuntime, retry_s: float | None = None
+) -> dict[str, float | int] | None:
     """Recurring bus cost of the periodic settings snapshot of ``inv`` (conditional: only while the
     Home Assistant entities poll it): requests per snapshot after splitting at the endpoint's
-    block limit, the cadence (``poll_settings_s``) and the resulting bus utilisation."""
+    block limit, the cadence (``poll_settings_s``) and the resulting bus utilisation.
+
+    Recovery load is reported separately: after a snapshot that was not fresh the read repeats at
+    ``retry_s`` (the publisher's current retry delay, ``None`` while healthy), starting at
+    ``RETRY_FIRST_S``. ``recovery_utilisation`` is the load at the current cadence,
+    ``recovery_worst_utilisation`` the load at the first retry, which also bounds forced
+    (RUNNING-triggered) refreshes: the publisher services them no sooner than ``RETRY_FIRST_S``
+    after the previous attempt; ``utilisation`` stays the steady
+    state and ``load`` is what the bus carries now (the larger of steady and current recovery)."""
     cfg = inv.cfg
     keys = [k for k in cfg.enabled_write_operations if k in BY_KEY]
     if not cfg.allow_writes or not keys:
@@ -323,12 +336,19 @@ def settings_poll_budget(inv: InverterRuntime) -> dict[str, float | int] | None:
     requests = settings_read_requests(keys, route.max_read_registers)
     cycle = requests * (route.response_time_s + route.bus_gap_s)
     interval = float(cfg.poll.settings_s)
+    recovery = min(interval, retry_s) if retry_s is not None and retry_s > 0 else interval
+    worst = min(interval, RETRY_FIRST_S)
     return {
         "requests": requests,
         "max_block": route.max_read_registers,
         "cadence_s": interval,
         "cycle_s": cycle,
         "utilisation": cycle / interval,
+        "recovery_cadence_s": recovery,
+        "recovery_utilisation": cycle / recovery,
+        "recovery_worst_cadence_s": worst,
+        "recovery_worst_utilisation": cycle / worst,
+        "load": cycle / recovery,
     }
 
 

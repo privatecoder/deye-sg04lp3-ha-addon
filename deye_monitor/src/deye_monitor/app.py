@@ -36,6 +36,7 @@ from deye_monitor.plant import PlantService, PlantStore, SwitchError
 from deye_monitor.profiles.plan import SelectionError
 from deye_monitor.runtime import Runtime
 from deye_monitor.selection import (
+    STALE_CODES,
     InverterSelection,
     InverterSpec,
     SelectionManager,
@@ -122,7 +123,7 @@ def build_publisher(
     invs = runtime.inverters
     runtime.settings_polling = True  # the entities poll the settings: part of the bus load
     store = open_discovery_store(data_dir(directory) / "discovery.json")
-    return MqttPublisher(
+    publisher = MqttPublisher(
         ns,
         [InverterInfo(i.id, i.name, invs[i.id].profile, i.poll) for i in cfg.inverters],
         store,
@@ -142,6 +143,9 @@ def build_publisher(
             clock=runtime.writes.clock,  # the intent deadlines are in the service's clock
         ),
     )
+    if publisher.plane is not None:
+        runtime.settings_retry_s = publisher.plane.retry_cadence_s  # recovery load in the budget
+    return publisher
 
 
 def _parallel_role(runtime: Runtime, inverter_id: str) -> str | None:
@@ -362,6 +366,11 @@ async def serve(cfg: AppConfig, stop: asyncio.Event) -> None:
         SelectionStore(directory, specs_from_config(effective), require_choice=True)
     )
     for problem in manager.store.problems:
+        if problem.code in STALE_CODES:
+            log.info(
+                "selection store: stale %s dropped (%s)", problem.detail or "entry", problem.subject
+            )
+            continue
         log.error("selection store: %s (%s) %s", problem.code, problem.subject, problem.detail)
     manager.prune_locked()  # stale records of removed inverters must not outlive a restart
     application = Application(effective, instance_id, mqtt, manager, relay)

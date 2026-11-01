@@ -52,6 +52,10 @@ class ChangeError(Exception):
         self.params = params
 
 
+# A stored key the profile no longer has: dropped on load, reported once at INFO (not an error).
+STALE_CODES = frozenset({"unknown_entry"})
+
+
 @dataclass(frozen=True, slots=True)
 class Problem:
     """A finding while loading/migrating the stored document (never dropped silently)."""
@@ -471,9 +475,12 @@ class SelectionStore:
                     True  # the stale record is still on disk: removed before the next change
                 )
                 continue
+            before = len(self.problems)
             self.records[inverter_id] = _migrate_record(
                 spec, body["inverters"][inverter_id], self.problems
             )
+            if any(p.code in STALE_CODES for p in self.problems[before:]):
+                self.pruned = True  # the stale key is still on disk: dropped durably at start
         for inverter_id, record in list(self.records.items()):
             try:  # a stored record that no longer resolves (profile change) falls back, reported
                 resolve(self.specs[inverter_id], record)

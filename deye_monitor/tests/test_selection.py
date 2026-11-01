@@ -547,3 +547,19 @@ async def test_unknown_confirmation_is_rejected_and_changes_nothing(tmp_path: Pa
     with pytest.raises(ChangeError) as caught:
         await m.change(0, {"deye1": Edit(confirm=frozenset({"nonsense"}))})
     assert caught.value.key == "unknown_feature" and m.revision == 0
+
+
+def test_a_stale_key_is_dropped_durably_so_it_is_reported_once(tmp_path: Path) -> None:
+    doc = {
+        "revision": 2,
+        "inverters": {"deye1": {"features": {}, "added": ["temp_dc_transformer"], "removed": []}},
+    }
+    from deye_monitor.selection import SLOT_FORMAT, STALE_CODES, _checksum
+
+    slot = {"format": SLOT_FORMAT, "seq": 1, "checksum": _checksum(1, doc), "body": doc}
+    (tmp_path / "selection.a.json").write_text(json.dumps({"schema_version": 1, "data": slot}))
+    m = manager_at(tmp_path)
+    assert {p.code for p in m.store.problems} == STALE_CODES
+    assert m.store.pruned and m.prune_locked()  # persisted at start
+    again = manager_at(tmp_path)
+    assert again.store.problems == [] and not again.store.pruned

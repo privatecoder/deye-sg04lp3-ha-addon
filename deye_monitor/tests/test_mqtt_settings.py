@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import itertools
 import json
+import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -30,6 +32,14 @@ from deye_monitor.store import JsonStore
 from deye_monitor.write_ops import BY_KEY, Refused
 from deye_monitor.writes import Binding, Intent, SettingsSnapshot, SettingState
 from tests.fakes.mqtt import FakeBroker, FakeConnection, settle
+
+
+@pytest.fixture(autouse=True)
+def _short_recovery_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The forced-refresh spacing (RETRY_FIRST_S, 5 s in service) is off here: the rig's clock
+    stands still. The tests of the spacing itself set their own."""
+    monkeypatch.setattr("deye_monitor.mqtt_settings.RETRY_FIRST_S", 0.0)
+
 
 PROFILE = load_profile("sg04lp3_lv_v105_8")
 NS = Namespace("ab12cd34", "homeassistant", "deye")
@@ -182,9 +192,13 @@ async def make(
     store = store or JsonStore(tmp_path / "discovery.json", validate=valid_discovery_document)
     now = [1000.0]
     plane = SettingsPlane(
-        NS, {"deye1": PollConfig()}, source, clock=lambda: now[0], wall=lambda: 1_700_000_000.0,
+        NS,
+        {"deye1": PollConfig()},
+        source,
+        clock=lambda: now[0],
+        wall=lambda: 1_700_000_000.0,
         nonce=nonce,
-    )  # fmt: skip
+    )
 
     async def sleep(delay: float) -> None:
         await asyncio.sleep(0)
@@ -777,3 +791,173 @@ async def test_the_intent_carries_the_receipt_deadline_and_a_revocation_test(
         assert seen[0].revoked() is False
         rig.plane._revoke_all()  # a session end revokes what has been accepted
         assert seen[0].revoked() is True
+
+
+async def test_a_unit_that_was_not_ready_is_read_again_within_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live-27: the first read right after a start found the unit still identifying; the entities
+    must not wait a whole settings period for the next one."""
+    monkeypatch.setattr("deye_monitor.mqtt_settings.RETRY_FIRST_S", 5.0)
+    source = FakeSource()
+    source.status, source.reason = "unavailable", "identifying"
+    poll = PollConfig(settings_s=300.0)
+    plane = SettingsPlane(NS, {"deye1": poll}, source)
+    await plane.refresh("deye1")
+    assert plane.view("deye1")["status"] == "unavailable"
+    assert plane.view("deye1")["reason"] == "identifying"
+    assert plane._retry_in("deye1") == 5.0
+    await plane.refresh("deye1")
+    assert plane._retry_in("deye1") == 10.0
+    source.status, source.reason = "ok", None
+    await plane.refresh("deye1")
+    assert plane.view("deye1")["status"] == "exposed"
+    assert plane._retry_in("deye1") == 300.0
+
+
+async def test_the_refresh_loop_retries_and_logs_each_change(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("deye_monitor.mqtt_settings.RETRY_FIRST_S", 0.02)
+    source = FakeSource()
+    source.status, source.reason = "unavailable", "identifying"
+    plane = SettingsPlane(NS, {"deye1": PollConfig(settings_s=300.0)}, source)
+    caplog.set_level("INFO", logger="deye_monitor.mqtt_settings")
+    plane.begin_session()
+    plane.start()
+    try:
+        await settle(lambda: source.snapshots >= 3)
+        assert plane.view("deye1")["status"] == "unavailable"
+        source.status, source.reason = "ok", None
+        await settle(lambda: plane.view("deye1")["status"] == "exposed")
+    finally:
+        await plane.stop()
+    lines = [r.getMessage() for r in caplog.records if "write entities" in r.getMessage()]
+    assert lines == [
+        "deye1: write entities unavailable (identifying)",
+        "deye1: write entities exposed (fresh read)",
+    ]
+
+
+async def test_forced_refreshes_keep_the_recovery_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Successive RUNNING transitions (also right after a failed read) are coalesced and serviced
+    no sooner than RETRY_FIRST_S after the previous attempt; the first one is prompt."""
+    gap = 0.05
+    monkeypatch.setattr("deye_monitor.mqtt_settings.RETRY_FIRST_S", gap)
+    source = FakeSource()
+    source.status, source.reason = "unavailable", "identifying"
+    stamps: list[float] = []
+    plane = SettingsPlane(NS, {"deye1": PollConfig(settings_s=300.0)}, source)
+    original = plane.refresh
+
+    async def stamped(inverter_id: str) -> None:
+        stamps.append(time.monotonic())
+        await original(inverter_id)
+
+    monkeypatch.setattr(plane, "refresh", stamped)
+    plane.begin_session()
+    plane.start()
+    try:
+        await settle(lambda: len(stamps) >= 1)
+        assert time.monotonic() - stamps[0] < gap  # the first readiness refresh was prompt
+        for _ in range(4):
+            plane.request_refresh("deye1")
+            plane.request_refresh("deye1")  # coalesced
+            await asyncio.sleep(gap / 5)
+        await settle(lambda: len(stamps) >= 3)
+    finally:
+        await plane.stop()
+    assert all(b - a >= gap * 0.95 for a, b in itertools.pairwise(stamps))
+    assert len(stamps) <= 4  # not one cycle per request
+
+
+class _SchedulerRig:
+    """The refresh loop on a fake clock with the production gap: every sleep it asks for is
+    recorded and advances the clock; after ``limit`` sleeps it parks."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, limit: int) -> None:
+        monkeypatch.setattr("deye_monitor.mqtt_settings.RETRY_FIRST_S", 5.0)
+        self.now = 0.0
+        self.waits: list[float] = []
+        self.limit = limit
+        self.parked = asyncio.Event()
+        rig = self
+
+        class _Timeout:
+            def __init__(self, delay: float) -> None:
+                self.delay = delay
+
+            async def __aenter__(self) -> None:
+                rig.waits.append(self.delay)
+
+            async def __aexit__(self, *exc: object) -> bool:
+                return False
+
+        class _Kick(asyncio.Event):
+            async def wait(self) -> Literal[True]:
+                await asyncio.sleep(0)
+                if len(rig.waits) >= rig.limit:
+                    rig.parked.set()
+                    await asyncio.Event().wait()
+                rig.now += rig.waits[-1]
+                raise TimeoutError
+
+        monkeypatch.setattr("deye_monitor.mqtt_settings.asyncio.timeout", _Timeout)
+        self.kick_cls = _Kick
+
+    def plane(self, source: FakeSource, polls: dict[str, PollConfig]) -> SettingsPlane:
+        plane = SettingsPlane(NS, polls, source, clock=lambda: self.now)
+        plane._kick = self.kick_cls()
+        return plane
+
+
+async def test_a_short_settings_period_does_not_spin_inside_the_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rig = _SchedulerRig(monkeypatch, limit=8)
+    source = FakeSource()
+    plane = rig.plane(source, {"deye1": PollConfig(settings_s=1.0)})
+    reads: list[float] = []
+    original = plane.refresh
+
+    async def stamped(inverter_id: str) -> str | None:
+        reads.append(rig.now)
+        return await original(inverter_id)
+
+    monkeypatch.setattr(plane, "refresh", stamped)
+    plane.begin_session()
+    plane.start()
+    try:
+        await asyncio.wait_for(rig.parked.wait(), 5)
+    finally:
+        await plane.stop()
+    assert reads[:4] == [0.0, 5.0, 10.0, 15.0]
+    assert rig.waits == [5.0] * 8  # one sleep per gap, never a zero-second spin
+
+
+async def test_a_force_during_another_inverters_read_is_serviced_when_eligible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rig = _SchedulerRig(monkeypatch, limit=2)
+    source = FakeSource()
+    plane = rig.plane(
+        source, {"deye1": PollConfig(settings_s=300.0), "deye2": PollConfig(settings_s=300.0)}
+    )
+    reads: list[tuple[str, float]] = []
+    original = plane.refresh
+
+    async def stamped(inverter_id: str) -> str | None:
+        reads.append((inverter_id, rig.now))
+        if inverter_id == "deye2" and len(reads) == 2:
+            plane.request_refresh("deye1")  # the already visited one, during deye2's read
+            rig.now += 6.0
+        return await original(inverter_id)
+
+    monkeypatch.setattr(plane, "refresh", stamped)
+    plane.begin_session()
+    plane.start()
+    try:
+        await asyncio.wait_for(rig.parked.wait(), 5)
+    finally:
+        await plane.stop()
+    assert reads[:3] == [("deye1", 0.0), ("deye2", 0.0), ("deye1", 6.0)]

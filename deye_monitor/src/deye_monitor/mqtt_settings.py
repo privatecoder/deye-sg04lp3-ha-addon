@@ -55,7 +55,13 @@ from deye_monitor.ha_discovery import (
     write_result_component,
 )
 from deye_monitor.write_ops import BY_KEY, DESCRIPTORS, Kind, Refused, WriteDescriptor, parse_value
-from deye_monitor.writes import Binding, Intent, SettingsSnapshot, SettingState
+from deye_monitor.writes import (
+    RETRY_FIRST_S,
+    Binding,
+    Intent,
+    SettingsSnapshot,
+    SettingState,
+)
 
 log = logging.getLogger(__name__)
 
@@ -148,6 +154,8 @@ class _Plan:
     """What one inverter currently exposes."""
 
     status: str = "unknown"  # unknown (no fresh read yet) | exposed | none
+    reason: str | None = None  # why the last read was not fresh (None: it was)
+    failures: int = 0  # consecutive reads that were not fresh (drives the retry delay)
     n: int = 0
     keys: dict[str, int | None] = field(default_factory=dict)  # exposed key -> model cap
     token: str = ""
@@ -207,6 +215,7 @@ class SettingsPlane:
         self._have = asyncio.Event()
         self._kick = asyncio.Event()
         self._force: set[str] = set()
+        self._last_attempt: dict[str, float] = {}  # clock at the end of the last snapshot attempt
         self._outbox: deque[Out] = deque()
         self._carry: list[tuple[str, str, Any, str]] = []  # discarded by a session end
         self._session = 0  # a command of another session is revoked (checked at the send point)
@@ -449,6 +458,9 @@ class SettingsPlane:
     def _apply(self, inverter_id: str, snap: SettingsSnapshot) -> None:
         plan = self._plans[inverter_id]
         changed = False
+        was = (plan.status, plan.reason, plan.reachable)
+        plan.reason = None if snap.status == "ok" else (snap.reason or snap.status)
+        plan.failures = 0 if snap.status == "ok" else plan.failures + 1
         if snap.status == "ok":
             keys = {k: s.cap for k, s in snap.settings.items()}
             plan.reachable = True
@@ -470,6 +482,7 @@ class SettingsPlane:
                 changed = True
         else:  # unavailable: keep what is exposed, show it unavailable
             plan.reachable = False
+        self._log_status(inverter_id, plan, was)
         if changed:
             self.on_change()  # discovery follows; ``announce`` then publishes availability/state
             return
@@ -477,19 +490,62 @@ class SettingsPlane:
         if plan.status == "exposed" and plan.reachable:
             self._publish_state(inverter_id)
 
+    def _log_status(self, inverter_id: str, plan: _Plan, was: tuple[str, str | None, bool]) -> None:
+        """One INFO line per change of what the entities show: exposed, unavailable (with the
+        reason) or none. Repeated identical reads stay quiet."""
+        shown = "exposed" if plan.reachable and plan.status == "exposed" else self._shown(plan)
+        before = "exposed" if was[2] and was[0] == "exposed" else self._shown_of(was[0], was[1])
+        if (shown, plan.reason) != (before, was[1]):
+            log.info("%s: write entities %s (%s)", inverter_id, shown, plan.reason or "fresh read")
+
+    @staticmethod
+    def _shown_of(status: str, reason: str | None) -> str:
+        return "withdrawn" if status == "none" else "unavailable"
+
+    def _shown(self, plan: _Plan) -> str:
+        return self._shown_of(plan.status, plan.reason)
+
+    def retry_cadence_s(self, inverter_id: str) -> float | None:
+        """The current retry delay while the last read was not fresh, else ``None`` (bus budget)."""
+        if inverter_id not in self._plans or self._plans[inverter_id].failures == 0:
+            return None
+        return self._retry_in(inverter_id)
+
+    def _retry_in(self, inverter_id: str) -> float:
+        """Seconds to the next read: the poll interval after a fresh read, a short growing delay
+        while the unit was not ready (restart, identification, failover)."""
+        interval = float(self._poll[inverter_id].settings_s)
+        failures = self._plans[inverter_id].failures
+        if failures == 0:
+            return interval
+        return min(interval, RETRY_FIRST_S * float(2 ** min(failures - 1, 16)))
+
     async def _refresh_loop(self) -> None:
-        due: dict[str, float] = {}
+        """Scheduled and forced refreshes alike are serviced no earlier than ``RETRY_FIRST_S``
+        after the previous attempt of that inverter, so one inverter never costs more than one
+        snapshot per ``RETRY_FIRST_S`` (a forced request meanwhile stays pending, coalesced). The
+        first attempt of an inverter has no predecessor and is immediate."""
+        due: dict[str, float] = {}  # next scheduled read: success +settings_s, failure +retry delay
+
+        def effective(inverter_id: str, now: float) -> float:
+            at = now if inverter_id in self._force else due.get(inverter_id, 0.0)
+            last_end = self._last_attempt.get(inverter_id)
+            return at if last_end is None else max(at, last_end + RETRY_FIRST_S)
+
         while True:
-            now = self._clock()
-            for inverter_id in self._plans:
-                if inverter_id in self._force or due.get(inverter_id, 0.0) <= now:
-                    self._force.discard(inverter_id)
-                    await self.refresh(inverter_id)
-                    due[inverter_id] = self._clock() + float(self._poll[inverter_id].settings_s)
-            wait = max(0.0, min(due.values()) - self._clock()) if due else 3600.0
+            # Cleared before the reads: a force arriving during any of them sets it again.
             self._kick.clear()
-            if self._force:
-                continue
+            for inverter_id in list(self._plans):
+                if effective(inverter_id, self._clock()) <= self._clock():
+                    self._force.discard(inverter_id)
+                    try:
+                        await self.refresh(inverter_id)
+                    finally:
+                        self._last_attempt[inverter_id] = self._clock()
+                    due[inverter_id] = self._clock() + self._retry_in(inverter_id)
+            now = self._clock()
+            wakes = [effective(i, now) for i in self._plans]
+            wait = max(0.0, min(wakes) - now) if wakes else 3600.0
             with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(wait):
                     await self._kick.wait()
@@ -638,7 +694,33 @@ class SettingsPlane:
             "rejections_reported": self.reported,
             "rejections_suppressed": self.suppressed,
             "exposed": {i: sorted(p.keys) for i, p in self._plans.items() if p.status == "exposed"},
+            "inverters": {i: self.view(i) for i in self._plans},
         }
+
+    def view(self, inverter_id: str) -> dict[str, Any]:
+        """What the entities of one inverter show and why: ``status`` is ``exposed`` (fresh read,
+        entities as released), ``unavailable`` (``reason``: no fresh read yet or a gate closed),
+        ``withdrawn`` (the release does not apply) or ``none``; per key ``ready``/``reason``."""
+        plan = self._plans[inverter_id]
+        if plan.status == "exposed" and plan.reachable:
+            status = "exposed"
+        elif plan.status == "none":
+            status = "withdrawn" if plan.reason else "none"
+        else:
+            status = "unavailable"
+        reason = plan.reason or ("no_fresh_read" if status == "unavailable" else None)
+        return {
+            "status": status,
+            "reason": reason,
+            "failures": plan.failures,
+            "keys": {
+                key: {"ready": plan.ready.get(key, False), "reason": plan.reasons.get(key)}
+                for key in sorted(plan.keys)
+            },
+        }
+
+    def inverter_ids(self) -> Collection[str]:
+        return self._plans.keys()
 
     def exposed(self, inverter_id: str) -> Collection[str]:
         plan = self._plans[inverter_id]

@@ -637,6 +637,14 @@ def _number_class(desc: WriteDescriptor) -> str | None:
     return {"A": "current", "%": "battery", "W": "power", "V": "voltage"}.get(desc.unit)
 
 
+_REGISTER_TAG = re.compile(r"\s*\(R\d+(?: bit \d+)?\)")
+
+
+def entity_name(name: str) -> str:
+    """The Home Assistant name of a setting: the Web UI name without its register tag."""
+    return _REGISTER_TAG.sub("", name)
+
+
 def setting_component(
     ns: Namespace, inverter_id: str, desc: WriteDescriptor, token: str, cap: int | None
 ) -> tuple[str, dict[str, Any]]:
@@ -650,7 +658,7 @@ def setting_component(
         "platform": platform,
         "unique_id": f"{device_id}_{ckey}",
         "default_entity_id": f"{platform}.{device_id}_{ckey}",
-        "name": desc.name.en,
+        "name": entity_name(desc.name.en),
         "state_topic": ns.write_state_topic(inverter_id),
         "value_template": _setting_template(desc),
         "command_topic": ns.command_topic(inverter_id, token, desc.key),

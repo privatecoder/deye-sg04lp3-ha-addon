@@ -21,7 +21,7 @@
     "max": 190,
     "min": 0,
     "mode": "box",
-    "name": "Maximum battery charge current (R108)",
+    "name": "Maximum battery charge current",
     "optimistic": false,
     "platform": "number",
     "retain": false,
@@ -43,7 +43,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.4.0"
+   "sw_version": "0.4.1"
   }
  },
  "set_tou_enable": {
@@ -64,7 +64,7 @@
     "command_topic": "deye/ab12cd34/cleanup/void",
     "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_enable",
     "entity_category": "config",
-    "name": "ToU schedule enable (R146 bit 0)",
+    "name": "ToU schedule enable",
     "optimistic": false,
     "platform": "switch",
     "retain": false,
@@ -84,7 +84,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.4.0"
+   "sw_version": "0.4.1"
   }
  },
  "set_tou_slot2_start": {
@@ -105,7 +105,7 @@
     "command_topic": "deye/ab12cd34/cleanup/void",
     "default_entity_id": "time.deye_ab12cd34_deye1_set_tou_slot2_start",
     "entity_category": "config",
-    "name": "ToU slot 2: start time (R149)",
+    "name": "ToU slot 2: start time",
     "optimistic": false,
     "platform": "time",
     "retain": false,
@@ -125,7 +125,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.4.0"
+   "sw_version": "0.4.1"
   }
  },
  "write_result": {
@@ -168,7 +168,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.4.0"
+   "sw_version": "0.4.1"
   }
  }
 }

@@ -122,3 +122,47 @@ async def test_a_periodic_snapshot_records_drift_once_and_never_reasserts(
         assert [x["event"] for x in audit_lines(rig_)].count("drift") == 1  # recorded once
         assert len(rig_.servers["gw1"].responder.writes) == writes  # never reasserted
         assert rig_.servers["gw1"].responder.regs[108] == 77
+
+
+async def test_a_failed_snapshot_is_budgeted_at_its_retry_cadence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig_:
+        await build_plant(rig_, inverters=("deye1",))
+        runtime = rig_.app.runtime
+        assert runtime is not None
+        runtime.settings_polling = True
+        inv = runtime.inverters["deye1"]
+        bus = runtime._bus_of("deye1")
+        steady = runtime.bus_utilisation()[bus]
+        healthy = settings_poll_budget(inv)
+        assert healthy is not None
+        assert healthy["load"] == healthy["utilisation"]
+        assert healthy["recovery_worst_cadence_s"] == min(healthy["cadence_s"], 5.0)
+        runtime.settings_retry_s = lambda _i: 5.0  # the first retry of a failed snapshot
+        failing = runtime.settings_snapshots()["deye1"]
+        assert failing["utilisation"] == healthy["utilisation"]  # steady state unchanged
+        assert failing["recovery_cadence_s"] == 5.0
+        assert failing["recovery_utilisation"] == pytest.approx(failing["cycle_s"] / 5.0)
+        assert failing["recovery_utilisation"] > failing["utilisation"]
+        assert runtime.bus_utilisation()[bus] == pytest.approx(
+            steady - healthy["utilisation"] + failing["recovery_utilisation"]
+        )
+
+
+async def test_the_publisher_feeds_its_retry_delay_to_the_budget(tmp_path: Path) -> None:
+    banks = {"gw1": device_regs("2401234567", soc=55)}
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], banks, tmp_path) as r:
+        publisher = build_publisher(
+            r.cfg,
+            r.runtime,
+            r.cfg.mqtt.model_copy(update={"host": "127.0.0.1"}),
+            "ab12cd34",
+            factory=FakeBroker(),
+            directory=tmp_path / "pub",
+            settings=FAST_PUBLISHER,
+        )
+        assert publisher.plane is not None
+        assert r.runtime.settings_retry_s("deye1") is None
+        publisher.plane._plans["deye1"].failures = 1
+        assert r.runtime.settings_retry_s("deye1") == publisher.plane._retry_in("deye1")

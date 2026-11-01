@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.1
+
+- **Home Assistant write entities no longer wait a whole settings period after a start**
+  (live-27): the first read right after a start or a plant reinstall found the unit still
+  identifying and the next one came only after `poll_settings_s` (300 s), so only the persisted
+  entities of the earlier release showed, unavailable. A read that found the unit not ready is
+  now repeated after 5 s, 10 s, 20 s ... (never later than the poll interval), and the publisher
+  asks for a read as soon as the inverter is running.
+- **The reason is visible**: every change of what the entities show is logged at INFO
+  (`<inv>: write entities <status> (<reason>)`); status, reason and per-setting ready/reason are in
+  the MQTT diagnostics, in the inverter status of the Web API and on the plant page next to the
+  release list ("HA entities: exposed / unavailable: <reason>").
+- **Plant page texts**: the current ranges come from the code constants (5K 120 A, 6K 130 A,
+  8K 185 A, 10K 210 A, 12K 240 A; 200 A charging at 10/12 kW unless the hardware variant is
+  proven); the intro no longer says that writing happens only in the Web interface.
+- **HA entity names carry no register number** (`GRID charge current`, not `GRID charge current
+  (R128)`); unique ids are unchanged. All names stay English (owner decision, no translation); the
+  register stays in the Web UI.
+- **A stored selection key the profile no longer has** (e.g. `temp_dc_transformer`) is dropped
+  with one INFO line and removed from the store at the next start instead of an ERROR on every
+  start.
+
 ## 0.4.0
 
 ### Review 23 fixes

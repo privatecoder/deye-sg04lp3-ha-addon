@@ -541,3 +541,10 @@ def test_the_write_topics_are_disjoint_from_every_profile_group() -> None:
     other = Namespace("ff00ee11", "homeassistant", "deye")
     assert not topics & {other.write_state_topic("deye1"), other.write_result_topic("deye1")}
     assert NS.command_topic("deye1", "t1", "k") != NS.command_topic("deye1", "t2", "k")
+
+
+def test_write_entity_names_carry_no_register() -> None:
+    from deye_monitor.ha_discovery import entity_name
+
+    assert entity_name("GRID charge current (R128)") == "GRID charge current"
+    assert entity_name("ToU schedule enable (R146 bit 0)") == "ToU schedule enable"

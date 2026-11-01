@@ -385,6 +385,8 @@ class MqttPublisher:
         self._check_serial(rec)
         self._app_dirty = True
         self._wake.set()
+        if state is InverterState.RUNNING and self.plane is not None:
+            self.plane.request_refresh(inverter_id)  # the unit is ready now: read the settings
 
     def on_diagnostics(self, inverter_id: str, diagnostics: Mapping[str, Any]) -> None:
         rec = self._inv.get(inverter_id)
