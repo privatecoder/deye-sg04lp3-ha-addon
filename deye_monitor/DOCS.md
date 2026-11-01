@@ -2,16 +2,16 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher and an opt-in write layer (0.3.2, experimental).**
+> **Status: device loop with MQTT publisher and an opt-in write layer (0.4.0).**
 > The app validates its configuration, then connects to the configured endpoints (read-only
-> by default: Modbus function code 03 only; the nine settings under “Writing settings” can be
+> by default: Modbus function code 03 only; the 38 settings under “Writing settings” can be
 > released per inverter and are written only from the web interface), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
 > discovery state in `/data`. The values are published through MQTT Device Discovery, so
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.3.2 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.4.0 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -313,31 +313,66 @@ the daily PV energy matches the display.
 
 ## Writing settings
 
-Writing is **off by default** and **per inverter and per setting**. It exists for nine reviewed
-settings of the SG04LP3 only (register numbers of the V105.8 protocol document; every write is
-exactly one register, function code 16 with count 1):
+Writing is **off by default** and **per inverter and per setting**. It is a regular feature for
+38 reviewed settings of the SG04LP3 only (register numbers of the V105.8 protocol document; every
+write is exactly one register, function code 16 with count 1). Everything not listed (work mode,
+clock, battery type, topology, identity, the ToU weekday bits and every other register) cannot be
+written.
 
-| Setting | Register | Range |
-| --- | --- | --- |
-| Maximum battery charge current | R108 | 0 to the model limit |
-| Maximum battery discharge current | R109 | 0 to the model limit |
-| Generator charge current | R125 | 0 to the model limit |
-| GRID charge current | R128 | 0 to the model limit |
-| GRID charge enable (bit 0 only) | R130 | 0 or 1, all other bits are preserved |
-| Smart Load OFF voltage | R134 | 38.00 to 63.00 V (steps of 0.01 V) |
-| Smart Load OFF SOC | R135 | 0 to 100 % |
-| Smart Load ON voltage | R136 | 38.00 to 63.00 V (steps of 0.01 V) |
-| Smart Load ON SOC | R137 | 0 to 100 % |
+| Group | Setting | Register | Range / rule |
+| --- | --- | --- | --- |
+| Battery protection | Maximum battery charge current | R108 | 0 to the model limit |
+| | Maximum battery discharge current | R109 | 0 to the model limit |
+| | Shutdown SOC | R115 | 0 to 100 %, SOC mode only; shutdown < low < restart |
+| | Low SOC | R117 | 0 to 100 %, SOC mode only; shutdown < low < restart |
+| | Restart SOC | R116 | 0 to 100 %, SOC mode only; shutdown < low < restart |
+| GRID charging | Generator charge current | R125 | 0 to the model limit |
+| | GRID charge current | R128 | 0 to the model limit |
+| | GRID charge enable | R130 | 0 or 1 (the whole register) |
+| | GRID charge start SOC | R127 | 10 to 90 %, SOC mode only |
+| Smart Load | OFF voltage / ON voltage | R134 / R136 | 38.00 to 63.00 V (0.01 V), voltage mode only; OFF < ON |
+| | OFF SOC / ON SOC | R135 / R137 | 0 to 100 %, SOC mode only; OFF < ON |
+| ToU schedule | ToU enable (bit 0 only) | R146 | 0 or 1, all other bits preserved |
+| | Slot 1-6 start time | R148-R153 | 00:00 to 23:55, minutes in steps of 5, strictly ascending |
+| | Slot 1-6 discharge power | R154-R159 | 0 W to the rated power of the model |
+| | Slot 1-6 target SOC | R166-R171 | 0 to 100 %, SOC mode only |
+| | Slot 1-6 allow GRID charging (bit 0 only) | R172-R177 | 0 or 1, all other bits preserved |
 
-The model limit of the four current settings comes from the vendor datasheet (5K 120 A, 6K 150 A,
-8K 190 A, 10K 210 A, 12K 240 A) and is selected from the rated power the inverter reports
-(registers 20/21, exactly 5, 6, 8, 10 or 12 kW). If the model cannot be determined, or the stored
-value is outside the allowed range (so it could not be restored), the setting stays locked. The
-Smart Load settings are offered only while the GEN port is already configured as Smart Load; OFF
-must stay below ON (a rule of this app, not a proven firmware check); the app does not infer from
-the BMS setting whether the load works by voltage or by SOC - you enable the pair you really use
-and check the mode at the display. Everything else (protection and shutdown thresholds, work mode,
-time-of-use, clock, battery type, topology, identity and every other register) cannot be written.
+Values must be exact: a fractional or non-finite number is refused, nothing is rounded or clamped.
+
+- **Model limit.** The limit of the four current settings comes from the vendor datasheet (5K 120 A,
+  6K 150 A, 8K 190 A, 10K 210 A, 12K 240 A) and is selected from the rated power the inverter
+  reports (registers 20/21, exactly 5, 6, 8, 10 or 12 kW). The slot discharge power is limited by
+  the same rated power in W. If the model cannot be determined, or the stored value is outside the
+  allowed range (so it could not be restored), the setting stays locked.
+- **Battery control mode (R111).** SOC settings (R115-R117, R127, R135, R137 and the slot target
+  SOC) are offered only while R111 is 1 (SOC mode); the Smart Load voltages (R134, R136) only while
+  R111 is 0 (voltage mode). The mode is read fresh every time; it is never changed by the app.
+- **Smart Load.** The four Smart Load settings also need the GEN port to be configured as Smart
+  Load (R133). OFF must stay below ON (a rule of this app, not a proven firmware check).
+- **Protection thresholds.** Shutdown, low and restart SOC are checked against a fresh read of the
+  other two: shutdown < low < restart. The app does not claim a safe minimum; the limits come from
+  the commissioning of your battery. The current values are not a specification.
+- **GRID charge enable (R130).** The firmware compares the whole word with 1, so the app writes
+  exactly 0 or 1 and refuses to write while the register holds anything else (`unexpected_bits`).
+- **ToU schedule.** The start times must ascend strictly from slot 1 to 6 (slot 6 runs on until
+  slot 1 starts, across midnight). Each time is sent on its own and takes effect immediately, so
+  the neighbouring intervals change with it; the app checks all six times freshly for every edit,
+  refuses a time that would cross a neighbour (`tou_order`) and never rearranges other slots.
+  Several edits are never one atomic schedule change: other units can observe the intermediate
+  schedule. The app does not switch the ToU off by itself. The ToU switch shows the configuration
+  read; the firmware can set bit 0 itself (for example with peak shaving). All ToU settings are
+  closed while the Spain mode (R146 bit 8) is set (`spain_mode`). The slot switch is called “allow
+  GRID charging”, not “force charging”; the generator charge bit of the same word stays untouched.
+  The settings dialog shows, read-only next to the ToU group, the effective weekday filter
+  (R146 bits 1-7 = Monday-Sunday; all zero means every day) and the inverter's own clock
+  (R62-R64). Not offered: the slot voltage words R160-R165 and the slot generator charge bit.
+- **Parallel plants.** All 38 registers lie in the settings block that the master copies to the
+  slaves, so only the master is written (see below).
+
+All gates are decided at the moment of writing from fresh reads (release and firmware
+fingerprint, identity, parallel role, R111/R133/R146, the neighbours of an ordered value and the old
+word), not only at the preview.
 
 **Enabling.** Plant page → inverter card → “Writing”: tick the master switch **and** the settings
 you want to allow, then save. Both are needed; the default is off. Saving needs a fresh identity read of the inverter and stores the firmware it shows
@@ -374,7 +409,7 @@ required):
    appended to the audit log as a later observation - never as an attribution.
 
 **Parallel plants: only the master is written.** In a parallel system the master copies its whole
-settings block (R65-R209 and R339-R429, so all nine settings) to every slave, and a slave's own
+settings block (R65-R209 and R339-R429, so all of these settings) to every slave, and a slave's own
 value is overwritten by a later master snapshot. That follows from the firmware (Codex analysis of
 MCU2 1175 and MCU1 C070) and from two field observations: R108 written on the master reached all
 slaves within about 18 s, and R130 reached all four units. Persistence across a restart is not
@@ -409,9 +444,10 @@ compare-and-swap. Your own check of the display or the effect is recorded separa
 the device”). A change made by someone else later is noticed the next time the dialog reads the
 values and recorded as drift; the app never reasserts a setting by itself.
 
-**First test.** Use the owner-only procedure `docs/FIRST-WRITE-RUNBOOK.md`: the master (slaves are locked), one
-inactive and reversible setting, baseline and display check first, restore as a new operation.
-Never use these buttons to “try something” on a plant you depend on.
+**Good practice.** Write on the master (slaves are locked), change one setting at a time, note the
+value before, check the display afterwards and restore a value as a new operation. The historical
+procedure of the first field write is kept in `docs/FIRST-WRITE-RUNBOOK.md`. Never use these buttons
+to “try something” on a plant you depend on.
 
 ## First live read test
 

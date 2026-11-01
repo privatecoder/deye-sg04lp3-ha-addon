@@ -1,8 +1,11 @@
-"""Write layer v1 (SPEC §10): previews, single-use permits, one guarded write, audit and peers.
+"""Write layer (SPEC §10): previews, single-use permits, one guarded write, audit and peers.
 
 One ``WriteService`` belongs to one runtime generation (a plant change builds a new one, so every
 permit dies with its generation). The flow is explicit and owner driven; nothing here runs on its
-own (no startup, reconnect, schedule or MQTT trigger):
+own (no startup, reconnect or schedule trigger). The guarded core (``_execute`` and ``_send``)
+knows no transport: the Web path reaches it through ``preview`` / ``confirm``, a second transport
+(for example MQTT commands) through ``submit``, which has no human preview but the same
+execution-time guards, audit, pacing and observation:
 
 1. ``preview`` reads the target (fresh, on the primary route, under the bus lock) together with
    everything the preconditions need, snapshots the same register of every other plant inverter
@@ -13,6 +16,9 @@ own (no startup, reconnect, schedule or MQTT trigger):
    bus critical section (any change since the preview is a conflict), appends the audit intent
    (an unavailable audit log blocks the send) and sends exactly one FC16 with one register
    through the write guard. No retry, no FC06, no fallback endpoint, no fan-out, no rollback.
+   Every gate (release, firmware fingerprint, identity, role, R111/R133/R146 gates, ordering
+   against the fresh companions, the old word) is evaluated again on the fresh reads of this
+   critical section, not taken from the preview.
 3. After ``observe_delay_s`` the target and all peers are read back (bus locks released in the
    meantime). Statuses: ``rejected`` (nothing sent), ``sent`` (unresolved), ``failed`` (device
    exception), ``readback_confirmed``, ``outcome_unknown``. A second, read-only peer observation
@@ -64,10 +70,13 @@ from deye_monitor.write_ops import (
     OBSERVE_DELAY_S,
     PACING_S,
     PERMIT_S,
+    R111_SOC,
+    R146_SPAIN_BIT,
+    Kind,
     Refused,
     WriteDescriptor,
     check_range,
-    model_cap,
+    model_limit,
     parse_value,
 )
 
@@ -94,7 +103,10 @@ SERIAL_WORDS = 5
 FINGERPRINT_ADDRESSES = (11, 14, 15, 17, 18)  # board versions: HMI, MCU2, MCU1 words
 IDENTITY_ADDRESSES = (3, 4, 5, 6, 7, 11, 14, 15, 17, 18, 20, 21)  # serial, firmware, rated power
 IDENTITY_SPAN = (3, 21)
+R111 = 111  # battery control mode (0 voltage, 1 SOC)
 R133 = 133  # GEN port usage
+R146 = 146  # ToU control word
+CLOCK_ADDRESSES = (62, 63, 64)  # inverter clock (YY<<8|MM, DD<<8|hh, mm<<8|ss)
 R336 = 336  # parallel role
 GEN_SMART_LOAD = 1
 MAX_COOLDOWN_WAIT_S = 15.0
@@ -205,12 +217,13 @@ class Permit:
     unit: int
     epoch: int
     lifecycle: int
-    context: dict[int, int]
+    context: dict[int, int] | None  # the preview's reads; ``None`` = no preview (``submit``)
     field: int
-    old_word: int
-    new_word: int
+    old_word: int | None
+    new_word: int | None
     peers: dict[str, dict[str, Any]]
     expires_at: float
+    source: str = "web"
     used: bool = False
     revoked: bool = False
 
@@ -393,8 +406,17 @@ class WriteService:
         for address, value in zip(range(first, last + 1), block, strict=True):
             if address in IDENTITY_ADDRESSES:
                 words[address] = value
+        runs: list[list[int]] = []
         for address in sorted(addresses - set(IDENTITY_ADDRESSES)):
-            words[address] = (await self._read_span(route, address, 1))[0]
+            if runs and runs[-1][-1] + 1 == address:
+                runs[-1].append(address)
+            else:
+                runs.append([address])
+        for run in runs:  # consecutive addresses in one request
+            for address, value in zip(
+                run, await self._read_span(route, run[0], len(run)), strict=True
+            ):
+                words[address] = value
         if _epoch(route) != route.verified_epoch:
             raise Refused("connection_changed", 409)
         return words
@@ -452,8 +474,11 @@ class WriteService:
         out = {desc.register, R336}
         if desc.needs_smart_load:
             out.add(R133)
-        if desc.companion:
-            out.add(BY_KEY[desc.companion].register)
+        if desc.requires_r111 is not None:
+            out.add(R111)
+        if desc.tou:
+            out.add(R146)
+        out.update(BY_KEY[key].register for key in desc.related)
         return out
 
     @staticmethod
@@ -515,31 +540,62 @@ class WriteService:
 
     async def current(self, inverter_id: str) -> list[dict[str, Any]]:
         """Fresh values of the operations enabled for ``inverter_id`` (one bus critical section)."""
+        rows: list[dict[str, Any]] = (await self.current_view(inverter_id))["operations"]
+        return rows
+
+    async def current_view(self, inverter_id: str) -> dict[str, Any]:
+        """``current`` plus read-only context: the effective ToU weekday mask and the inverter
+        clock when a ToU operation is enabled."""
         inv = self._target(inverter_id)
         enabled = self.enabled(inverter_id)
         descs = [d for d in DESCRIPTORS if d.key in enabled]
         if not descs:
-            return []
+            return {"operations": [], "info": {}}
         reason = self._not_ready(inv)
         if reason is not None:
-            return [self._locked(d, reason) for d in descs]
+            return {"operations": [self._locked(d, reason) for d in descs], "info": {}}
         addresses: set[int] = set()
         for d in descs:
             addresses |= self._addresses(d)
+        with_tou = any(d.tou for d in descs)
+        if with_tou:
+            addresses |= {R146, *CLOCK_ADDRESSES}
         try:
             words = await self._context(inv, addresses)
             self._identity(inv, words)
             self._check_release(inv, words)
             self._check_role(inv, words)
         except Refused as exc:
-            return [self._locked(d, exc.key) for d in descs]
-        cap = model_cap(words[20], words[21])
+            return {"operations": [self._locked(d, exc.key) for d in descs], "info": {}}
         out = []
         for d in descs:
-            row = self._row(d, words, cap)
+            row = self._row(d, words, model_limit(d, words[20], words[21]))
             self._check_drift(inverter_id, d, words[d.register])
             out.append(row)
-        return out
+        return {"operations": out, "info": {"tou": self._tou_info(words)} if with_tou else {}}
+
+    @staticmethod
+    def _tou_info(words: Mapping[int, int]) -> dict[str, Any]:
+        word = words[R146]
+        mask = (word >> 1) & 0x7F  # bits 1..7 = Monday..Sunday; all zero = no weekday filter
+        r62, r63, r64 = (words[a] for a in CLOCK_ADDRESSES)
+        year, month, day = 2000 + (r62 >> 8), r62 & 0xFF, r63 >> 8
+        hour, minute, second = r63 & 0xFF, r64 >> 8, r64 & 0xFF
+        valid = 1 <= month <= 12 and 1 <= day <= 31 and hour < 24 and minute < 60 and second < 60
+        return {
+            "word": word,
+            "enabled": bool(word & 1),
+            "spain_mode": bool(word & R146_SPAIN_BIT),
+            "weekday_mask": mask,
+            "weekdays": [bool(mask >> i & 1) for i in range(7)],
+            "weekday_filter": mask != 0,
+            "clock": (
+                f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
+                if valid
+                else None
+            ),
+            "clock_words": [r62, r63, r64],
+        }
 
     def _locked(self, desc: WriteDescriptor, reason: str) -> dict[str, Any]:
         return {"key": desc.key, "state": "locked", "reason": reason}
@@ -554,7 +610,7 @@ class WriteService:
             "word": words[desc.register],
             "field": field_now,
             "value": desc.display(field_now),
-            "cap": cap if desc.current_cap else None,
+            "cap": cap if desc.model_limited else None,
         }
         reason = self._precondition(desc, words, cap)
         if reason is not None:
@@ -565,15 +621,61 @@ class WriteService:
         self, desc: WriteDescriptor, words: Mapping[int, int], cap: int | None
     ) -> str | None:
         """First reason this operation is locked right now (``None`` = open)."""
-        if desc.current_cap and cap is None:
+        if desc.model_limited and cap is None:
             return "model_unknown"
         if desc.needs_smart_load and words.get(R133) != GEN_SMART_LOAD:
             return "gen_not_smart_load"
-        field_now = desc.field_of(words[desc.register])
+        if desc.requires_r111 is not None and words.get(R111) != desc.requires_r111:
+            return (
+                "soc_mode_required" if desc.requires_r111 == R111_SOC else "voltage_mode_required"
+            )
+        if desc.tou and words.get(R146, 0) & R146_SPAIN_BIT:
+            return "spain_mode"
+        word = words[desc.register]
+        if desc.whole_word_bool and word not in (0, 1):
+            return "unexpected_bits"
+        field_now = desc.field_of(word)
         low, high = desc.limits(cap)
-        if not low <= field_now <= high:
+        if not low <= field_now <= high or (desc.kind is Kind.TIME and field_now % 100 > 59):
             return "existing_value_outside_range"
         return None
+
+    def _evaluate(
+        self,
+        inv: InverterRuntime,
+        desc: WriteDescriptor,
+        field_new: int,
+        words: Mapping[int, int],
+    ) -> tuple[int | None, int, int]:
+        """Every value and state gate of one operation against the fresh ``words`` (the same code
+        at the preview and at the send point): battery, model limit, R111/R133/R146 gates, range,
+        order against the companions, encoding. Returns the model limit, old word and new word."""
+        if desc.needs_battery and not inv.features.battery:
+            raise Refused("no_battery", 409)
+        cap = model_limit(desc, words[20], words[21])
+        locked = self._precondition(desc, words, cap)
+        if locked is not None:
+            raise Refused("operation_locked", 409, reason=locked)
+        check_range(desc, field_new, cap)
+        for keys, relation in ((desc.below, "below"), (desc.above, "above")):
+            for key in keys:
+                other = BY_KEY[key]
+                other_field = other.field_of(words[other.register])
+                if (relation == "below" and field_new >= other_field) or (
+                    relation == "above" and field_new <= other_field
+                ):
+                    raise Refused(
+                        desc.order_error,
+                        422,
+                        companion=other.key,
+                        companion_value=other.display(other_field),
+                        ordering=relation,
+                    )
+        old_word = words[desc.register]
+        new_word = desc.encode(old_word, field_new)
+        if new_word == old_word:
+            raise Refused("no_change", 409)
+        return cap, old_word, new_word
 
     def _check_drift(self, inverter_id: str, desc: WriteDescriptor, word: int) -> None:
         """A later fresh read that differs from the value of the last operation on this register
@@ -596,6 +698,32 @@ class WriteService:
     async def preview(
         self, inverter_id: str, key: str, value: Any, *, user_id: str, plant_revision: int
     ) -> dict[str, Any]:
+        permit, desc, cap = await self._prepare(
+            inverter_id, key, value, source="web", user_id=user_id, plant_revision=plant_revision
+        )
+        inv = self.runtime.inverters[inverter_id]
+        for stale in [p for p in self._permits.values() if p.inverter_id == inverter_id]:
+            stale.revoked = True
+            del self._permits[stale.operation_id]
+        self._expire()
+        self._permits[permit.operation_id] = permit
+        return self._preview_view(permit, desc, inv, cap)
+
+    async def _prepare(
+        self,
+        inverter_id: str,
+        key: str,
+        value: Any,
+        *,
+        source: str,
+        user_id: str,
+        plant_revision: int,
+        direct: bool = False,
+    ) -> tuple[Permit, WriteDescriptor, int | None]:
+        """Validate a request against fresh reads and bind it to the current identity, role,
+        route and release. A preview keeps the words it saw (the send point must find them
+        unchanged); a direct request (``direct``) keeps none: everything is decided again from the
+        reads of the send point."""
         if not self._open:
             raise Refused("writes_stopped", 409)
         desc = BY_KEY.get(key)
@@ -618,32 +746,8 @@ class WriteService:
         missing = [p["id"] for p in peers.values() if p["baseline_word"] is None]
         if missing:
             raise Refused("peer_unavailable", 409, peers=missing)
-        cap = model_cap(words[20], words[21])
-        locked = self._precondition(desc, words, cap)
-        if locked is not None:
-            raise Refused("operation_locked", 409, reason=locked)
-        check_range(desc, field_new, cap)
-        if desc.companion:
-            other = words[BY_KEY[desc.companion].register]
-            if (desc.ordering == "below" and field_new >= other) or (
-                desc.ordering == "above" and field_new <= other
-            ):
-                raise Refused(
-                    "threshold_order",
-                    422,
-                    companion=BY_KEY[desc.companion].key,
-                    companion_value=BY_KEY[desc.companion].display(other),
-                    ordering=desc.ordering,
-                )
-        old_word = words[desc.register]
-        new_word = desc.encode(old_word, field_new)
-        if new_word == old_word:
-            raise Refused("no_change", 409)
+        cap, old_word, new_word = self._evaluate(inv, desc, field_new, words)
         route = inv.routes[0]
-        for stale in [p for p in self._permits.values() if p.inverter_id == inverter_id]:
-            stale.revoked = True
-            del self._permits[stale.operation_id]
-        self._expire()
         permit = Permit(
             operation_id=secrets.token_hex(16),
             user_id=user_id,
@@ -659,15 +763,15 @@ class WriteService:
             unit=route.unit,
             epoch=route.verified_epoch or 0,
             lifecycle=inv.lifecycle_epoch,
-            context=dict(words),
+            context=None if direct else dict(words),
             field=field_new,
-            old_word=old_word,
-            new_word=new_word,
+            old_word=None if direct else old_word,
+            new_word=None if direct else new_word,
             peers=peers,
             expires_at=self.clock() + self.settings.permit_s,
+            source=source,
         )
-        self._permits[permit.operation_id] = permit
-        return self._preview_view(permit, desc, inv, cap)
+        return permit, desc, cap
 
     def _expire(self) -> None:
         now = self.clock()
@@ -695,8 +799,10 @@ class WriteService:
                 "endpoint": permit.endpoint_id,
                 "unit": permit.unit,
             },
-            "cap": cap if desc.current_cap else None,
-            "old_value": desc.display(desc.field_of(permit.old_word)),
+            "cap": cap if desc.model_limited else None,
+            "old_value": None
+            if permit.old_word is None
+            else desc.display(desc.field_of(permit.old_word)),
             "new_value": desc.display(permit.field),
             "old_word": permit.old_word,
             "new_word": permit.new_word,
@@ -757,9 +863,40 @@ class WriteService:
             raise Refused("permit_user_mismatch", 403)
         if permit.plant_revision != plant_revision:
             raise Refused("stale_revision", 409)
+        return await self._run(permit)
+
+    async def submit(
+        self,
+        inverter_id: str,
+        key: str,
+        value: Any,
+        *,
+        source: str,
+        user_id: str = "",
+        plant_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """A write request without a human preview (a second transport, for example MQTT). Same
+        release, identity, role, gates, ordering, audit, pacing, single FC16 and observation as the
+        Web path: nothing is taken from the request except the value; the old word and every
+        guard come from the fresh reads at the send point. ``source`` is recorded in the audit."""
+        revision = self.plant_revision() if plant_revision is None else plant_revision
+        if revision is None:
+            raise Refused("writes_stopped", 409)
+        permit, _, _ = await self._prepare(
+            inverter_id,
+            key,
+            value,
+            source=source,
+            user_id=user_id,
+            plant_revision=revision,
+            direct=True,
+        )
+        return await self._run(permit)
+
+    async def _run(self, permit: Permit) -> dict[str, Any]:
         permit.used = True  # single use from here on, whatever happens next
         op = self._new_record(permit)
-        self._ops[operation_id] = op
+        self._ops[permit.operation_id] = op
         while len(self._ops) > MAX_OPERATIONS:
             self._ops.popitem(last=False)
         task = asyncio.ensure_future(self._execute(permit, op))
@@ -778,6 +915,7 @@ class WriteService:
             "inverter": permit.inverter_id,
             "inverter_name": inv.cfg.name,
             "user": permit.user_id,
+            "source": permit.source,
             "boot_id": permit.boot_id,
             "plant_revision": permit.plant_revision,
             "enabled_operations": sorted(permit.enabled),
@@ -792,7 +930,9 @@ class WriteService:
             "lifecycle_epoch": permit.lifecycle,
             "old_word": permit.old_word,
             "old_word_hex": _hex(permit.old_word),
-            "old_value": desc.display(desc.field_of(permit.old_word)),
+            "old_value": None
+            if permit.old_word is None
+            else desc.display(desc.field_of(permit.old_word)),
             "requested_value": desc.display(permit.field),
             "requested_field": permit.field,
             "new_word": permit.new_word,
@@ -858,6 +998,8 @@ class WriteService:
 
     def _reject(self, op: dict[str, Any], refusal: Refused) -> dict[str, Any]:
         op["status"], op["reason"] = REJECTED, refusal.key
+        if refusal.key == "operation_locked" and isinstance(refusal.params.get("reason"), str):
+            op["reason"] = refusal.params["reason"]  # the gate that closed, not its wrapper
         op["reason_params"] = {k: v for k, v in refusal.params.items() if isinstance(v, str | int)}
         self._record("result", op)
         return op
@@ -898,12 +1040,16 @@ class WriteService:
             raise Refused("read_failed", 409, error=type(exc).__name__) from None
         self._check_release(inv, words)
         self._check_role(inv, words)  # before the comparison: a role change is its own reason
-        if words != permit.context:
+        serial, _ = self._identity(inv, words)
+        if serial != permit.serial:
+            raise Refused("binding_changed", 409)
+        if permit.context is not None and words != permit.context:
+            raise Refused("conflict", 409)  # the preview's reads are no longer true
+        _, fresh, new = self._evaluate(inv, desc, permit.field, words)
+        if permit.context is not None and new != permit.new_word:
             raise Refused("conflict", 409)
-        fresh = words[desc.register]
-        new = desc.encode(fresh, permit.field)
-        if new != permit.new_word or new == fresh:
-            raise Refused("conflict", 409)
+        if permit.context is None:  # no preview: the words are those of this critical section
+            self._bind_words(permit, op, desc, fresh, new)
         self._authorise(permit)
         grant = WriteGrant(
             unit=route.unit, register=desc.register, mask=desc.mask, old_word=fresh, new_word=new
@@ -935,6 +1081,15 @@ class WriteService:
         if result.attempted:
             self._last_send = self.clock()
         return result
+
+    @staticmethod
+    def _bind_words(
+        permit: Permit, op: dict[str, Any], desc: WriteDescriptor, old: int, new: int
+    ) -> None:
+        permit.old_word, permit.new_word = old, new
+        op["old_word"], op["old_word_hex"] = old, _hex(old)
+        op["old_value"] = desc.display(desc.field_of(old))
+        op["new_word"], op["new_word_hex"] = new, _hex(new)
 
     @staticmethod
     def _ack_view(ack: WriteAck) -> dict[str, Any]:

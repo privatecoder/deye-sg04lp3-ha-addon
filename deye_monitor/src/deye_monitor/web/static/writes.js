@@ -1,6 +1,7 @@
-// Write layer v1 in the web interface: the release per inverter (plant page) and the dialog
-// "Einstellungen ändern" (inverter page). Writes only ever go through this dialog: fresh value,
-// preview (old -> new, raw word, peers), explicit confirmation, result with read-back and peers.
+// Settings writing in the web interface: the release per inverter (plant page) and the dialog
+// "Einstellungen ändern" (inverter page). The web path always goes through this dialog: fresh
+// value, preview (old -> new, raw word, peers), explicit confirmation, result with read-back and
+// peers. Settings are grouped (battery protection, GRID charging, Smart Load, ToU schedule).
 
 import { ApiError, api } from './api.js';
 import { t, errorText, localText } from './i18n.js';
@@ -8,6 +9,8 @@ import { h, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant, mutate, reloadAfterPlantChange } from './state.js';
 
 const CAPS = '5 kW 120 A · 6 kW 150 A · 8 kW 190 A · 10 kW 210 A · 12 kW 240 A';
+const GROUPS = ['battery', 'grid_charge', 'smart_load', 'tou'];
+const SLOT_RE = /^tou_slot(\d)_(start|power|soc|grid_charge)$/;
 
 export const writeConfig = (id) => {
   const writes = state.plant && state.plant.writes;
@@ -36,9 +39,26 @@ function slaveNotice() {
 const catalogue = () => (state.plant && state.plant.writes && state.plant.writes.operations) || [];
 
 function rangeText(op) {
+  if (op.whole_word_bool) return t('writes.range.word01');
   if (op.kind === 'bit') return t('writes.range.bit');
+  if (op.kind === 'time') return t('writes.range.time');
   if (op.current_cap) return t('writes.range.cap', { caps: CAPS });
+  if (op.power_cap) return t('writes.range.power');
   return t('writes.range.unit', { min: fmtNumber(op, op.min), max: fmtNumber(op, op.max), unit: op.unit });
+}
+
+// A short sentence on the gates a setting depends on (fresh reads decide at the moment of writing).
+function gateText(op) {
+  const gates = [];
+  if (op.needs_smart_load) gates.push(t('writes.gate.smart_load'));
+  if (op.requires_r111 === 1) gates.push(t('writes.gate.soc_mode'));
+  if (op.requires_r111 === 0) gates.push(t('writes.gate.voltage_mode'));
+  if (op.tou) gates.push(t('writes.gate.no_spain'));
+  return gates.join(' ');
+}
+
+function sortedOps(ops) {
+  return GROUPS.map((group) => ({ group, ops: ops.filter((op) => op.group === group) })).filter((g) => g.ops.length);
 }
 
 function fmtNumber(op, value) {
@@ -49,6 +69,7 @@ function fmtNumber(op, value) {
 function fmtValue(op, value) {
   if (value === null || value === undefined) return '–';
   if (op.kind === 'bit') return t(`writes.bit.${value ? 1 : 0}`);
+  if (op.kind === 'time') return String(value);
   return `${fmtNumber(op, value)} ${op.unit}`;
 }
 
@@ -70,8 +91,13 @@ export function writesSection(inv, { onChanged }) {
       h('span', { class: 'opt-text' },
         h('span', { class: 'opt-title' }, localText(op.name)),
         h('span', { class: 'opt-help' }, t('writes.op_line', { register: op.register, range: rangeText(op) })),
-        h('span', { class: 'opt-help risk' }, localText(op.risk))));
+        h('span', { class: 'opt-help risk' }, localText(op.risk)),
+        gateText(op) ? h('span', { class: 'opt-help' }, gateText(op)) : null));
   });
+  const byKey = new Map(boxes.map((b, i) => [ops[i].key, b]));
+  const groupBlocks = sortedOps(ops).map((g) => h('div', { class: 'write-group', 'data-group': g.group },
+    h('h4', {}, t(`writes.group.${g.group}`)),
+    g.ops.map((op) => byKey.get(op.key))));
   const message = h('div', { class: 'messages' });
   const save = h('button', { class: 'btn small primary', type: 'button', disabled: !canEdit() }, t('writes.save'));
   save.addEventListener('click', async () => {
@@ -98,7 +124,7 @@ export function writesSection(inv, { onChanged }) {
     slave ? slaveNotice() : null,
     h('label', { class: 'option writes-master', for: `writes-allow-${inv.id}` }, master,
       h('span', { class: 'opt-text' }, h('span', { class: 'opt-title' }, t('writes.allow')), h('span', { class: 'opt-help' }, t('writes.allow_help')))),
-    h('div', { class: 'write-ops' }, boxes),
+    h('div', { class: 'write-ops' }, groupBlocks),
     h('p', { class: 'note' }, t('writes.reset_note')),
     message,
     h('div', { class: 'actions left' }, save));
@@ -133,7 +159,7 @@ export function writesPanel(invId) {
 export function openSettingsDialog(invId) {
   const inv = state.inverters.find((i) => i.id === invId);
   const ops = new Map(catalogue().map((op) => [op.key, op]));
-  const view = { rows: null, loadError: null, audit: [], preview: null, result: null, busy: false, error: null, expires: 0, lateDue: 0, rereading: null };
+  const view = { rows: null, info: {}, loadError: null, audit: [], preview: null, result: null, busy: false, error: null, expires: 0, lateDue: 0, rereading: null };
   let timer = null;
   let lateTimer = null;
   let body = null;
@@ -148,6 +174,10 @@ export function openSettingsDialog(invId) {
     let text = errorText(error);
     if (error instanceof ApiError && (error.key === 'operation_locked' || error.key === 'inverter_not_ready')) text = t(`error.${error.key}`, { reason: reasonText(error.params.reason) });
     if (error instanceof ApiError && error.key === 'parallel_slave') text = t('writes.slave_locked');
+    if (error instanceof ApiError && (error.key === 'threshold_order' || error.key === 'tou_order')) {
+      const other = ops.get(error.params.companion);
+      text = t(`error.${error.key}`, { companion: other ? localText(other.name) : error.params.companion, companion_value: String(error.params.companion_value), ordering: t(`writes.ordering.${error.params.ordering}`) });
+    }
     if (error instanceof ApiError && error.key === 'peer_unavailable') text = t('error.peer_unavailable', { peers: (error.params.peers || []).join(', ') });
     return h('p', { class: 'banner error', role: 'alert' }, text);
   }
@@ -159,6 +189,7 @@ export function openSettingsDialog(invId) {
         api('GET', `api/inverters/${invId}/writes/operations`),
       ]);
       view.rows = current.operations;
+      view.info = current.info || {};
       view.audit = audit.operations;
       view.loadError = null;
     } catch (error) {
@@ -173,7 +204,8 @@ export function openSettingsDialog(invId) {
     paint();
     try {
       const plant = await loadPlant();
-      const value = op.kind === 'bit' ? Number(raw) : String(raw).trim().replace(',', '.');
+      const text = String(raw).trim();
+      const value = op.kind === 'bit' ? Number(raw) : op.kind === 'time' ? text : text.replace(',', '.');
       const data = await mutate('POST', `api/inverters/${invId}/writes/preview`, { operation: op.key, value }, plant.revision);
       view.preview = data.preview;
       view.expires = Date.now() + data.preview.expires_in_s * 1000;
@@ -320,24 +352,73 @@ export function openSettingsDialog(invId) {
         p.word === null || p.word === undefined ? unavailableText(p.reason) : `${fmtValue(op, p.value)} (${hex(p.word)}) · ${t(`writes.peer.${p.state}`)}`))))));
   }
 
-  function rowView(row) {
+  function inputFor(op, id, locked) {
+    if (op.kind === 'bit') return h('select', { id, disabled: locked || view.busy }, h('option', { value: '1' }, t('writes.bit.1')), h('option', { value: '0' }, t('writes.bit.0')));
+    const attrs = { id, type: 'text', inputmode: op.kind === 'time' ? 'numeric' : 'decimal', autocomplete: 'off', disabled: locked || view.busy, 'aria-describedby': `${id}-help` };
+    if (op.kind === 'time') attrs.placeholder = 'HH:MM';
+    return h('input', attrs);
+  }
+
+  function rowView(row, compact = false) {
     const op = ops.get(row.key);
     if (!op) return null;
     const locked = row.state !== 'ready';
     const id = `write-input-${row.key}`;
-    const input = op.kind === 'bit'
-      ? h('select', { id, disabled: locked || view.busy }, h('option', { value: '1' }, t('writes.bit.1')), h('option', { value: '0' }, t('writes.bit.0')))
-      : h('input', { id, type: 'text', inputmode: 'decimal', autocomplete: 'off', disabled: locked || view.busy, 'aria-describedby': `${id}-help` });
+    const input = inputFor(op, id, locked);
     const go = h('button', { class: 'btn small', type: 'button', disabled: locked || view.busy || !canEdit(), 'data-preview': row.key }, t('writes.preview_btn'));
     go.addEventListener('click', () => runPreview(op, input.value));
-    return h('article', { class: `write-row ${locked ? 'locked' : ''}`, 'data-operation': row.key },
-      h('h3', {}, localText(op.name)),
+    const limit = row.cap
+      ? t(op.power_cap ? 'writes.range.limit_power' : 'writes.range.limit', { max: row.cap, unit: op.unit })
+      : rangeText(op);
+    const slot = SLOT_RE.exec(row.key);
+    const title = compact && slot ? t(`writes.slot.${slot[2]}`) : localText(op.name);
+    return h('article', { class: `write-row ${compact ? 'write-cell' : ''} ${locked ? 'locked' : ''}`, 'data-operation': row.key },
+      compact ? h('h5', {}, title) : h('h3', {}, title),
       locked
         ? h('p', { class: 'banner warn' }, t('writes.locked', { reason: reasonText(row.reason) }))
         : h('p', { class: 'current' }, t('writes.current'), ': ', h('strong', { class: 'current-value' }, fmtValue(op, row.value)), ` (${hex(row.word)})`),
-      h('p', { class: 'muted small', id: `${id}-help` }, row.cap ? t('writes.range.limit', { max: row.cap, unit: op.unit }) : rangeText(op)),
-      h('p', { class: 'muted small risk' }, localText(op.risk)),
+      h('p', { class: 'muted small', id: `${id}-help` }, limit),
+      compact ? null : h('p', { class: 'muted small risk' }, localText(op.risk)),
       locked ? null : h('div', { class: 'write-edit' }, h('label', { for: id }, t('writes.input', { unit: op.unit || '' })), input, go));
+  }
+
+  // Read-only context of the ToU group: switch, weekday filter and the inverter's own clock.
+  function touInfo() {
+    const info = view.info && view.info.tou;
+    if (!info) return null;
+    const days = info.weekdays.map((on, i) => h('li', { class: on ? 'on' : 'off', 'data-day': String(i) }, t(`writes.tou.day.${i}`)));
+    return h('div', { class: 'tou-info', role: 'group', 'aria-label': t('writes.tou.info_title') },
+      h('h4', {}, t('writes.tou.info_title')),
+      info.spain_mode ? h('p', { class: 'banner warn' }, t('writes.tou.spain')) : null,
+      h('p', { class: 'tou-weekdays' }, t('writes.tou.weekdays'), ' ',
+        info.weekday_filter ? h('ul', { class: 'weekday-list' }, days) : h('strong', {}, t('writes.tou.all_days'))),
+      h('p', { class: 'muted small' }, t('writes.tou.weekdays_note')),
+      h('p', { class: 'tou-clock' }, t('writes.tou.clock'), ': ', h('strong', { class: 'clock-value' }, info.clock || t('writes.tou.clock_invalid'))));
+  }
+
+  function slotView(n, rows) {
+    return h('section', { class: 'tou-slot', 'data-slot': String(n), 'aria-label': t('writes.slot.title', { n }) },
+      h('h4', {}, t('writes.slot.title', { n })),
+      h('div', { class: 'slot-cells' }, rows.map((r) => rowView(r, true))));
+  }
+
+  function groupView(group, rows) {
+    if (group !== 'tou') return h('section', { class: 'write-group', 'data-group': group }, h('h3', { class: 'group-title' }, t(`writes.group.${group}`)), rows.map((r) => rowView(r)));
+    const plain = rows.filter((r) => !SLOT_RE.test(r.key));
+    const slots = [1, 2, 3, 4, 5, 6].map((n) => [n, rows.filter((r) => { const m = SLOT_RE.exec(r.key); return m && Number(m[1]) === n; })]).filter(([, r]) => r.length);
+    return h('section', { class: 'write-group', 'data-group': 'tou' },
+      h('h3', { class: 'group-title' }, t('writes.group.tou')),
+      touInfo(),
+      plain.map((r) => rowView(r)),
+      slots.length ? h('div', { class: 'tou-slots' }, h('p', { class: 'muted small' }, t('writes.slot.order_note')), slots.map(([n, r]) => slotView(n, r))) : null);
+  }
+
+  function rowsView() {
+    const byKey = new Map(view.rows.map((r) => [r.key, r]));
+    return GROUPS.map((group) => {
+      const rows = catalogue().filter((op) => op.group === group && byKey.has(op.key)).map((op) => byKey.get(op.key));
+      return rows.length ? groupView(group, rows) : null;
+    });
   }
 
   function previewView(p) {
@@ -416,7 +497,7 @@ export function openSettingsDialog(invId) {
     else if (view.rows === null && !view.loadError) parts.push(h('p', { class: 'loading', role: 'status' }, t('writes.loading')));
     else if (view.rows) {
       if (view.result) parts.push(resultView(view.result));
-      parts.push(h('div', { class: 'write-rows' }, view.rows.map(rowView)));
+      parts.push(h('div', { class: 'write-rows' }, rowsView()));
     }
     parts.push(h('h3', {}, t('writes.audit.title')), auditView());
     body.replaceChildren(...parts.filter(Boolean));

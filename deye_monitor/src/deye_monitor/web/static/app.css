@@ -337,7 +337,7 @@ dialog.modal::backdrop { background: rgb(0 0 0 / 55%); }
 .stepper li .step-no { background: var(--line); color: var(--text); }
 .stepper li.current .step-no, .stepper li.done .step-no { background: var(--primary); color: var(--on-primary); }
 
-/* write layer v1: release per inverter, settings dialog */
+/* settings writing: release per inverter, settings dialog */
 .banner.ok { background: var(--ok-soft); color: var(--ok); }
 .writes-section { border-top: 1px solid var(--line); margin-top: .75rem; padding-top: .6rem; }
 .writes-section > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-weight: 600; }
@@ -361,3 +361,18 @@ dialog.modal::backdrop { background: rgb(0 0 0 / 55%); }
 .peer-state.different { color: var(--warn); }
 .peer-state.unavailable { color: var(--muted); }
 .writes-dialog .verify { margin-top: .5rem; }
+.write-group { display: grid; gap: .75rem; margin: .5rem 0 1rem; }
+.write-group > h3, .write-group > h4 { margin: .5rem 0 .25rem; }
+.writes-section .write-group { gap: .5rem; margin: .5rem 0; }
+.tou-info { border: 1px dashed var(--line); border-radius: 10px; padding: .5rem 1rem; }
+.tou-info h4 { margin: 0 0 .25rem; font-size: .95rem; }
+.tou-info p { margin: .25rem 0; }
+.weekday-list { display: inline-flex; flex-wrap: wrap; gap: .25rem; list-style: none; margin: 0; padding: 0; vertical-align: middle; }
+.weekday-list li { padding: .1rem .5rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.weekday-list li.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.tou-slots { display: grid; gap: .75rem; }
+.tou-slot { border: 1px solid var(--line); border-radius: 10px; padding: .5rem .75rem; background: var(--card); }
+.tou-slot > h4 { margin: 0 0 .5rem; }
+.slot-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .5rem; }
+.write-cell { padding: .5rem .75rem; }
+.write-cell h5 { margin: 0 0 .25rem; font-size: .9rem; }

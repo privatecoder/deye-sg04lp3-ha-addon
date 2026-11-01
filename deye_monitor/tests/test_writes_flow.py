@@ -127,7 +127,7 @@ async def test_full_flow_for_one_write(tmp_path: Path, monkeypatch: pytest.Monke
             "value": 20,
             "cap": 190,
         }
-        assert rows["grid_charge_enable"]["word"] == 4 and rows["grid_charge_enable"]["field"] == 0
+        assert rows["grid_charge_enable"]["word"] == 0 and rows["grid_charge_enable"]["field"] == 0
         assert rows["smart_load_off_voltage"]["value"] == 45.0
 
         status, body = await preview(rig, "deye1", "grid_charge_current", 50)
@@ -185,50 +185,94 @@ async def test_full_flow_for_one_write(tmp_path: Path, monkeypatch: pytest.Monke
         assert body["operation"]["status"] == "readback_confirmed"
 
 
+# (key, value, register, word before, word after)
+SOC_MODE_CASES: list[tuple[str, Any, int, int, int]] = [
+    ("battery_charge_current", 80, 108, 50, 80),
+    ("battery_discharge_current", 70, 109, 60, 70),
+    ("battery_shutdown_soc", 20, 115, 25, 20),
+    ("battery_low_soc", 40, 117, 35, 40),
+    ("battery_restart_soc", 55, 116, 50, 55),
+    ("generator_charge_current", 40, 125, 30, 40),
+    ("grid_charge_start_soc", 45, 127, 30, 45),
+    ("grid_charge_current", 60, 128, 20, 60),
+    ("grid_charge_enable", 1, 130, 0, 1),
+    ("smart_load_off_soc", 25, 135, 20, 25),
+    ("smart_load_on_soc", 70, 137, 60, 70),
+    ("tou_enable", 1, 146, 0x00FE, 0x00FF),
+    *[
+        case
+        for n in range(1, 7)
+        for case in (
+            (
+                f"tou_slot{n}_start",
+                f"{[0, 5, 10, 15, 20, 23][n - 1]:02d}:05",
+                147 + n,
+                [0, 500, 1000, 1500, 2000, 2300][n - 1],
+                [5, 505, 1005, 1505, 2005, 2305][n - 1],
+            ),
+            (f"tou_slot{n}_power", 7000, 153 + n, n * 1000, 7000),
+            (f"tou_slot{n}_soc", 90, 165 + n, 20 + n * 10, 90),
+            (f"tou_slot{n}_grid_charge", 1, 171 + n, 0x0002, 0x0003),
+        )
+    ],
+]
+VOLTAGE_MODE_CASES: list[tuple[str, Any, int, int, int]] = [
+    ("smart_load_off_voltage", "46.5", 134, 4500, 4650),
+    ("smart_load_on_voltage", 52, 136, 5000, 5200),
+]
+
+
 async def test_every_released_operation_round_trips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cases: list[tuple[str, Any, int, int, int]] = [
-        ("battery_charge_current", 80, 108, 50, 80),
-        ("battery_discharge_current", 70, 109, 60, 70),
-        ("generator_charge_current", 40, 125, 30, 40),
-        ("grid_charge_current", 60, 128, 20, 60),
-        ("grid_charge_enable", 1, 130, 0x0004, 0x0005),
-        ("smart_load_off_voltage", "46.5", 134, 4500, 4650),
-        ("smart_load_off_soc", 25, 135, 20, 25),
-        ("smart_load_on_voltage", 52, 136, 5000, 5200),
-        ("smart_load_on_soc", 70, 137, 60, 70),
-    ]
-    assert {c[0] for c in cases} == set(OPERATION_KEYS)
+    assert {c[0] for c in SOC_MODE_CASES + VOLTAGE_MODE_CASES} == set(OPERATION_KEYS)
+    assert len(OPERATION_KEYS) == 38
+    for mode, cases in ((1, SOC_MODE_CASES), (0, VOLTAGE_MODE_CASES)):
+        async with plant_rig(tmp_path / f"m{mode}", monkeypatch) as rig:
+            await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r111": mode}})
+            server = rig.servers["gw1"]
+            for key, value, register, before, after in cases:
+                assert server.responder.regs[register] == before, key
+                op = await write(rig, "deye1", key, value)
+                assert op["status"] == "readback_confirmed", (key, op)
+                assert server.responder.regs[register] == after, key
+            assert [r.start for r in server.responder.writes] == [c[2] for c in cases]
+            assert op["peers"] == []  # a single inverter has no peers
+
+
+async def test_r130_is_a_whole_word_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async with plant_rig(tmp_path, monkeypatch) as rig:
         await build_plant(rig, inverters=("deye1",))
         server = rig.servers["gw1"]
-        for key, value, register, before, after in cases:
-            assert server.responder.regs[register] == before
-            op = await write(rig, "deye1", key, value)
-            assert op["status"] == "readback_confirmed", (key, op)
-            assert server.responder.regs[register] == after
-        assert [r.start for r in server.responder.writes] == [c[2] for c in cases]
-        assert op["peers"] == []  # a single inverter has no peers
-
-
-async def test_r130_preserves_every_other_bit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    async with plant_rig(tmp_path, monkeypatch) as rig:
-        await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r130": 0xA5A6}})
         op = await write(rig, "deye1", "grid_charge_enable", 1)
         assert op["status"] == "readback_confirmed"
-        assert rig.servers["gw1"].responder.regs[130] == 0xA5A7
+        assert server.responder.regs[130] == 1
+        assert (op["old_word"], op["new_word"]) == (0, 1)
         op = await write(rig, "deye1", "grid_charge_enable", 0)
-        assert rig.servers["gw1"].responder.regs[130] == 0xA5A6
+        assert server.responder.regs[130] == 0
         status, body = await preview(rig, "deye1", "grid_charge_enable", 2)
         assert (status, err(body)) == (422, "value_out_of_range")
         status, body = await preview(rig, "deye1", "grid_charge_enable", True)
         assert (status, err(body)) == (422, "invalid_value")
         status, body = await preview(rig, "deye1", "grid_charge_enable", 0)  # unchanged: no-op
         assert (status, err(body)) == (409, "no_change")
-        assert len(rig.servers["gw1"].responder.writes) == 2
+        assert len(server.responder.writes) == 2
+
+
+@pytest.mark.parametrize("word", [2, 3, 4, 5, 0xA5A6, 0xFFFF])
+async def test_r130_with_any_other_word_is_unexpected_bits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, word: int
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r130": word}})
+        status, body = await rig.call("POST", "/api/inverters/deye1/writes/current", {})
+        row = {r["key"]: r for r in body["operations"]}["grid_charge_enable"]
+        assert (row["state"], row["reason"]) == ("locked", "unexpected_bits")
+        for value in (0, 1):
+            status, body = await preview(rig, "deye1", "grid_charge_enable", value)
+            assert (status, err(body)) == (409, "operation_locked")
+            assert body["error"]["params"]["reason"] == "unexpected_bits"
+        assert rig.servers["gw1"].responder.writes == []
 
 
 # -- gates: user, CSRF, revision, single use ---------------------------------------------------
@@ -730,7 +774,9 @@ async def test_an_existing_value_outside_the_envelope_blocks_the_edit(
 ) -> None:
     async with plant_rig(tmp_path, monkeypatch) as rig:
         # 8 kW model (190 A) with a stored 210 A: it could not be restored inside the envelope
-        await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r108": 210, "r136": 9000}})
+        await build_plant(
+            rig, inverters=("deye1",), regs={"deye1": {"r108": 210, "r111": 0, "r136": 9000}}
+        )
         status, body = await rig.call("POST", "/api/inverters/deye1/writes/current", {})
         rows = {r["key"]: r for r in body["operations"]}
         assert rows["battery_charge_current"]["reason"] == "existing_value_outside_range"
@@ -756,36 +802,51 @@ async def test_smart_load_needs_the_gen_port_to_be_smart_load(
         assert rig.servers["gw1"].responder.writes == []
 
 
+@pytest.mark.parametrize(
+    ("mode", "rejected", "accepted"),
+    [
+        (
+            0,
+            (
+                ("smart_load_off_voltage", 50),  # OFF equal to ON (50.00 V)
+                ("smart_load_off_voltage", 55),
+                ("smart_load_on_voltage", 45),  # ON equal to OFF
+                ("smart_load_on_voltage", 40),
+            ),
+            (("smart_load_off_voltage", 49.99), ("smart_load_on_voltage", 45.01)),
+        ),
+        (
+            1,
+            (
+                ("smart_load_off_soc", 60),
+                ("smart_load_off_soc", 99),
+                ("smart_load_on_soc", 20),
+                ("smart_load_on_soc", 5),
+            ),
+            (("smart_load_off_soc", 59), ("smart_load_on_soc", 21)),
+        ),
+    ],
+)
 async def test_smart_load_threshold_ordering(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: int,
+    rejected: tuple[tuple[str, Any], ...],
+    accepted: tuple[tuple[str, Any], ...],
 ) -> None:
     async with plant_rig(tmp_path, monkeypatch) as rig:
-        await build_plant(rig, inverters=("deye1",))
-        for key, value in (
-            ("smart_load_off_voltage", 50),  # OFF equal to ON (50.00 V)
-            ("smart_load_off_voltage", 55),
-            ("smart_load_on_voltage", 45),  # ON equal to OFF
-            ("smart_load_on_voltage", 40),
-            ("smart_load_off_soc", 60),
-            ("smart_load_off_soc", 99),
-            ("smart_load_on_soc", 20),
-            ("smart_load_on_soc", 5),
-        ):
+        await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r111": mode}})
+        for key, value in rejected:
             status, body = await preview(rig, "deye1", key, value)
             assert (status, err(body)) == (422, "threshold_order"), (key, value)
-        accepted: tuple[tuple[str, int | float], ...] = (
-            ("smart_load_off_voltage", 49.99),
-            ("smart_load_on_voltage", 45.01),
-            ("smart_load_off_soc", 59),
-            ("smart_load_on_soc", 21),
-        )
         for key, number in accepted:
             status, body = await preview(rig, "deye1", key, number)
             assert status == 200, (key, number, body)
-        status, body = await preview(rig, "deye1", "smart_load_off_voltage", "48.555")
-        assert (status, err(body)) == (422, "value_not_exact")
-        status, body = await preview(rig, "deye1", "smart_load_off_voltage", "48,5")
-        assert (status, err(body)) == (422, "invalid_value")
+        if mode == 0:
+            status, body = await preview(rig, "deye1", "smart_load_off_voltage", "48.555")
+            assert (status, err(body)) == (422, "value_not_exact")
+            status, body = await preview(rig, "deye1", "smart_load_off_voltage", "48,5")
+            assert (status, err(body)) == (422, "invalid_value")
 
 
 async def test_unknown_operations_and_shapes_are_refused(
@@ -793,7 +854,18 @@ async def test_unknown_operations_and_shapes_are_refused(
 ) -> None:
     async with plant_rig(tmp_path, monkeypatch) as rig:
         await build_plant(rig)
-        for operation in ("work_mode", "battery_shutdown_soc", "r80", "108", "../x", "", None, 5):
+        for operation in (
+            "work_mode",
+            "tou_slot7_start",
+            "tou_slot1_voltage",
+            "tou_slot1_gen_charge",
+            "r80",
+            "108",
+            "../x",
+            "",
+            None,
+            5,
+        ):
             status, body = await rig.call(
                 "POST",
                 "/api/inverters/deye1/writes/preview",

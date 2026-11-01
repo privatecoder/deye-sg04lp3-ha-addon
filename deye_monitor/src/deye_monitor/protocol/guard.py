@@ -2,7 +2,7 @@
 
 ``guard_frame`` checks exactly one complete read frame: only FC03 passes, FC16 and FC06 never.
 ``guard_write_frame`` is the only write gate: exactly one FC16 with count 1 for a register of the
-fixed v1 table, carrying exactly the word a single-use ``WriteGrant`` names (foreign bits
+fixed table, carrying exactly the word a single-use ``WriteGrant`` names (foreign bits
 excluded by the register's mask). Solarman V5 requests must match the one fixed layout built by
 ``build_v5_request`` / ``build_v5_write_request``.
 """
@@ -37,23 +37,32 @@ from deye_monitor.protocol.solarman_v5 import (
     v5_checksum,
 )
 
-# The complete v1 write whitelist: register -> writable mask (V105.8 R/W, SPEC §10). Nothing else
-# can ever pass the write guard. Descriptors in ``writes.py`` must agree with this table.
+# The complete write whitelist: register -> writable mask (V105.8 R/W, SPEC §10). Nothing else can
+# ever pass the write guard. Descriptors in ``write_ops.py`` must agree with this table.
 WRITABLE_MASKS: dict[int, int] = {
     108: 0xFFFF,  # maximum battery charge current
     109: 0xFFFF,  # maximum battery discharge current
+    115: 0xFFFF,  # battery shutdown SOC
+    116: 0xFFFF,  # battery restart SOC
+    117: 0xFFFF,  # battery low SOC
     125: 0xFFFF,  # generator charge current
+    127: 0xFFFF,  # GRID charge start SOC
     128: 0xFFFF,  # GRID charge current
-    130: 0x0001,  # GRID charge enable (bit 0 only)
+    130: 0x0001,  # GRID charge enable (the word is exactly 0 or 1, enforced by the descriptor)
     134: 0xFFFF,  # Smart Load OFF voltage
     135: 0xFFFF,  # Smart Load OFF SOC
     136: 0xFFFF,  # Smart Load ON voltage
     137: 0xFFFF,  # Smart Load ON SOC
+    146: 0x0001,  # ToU enable (bit 0 only; weekday bits and Spain mode untouched)
+    **{148 + i: 0xFFFF for i in range(6)},  # ToU slot start times (HHMM)
+    **{154 + i: 0xFFFF for i in range(6)},  # ToU slot discharge power
+    **{166 + i: 0xFFFF for i in range(6)},  # ToU slot target SOC
+    **{172 + i: 0x0001 for i in range(6)},  # ToU slot flags: allow GRID charging (bit 0 only)
 }
 # Registers that must never be written, listed explicitly on top of "not on the whitelist".
 DENIED_REGISTERS: frozenset[int] = frozenset(
-    {22, 23, 24, 80, 81, 91, 92, 98, 111, 115, 116, 117, 141, 142, 336, 341}
-    | set(range(146, 178))
+    {22, 23, 24, 80, 81, 91, 92, 98, 111, 141, 142, 147, 336, 341}
+    | set(range(160, 166))  # ToU slot voltage words
     | set(range(1100, 1122))
 )
 

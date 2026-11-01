@@ -1435,10 +1435,10 @@ class WebApi:
         _, body, _ = await self._mutation(request, revision=False)
         _object(body)
         try:
-            rows = await self._writes().current(inverter_id)
+            view = await self._writes().current_view(inverter_id)
         except Refused as exc:
             raise self._refusal(exc) from None
-        return json_response({"plant_revision": self._plant_service().revision, "operations": rows})
+        return json_response({"plant_revision": self._plant_service().revision, **view})
 
     async def _writes_preview(self, request: web.Request) -> web.Response:
         inverter_id = self._inverter_of(request)

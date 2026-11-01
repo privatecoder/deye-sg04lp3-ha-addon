@@ -223,7 +223,9 @@ def test_guard_rejects_padding_concatenation_truncation_and_bad_crc() -> None:
         guard_write_frame(bytes(meta), Framing.SOLARMAN_V5, grant=GRANT, logger_serial=LOGGER)
 
 
-@pytest.mark.parametrize("register", [0, 22, 23, 24, 80, 81, 91, 92, 98, 111, 115, 116, 117])
+@pytest.mark.parametrize(
+    "register", [0, 22, 23, 24, 80, 81, 91, 92, 98, 111, 141, 142, 147, 160, 165, 178, 336]
+)
 @pytest.mark.parametrize("extra", [0, 1])
 def test_guard_rejects_unlisted_and_denied_registers(register: int, extra: int) -> None:
     register += 0  # parametrised for readability
@@ -233,7 +235,7 @@ def test_guard_rejects_unlisted_and_denied_registers(register: int, extra: int) 
 
 
 def test_guard_rejects_every_deny_listed_and_every_unlisted_register() -> None:
-    unlisted = [0, 1, 107, 110, 126, 127, 129, 131, 138, 2000, 65535]
+    unlisted = [0, 1, 107, 110, 114, 118, 126, 129, 131, 138, 145, 178, 2000, 65535]
     for register in [*sorted(DENIED_REGISTERS), *unlisted]:
         assert register not in WRITABLE_MASKS
         with pytest.raises(GuardViolation):
@@ -284,7 +286,21 @@ def test_read_guard_still_refuses_every_write_frame() -> None:
 
 def test_descriptor_table_matches_the_guard_table() -> None:
     assert {d.register: d.mask for d in DESCRIPTORS} == WRITABLE_MASKS
-    assert len(DESCRIPTORS) == 9
+    assert len(DESCRIPTORS) == len(WRITABLE_MASKS) == 38
+    assert {115, 116, 117, 127, 146, *range(148, 160), *range(166, 178)} <= set(WRITABLE_MASKS)
+    assert not {111, 141, 142, 147, *range(160, 166)} & set(WRITABLE_MASKS)
+
+
+@pytest.mark.parametrize("register", [146, 172, 177])
+def test_bit_zero_registers_cannot_change_any_other_bit(register: int) -> None:
+    ok = grant(register=register, mask=1, old_word=0x01FE, new_word=0x01FF)
+    assert guard_write_frame(rtu_write(1, register, 0x01FF), Framing.RTU, grant=ok)
+    with pytest.raises(GuardViolation):  # bit 8 (Spain mode) / bit 1 must stay as read
+        guard_write_frame(
+            rtu_write(1, register, 0x00FF),
+            Framing.RTU,
+            grant=grant(register=register, mask=1, old_word=0x01FE, new_word=0x00FF),
+        )
 
 
 @given(st.binary(max_size=60))

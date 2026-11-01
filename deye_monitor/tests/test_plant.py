@@ -261,7 +261,7 @@ async def test_inverters_cannot_enable_writes_or_reference_unknown_connections(
         assert status == 422 and body["error"]["params"]["problems"][0]["code"] == "unit_conflict"
         status, body = await rig.call("GET", "/api/plant")
         assert body["writes"]["inverters"] == {"deye1": {"allow_writes": False, "operations": []}}
-        assert len(body["writes"]["operations"]) == 9
+        assert len(body["writes"]["operations"]) == 38
         assert not {"allow_writes", "enabled_write_operations", "profile"} & set(
             body["inverters"][0]
         )

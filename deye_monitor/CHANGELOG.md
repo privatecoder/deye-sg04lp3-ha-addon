@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.4.0
+
+Write layer v2, part A (settings, guards, web path). Writing is a regular feature now, not a test
+phase; the runbook of the first field write stays as history. Part B (next release) adds Home
+Assistant entities on top of the same guarded service.
+
+- **38 settings can be released** (was 9), all in the settings block the master copies to the
+  slaves (so still only the master is written):
+  - battery protection: shutdown SOC R115, low SOC R117, restart SOC R116 (0-100 %, SOC mode only,
+    shutdown < low < restart against a fresh read of all three; the app claims no safe minimum);
+  - GRID charging: start SOC R127 (10-90 %, SOC mode only);
+  - ToU schedule: enable R146 bit 0 (other bits and the weekday mask preserved), six slots with
+    start time R148-R153 (HH:MM, minutes in steps of 5, strictly ascending, a crossing edit is
+    refused as `tou_order` and no other slot is rearranged), discharge power R154-R159 (0 to the
+    rated power of the model), target SOC R166-R171 (SOC mode only) and “allow GRID charging”
+    R172-R177 bit 0 (other bits, including the generator charge bit, preserved). All ToU settings
+    are closed while the Spain mode (R146 bit 8) is set. Not offered: R160-R165, slot bit 1.
+- **R130 is re-encoded as a whole-word switch** (0 or 1): the firmware compares the whole word
+  with 1, so preserving foreign bits would not enable charging. A register that holds anything
+  else is refused (`unexpected_bits`).
+- **Battery control mode R111 gates the thresholds**: Smart Load voltages R134/R136 only with
+  R111 = 0, SOC values (R135/R137 and the new SOC settings) only with R111 = 1; the Smart Load
+  settings still need GEN = Smart Load. The mode is read fresh and never changed.
+- **Guards at execution**: release and firmware fingerprint, identity, parallel role, R111/R133/R146
+  gates, ordering against fresh neighbours and the old word are decided again on the reads of the
+  send point under the plant write lock, not only at the preview. The write service has a
+  transport-independent entry (`submit`, audited with its `source`) for part B; the Web path keeps
+  preview and permit.
+- **Web interface**: the settings dialog is grouped (battery protection, GRID charging, Smart Load,
+  ToU schedule with six slot rows) and shows the effective weekday mask of R146 and the inverter
+  clock (R62-R64) next to the ToU group, read-only. The plant page release list shows all new
+  settings in the same groups. German and English texts.
+- Removed the “first test” wording from the write texts (the R109 note); README, DOCS and SPEC
+  describe the write layer as a regular feature.
+
 ## 0.3.2
 
 Owner collection round.

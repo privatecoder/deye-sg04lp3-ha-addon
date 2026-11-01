@@ -1,6 +1,6 @@
 # Deye SG04LP3 Monitor
 
-> **Status: device loop with MQTT publisher and opt-in write layer (0.3.2, experimental).** The app
+> **Status: device loop with MQTT publisher and opt-in write layer (0.4.0).** The app
 > validates its configuration, polls the inverters read-only by default (Modbus function code 03) and publishes the
 > chosen sensors through MQTT Device Discovery: entities appear in Home Assistant. The Ingress web
 > interface (sidebar: Deye Monitor) sets up your connections and inverters (a setup assistant guides
@@ -14,8 +14,8 @@ three-phase) hybrid inverters and publishes the values through MQTT discovery.
   release writing for an inverter and a setting (both off by default). There are no command
   topics and no writing entities; writing exists only in the web interface, one setting at a time
   with preview and confirmation: maximum battery charge/discharge current, generator/GRID charge
-  current, GRID charge enable and the four Smart Load thresholds (nine settings in total, see
-  `DOCS.md`, “Writing settings”).
+  current, GRID charge enable and start SOC, the battery protection SOCs, the four Smart Load
+  thresholds and the ToU schedule (38 settings in total, see `DOCS.md`, “Writing settings”).
 - **No scanning.** Only the gateways, loggers and serial devices you set up are contacted.
 - **Set up in the web interface.** Connections and inverters are created there (with a read-only
   connection check), not in the app options.
@@ -24,4 +24,4 @@ three-phase) hybrid inverters and publishes the values through MQTT discovery.
 
 See the *Documentation* tab (`DOCS.md`) for the current status, the options and the web interface.
 
-First test against real devices: see `docs/LIVE-READ-RUNBOOK.md` (reading) and, only for the owner, `docs/FIRST-WRITE-RUNBOOK.md` (first write) in the repository.
+Reading against real devices: see `docs/LIVE-READ-RUNBOOK.md`; the procedure of the first field write is kept in `docs/FIRST-WRITE-RUNBOOK.md` (both in the repository).
