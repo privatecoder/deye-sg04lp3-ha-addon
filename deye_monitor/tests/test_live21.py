@@ -10,6 +10,7 @@ from types import SimpleNamespace as NS
 from typing import Any
 
 from deye_monitor.device import InverterState
+from deye_monitor.identity import IdentityBook, identity_store
 from deye_monitor.profiles.schema import load_profile
 from deye_monitor.protocol.modbus import WriteAck
 from deye_monitor.scheduler import BusScheduler
@@ -195,4 +196,25 @@ async def test_an_overdue_late_look_is_taken_at_once(tmp_path: Path) -> None:
     await asyncio.gather(*list(svc._late))
     assert waits[-1] == 0.0
     assert (svc.operation(op["operation_id"]) or {})["late_observation"]["status"] == "done"
+    await svc.close()
+
+
+async def test_the_first_peer_observation_is_bound_to_the_preview_identity(tmp_path: Path) -> None:
+    peer = _unit("peer", "2409876543", 1)
+    peer.book = IdentityBook(identity_store(tmp_path / "identity.json"), {})
+    peer.book.bind_first_seen("peer", "2409876543")
+    units = {"master": _unit("master", "2401234567", 3), "peer": peer}
+    svc = _service(tmp_path / "r", units)
+    p = await svc.preview("master", "grid_charge_current", 50, user_id="u", plant_revision=1)
+    assert peer.book.rebind("peer")  # another device behind the same id before the confirm
+    peer.book.bind_first_seen("peer", "2411111111")
+    peer.routes[0].transport.regs[128] = 50
+    reads_before = peer.routes[0].transport.reads
+    op = await svc.confirm(p["operation_id"], user_id="u", plant_revision=1)
+    seen = op["peers"][0]
+    assert seen["state"] == "unavailable" and seen["reason"] == "identity_changed"
+    assert (seen["expected_serial"], seen["observed_serial"]) == ("2409876543", "2411111111")
+    assert seen["later_word"] is None and seen["changed"] is None
+    assert peer.routes[0].transport.reads == reads_before and not peer.routes[0].transport.grants
+    await asyncio.gather(*list(svc._late))
     await svc.close()

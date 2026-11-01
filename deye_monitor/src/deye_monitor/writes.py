@@ -962,7 +962,8 @@ class WriteService:
             op["attribution"] = "not_established"
         peers = []
         for peer_id, baseline in permit.peers.items():
-            later = await self._peer_word(peer_id, desc)
+            seen = await self._peer_read(peer_id, baseline.get("serial"), desc, permit.field)
+            later = seen["word"]
             base = baseline["baseline_word"]
             peers.append(
                 {
@@ -973,15 +974,35 @@ class WriteService:
                     "baseline_value": None if base is None else desc.display(desc.field_of(base)),
                     "later_word": later,
                     "later_value": None if later is None else desc.display(desc.field_of(later)),
-                    "state": self._peer_state(desc, later, permit.field),
+                    "state": seen["state"],
+                    "reason": seen["reason"],
+                    "expected_serial": seen["expected_serial"],
+                    "observed_serial": seen["observed_serial"],
                     "changed": None if later is None or base is None else later != base,
                 }
             )
         op["peers"] = peers
 
-    async def _peer_word(self, peer_id: str, desc: WriteDescriptor) -> int | None:
-        peer = self.runtime.inverters.get(peer_id)
-        return None if peer is None else await self._observed_word(peer, desc.register)
+    async def _peer_read(
+        self, peer_id: str, expected: str | None, desc: WriteDescriptor, field_requested: int
+    ) -> dict[str, Any]:
+        """One read-only peer look bound to the serial saved at preview: another device behind
+        the same id is ``unavailable`` / ``identity_changed`` and nothing is read or compared."""
+        inv = self.runtime.inverters.get(peer_id)
+        observed = None if inv is None else inv.book.bound(peer_id)
+        changed = expected is not None and observed != expected
+        word = (
+            None
+            if inv is None or changed
+            else await self._observed_word(inv, desc.register, expected)
+        )
+        return {
+            "word": word,
+            "state": self._peer_state(desc, word, field_requested),
+            "reason": "identity_changed" if changed else None,
+            "expected_serial": expected,
+            "observed_serial": observed,
+        }
 
     @staticmethod
     def _peer_state(desc: WriteDescriptor, word: int | None, field_requested: int) -> str:
@@ -997,24 +1018,15 @@ class WriteService:
         id is ``unavailable`` / ``identity_changed``, its value is never compared."""
         out = []
         for peer in op["peers"]:
-            expected = peer.get("serial")
-            inv = self.runtime.inverters.get(peer["id"])
-            observed = None if inv is None else inv.book.bound(peer["id"])
-            changed = expected is not None and observed != expected
-            word = (
-                None
-                if inv is None or changed
-                else await self._observed_word(inv, desc.register, expected)
+            seen = await self._peer_read(
+                peer["id"], peer.get("serial"), desc, op["requested_field"]
             )
+            word = seen["word"]
             out.append(
                 {
                     "id": peer["id"],
-                    "word": word,
                     "value": None if word is None else desc.display(desc.field_of(word)),
-                    "state": self._peer_state(desc, word, op["requested_field"]),
-                    "reason": "identity_changed" if changed else None,
-                    "expected_serial": expected,
-                    "observed_serial": observed,
+                    **seen,
                 }
             )
         return out
