@@ -453,7 +453,6 @@ async def test_submit_applies_the_same_value_and_order_rules(
         for key, value, refusal in (
             ("battery_low_soc", 25, "threshold_order"),
             ("tou_slot2_start", "11:00", "tou_order"),
-            ("battery_low_soc", 35, "no_change"),
             ("tou_slot1_power", 9000, "value_out_of_range"),
             ("tou_slot1_power", 8001, "value_out_of_range"),
             ("grid_charge_start_soc", 5, "value_out_of_range"),
@@ -464,6 +463,25 @@ async def test_submit_applies_the_same_value_and_order_rules(
             assert info.value.key == refusal, (key, value, info.value.key)
         assert rig.servers["gw1"].responder.writes == []
         assert audit_lines(rig) == []  # a refused request never reached the send point
+
+
+async def test_submit_of_the_current_value_is_an_audited_noop_without_a_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, inverters=("deye1",))
+        svc = await ready(rig)
+        op = await svc.submit("deye1", "battery_low_soc", 35, source="mqtt")  # R117 holds 35
+        assert op["status"] == "noop" and op["reason"] == "no_change" and op["source"] == "mqtt"
+        assert op["old_word"] == op["new_word"] == 35
+        assert rig.servers["gw1"].responder.writes == []
+        lines = audit_lines(rig)
+        assert [x["event"] for x in lines] == ["result"]  # no intent: nothing was sent
+        assert lines[0]["record"]["status"] == "noop"
+        # the Web path still refuses it before a permit exists
+        with pytest.raises(Refused) as info:
+            await svc.preview("deye1", "battery_low_soc", 35, user_id="u", plant_revision=0)
+        assert info.value.key == "no_change"
 
 
 async def test_submit_needs_the_release_and_a_plant_revision(

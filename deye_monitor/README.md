@@ -11,11 +11,13 @@ Home Assistant app that reads one or more Deye SUN-5/6/8/10/12K-SG04LP3 (low-vol
 three-phase) hybrid inverters and publishes the values through MQTT discovery.
 
 - **Read-only by default.** It sends Modbus function code 03 (read holding registers) unless you
-  release writing for an inverter and a setting (both off by default). There are no command
-  topics and no writing entities; writing exists only in the web interface, one setting at a time
-  with preview and confirmation: maximum battery charge/discharge current, generator/GRID charge
-  current, GRID charge enable and start SOC, the battery protection SOCs, the four Smart Load
-  thresholds and the ToU schedule (38 settings in total, see `DOCS.md`, “Writing settings”).
+  release writing for an inverter and a setting (both off by default). Released settings can be
+  written in the web interface (one at a time, with preview and confirmation) and appear as Home
+  Assistant `number`, `switch` and `time` entities with a write-result `event` (no confirmation
+  dialog in Home Assistant; same guarded write service): maximum battery charge/discharge current,
+  generator/GRID charge current, GRID charge enable and start SOC, the battery protection SOCs,
+  the four Smart Load thresholds and the ToU schedule (38 settings in total, see `DOCS.md`,
+  “Writing settings”).
 - **No scanning.** Only the gateways, loggers and serial devices you set up are contacted.
 - **Set up in the web interface.** Connections and inverters are created there (with a read-only
   connection check), not in the app options.

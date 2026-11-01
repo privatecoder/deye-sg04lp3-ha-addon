@@ -942,15 +942,21 @@ async def test_later_drift_is_recorded_and_never_reasserted(
 # -- the write layer has no other entrances ---------------------------------------------------
 
 
-def test_no_mqtt_command_path_exists() -> None:
+def test_mqtt_command_path_is_confined_to_the_settings_module() -> None:
+    """Command topics, handlers and the ``mqtt`` source exist in exactly the modules that own
+    them; the publisher subscribes only the birth topic and the settings plane's topics."""
     root = Path(__file__).parents[1] / "src" / "deye_monitor"
     text = {p.name: p.read_text() for p in root.rglob("*.py")}
     for name, source in text.items():
-        for forbidden in ("command_topic", "set_topic", "mqtt_command", "on_message"):
+        if name in {"ha_discovery.py", "mqtt_settings.py", "mqtt.py"}:
+            continue
+        for forbidden in ("command_topic", "mqtt_command", "on_message"):
             assert forbidden not in source, (name, forbidden)
-    # the publisher listens to the Home Assistant birth topic only
-    subscriptions = re.findall(r"conn\.subscribe\(([^)]*)\)", text["mqtt.py"])
-    assert subscriptions and all("birth" in s for s in subscriptions), subscriptions
+    submitters = {n for n, source in text.items() if ".submit(" in source}
+    assert submitters == {"mqtt_settings.py"}, submitters
+    subscriptions = re.findall(r"\.subscribe\(([^)]*)\)", text["mqtt.py"])
+    assert subscriptions and all("birth" in s or "topic" in s for s in subscriptions)
+    assert all("self.birth_topic" in s or "topic, qos" in s for s in subscriptions), subscriptions
 
 
 def test_write_entrances_are_only_the_web_ui_calls() -> None:

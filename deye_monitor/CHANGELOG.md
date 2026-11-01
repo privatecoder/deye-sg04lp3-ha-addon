@@ -2,9 +2,44 @@
 
 ## 0.4.0
 
-Write layer v2, part A (settings, guards, web path). Writing is a regular feature now, not a test
-phase; the runbook of the first field write stays as history. Part B (next release) adds Home
-Assistant entities on top of the same guarded service.
+Write layer v2. Writing is a regular feature now, not a test phase; the runbook of the first
+field write stays as history. Part A: settings, guards, web path. Part B: Home Assistant entities
+on top of the same guarded service (below).
+
+### Part B: Home Assistant entities (MQTT)
+
+- **Every released setting is a Home Assistant entity** of its inverter's device (replaces the
+  “no command topics, no writing entities” rule): currents, SOC values, slot power and Smart Load
+  voltages as `number` (input box, limits from the current model limits, `device_class`
+  current / battery / power / voltage), the three bit switches as `switch`, slot start times as
+  `time`, all in the *Configuration* category, non-optimistic, commands never retained. Only for
+  released settings of a master or a unit outside a parallel system, after a fresh read; a closed
+  precondition (R111, GEN port, Spain mode, unknown model) makes the entity *unavailable*, a
+  revoked release, another firmware or a lost master role removes it through the existing cleanup
+  ledger. Persisted entities are kept (unavailable) until the first fresh read after a restart.
+- **State is the read-back**: published after every command, with the settings poll interval and
+  after a Home Assistant restart; a rejected command publishes the freshly read value.
+- **Command path**: generation-scoped topics (new with every session and every change of the
+  entity set), subscribed only for existing entities, retained messages dropped, strict payloads
+  (`ON`/`OFF`, `HH:MM:SS` with seconds `00`, plain decimals). Valid commands go to the same
+  guarded `WriteService.submit` (fresh gates at the send point, audit intent before the send,
+  exactly one FC16 with count 1, at least 5 s pacing, no retry, no fallback, no fan-out), audited
+  with `source: mqtt` and no invented user. One bounded FIFO (32) per plant, no coalescing
+  (*OFF, edit, ON* keeps its order), commands expire after 60 s and are discarded on reconnect,
+  restart, generation, role or release change.
+- **A command equal to the fresh read-back is an audited no-op** (`noop` status, `write_noop`
+  event), no write.
+- **“Write result” event entity** per inverter: `write_readback_confirmed`, `write_rejected`,
+  `write_failed`, `write_outcome_unknown`, `write_noop`, with setting, requested value, reason,
+  audit id and the value read back. Not retained.
+- The plant revision is now wired when the generation is installed, so a command does not depend on
+  a web request having happened first.
+- Tests: all four platforms against the pinned Home Assistant 2026.10.4 (schemas and the real
+  entity handlers), golden discovery documents, exposure and removal, strict payloads, retained
+  commands, FIFO order, expiry and discard, no-op, read-back after a reject, the real write
+  service on fake inverters and a local Mosquitto.
+
+### Part A
 
 - **38 settings can be released** (was 9), all in the settings block the master copies to the
   slaves (so still only the master is written):

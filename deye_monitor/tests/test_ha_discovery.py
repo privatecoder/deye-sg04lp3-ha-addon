@@ -12,6 +12,7 @@ import pytest
 
 from deye_monitor.config import PollConfig
 from deye_monitor.ha_discovery import (
+    EVENT_TYPES,
     MAX_DOCUMENT_BYTES,
     DeviceMeta,
     DiscoveryError,
@@ -25,12 +26,15 @@ from deye_monitor.ha_discovery import (
     inverter_component,
     inverter_diagnostic_components,
     replay_document,
+    setting_component,
     state_payload,
     tombstone_document,
     validate_component,
     validate_document,
+    write_result_component,
 )
 from deye_monitor.profiles.schema import load_profile
+from deye_monitor.write_ops import DESCRIPTORS
 
 GOLDEN = Path(__file__).parent / "golden"
 PROFILE = load_profile("sg04lp3_lv_v105_8")
@@ -250,7 +254,7 @@ def test_allowlist_rejects(mutate: Any) -> None:
 def test_tombstone_is_platform_only_and_alias_free() -> None:
     validate_component("gone", {"platform": "sensor"})
     with pytest.raises(DiscoveryError):
-        validate_component("gone", {"platform": "switch"})
+        validate_component("gone", {"platform": "light"})
     with pytest.raises(DiscoveryError):
         validate_component("gone", {"platform": "sensor", "unique_id": "x"})  # incomplete
 
@@ -407,3 +411,133 @@ def test_energy_names_carry_no_series_but_an_attribute() -> None:
     assert "value_json.get('energy_series') == 'g3'" in energy["value_template"]
     _, plain = comp("battery_voltage", "g3")
     assert "json_attributes_topic" not in plain
+
+
+# -- write entities (0.4.0 part B) -------------------------------------------------------------
+
+
+def writes_doc() -> dict[str, Any]:
+    """All 38 released settings of one inverter plus its write result event."""
+    components: dict[str, Any] = {}
+    for desc in DESCRIPTORS:
+        cap = 190 if desc.current_cap else 8000 if desc.power_cap else None
+        key, c = setting_component(NS, "deye1", desc, "t1", cap)
+        components[key] = c
+    key, c = write_result_component(NS, "deye1")
+    components[key] = c
+    meta = DeviceMeta(NS.inverter_device_id("deye1"), "Deye 1", "inverter", "deye1", "2401234567")
+    return device_document(NS, meta, components)
+
+
+def test_write_document_golden() -> None:
+    doc = writes_doc()
+    assert len(doc["components"]) == 39
+    golden("discovery_inverter_writes.json", doc)
+
+
+def test_write_cleanup_replay_golden() -> None:
+    meta = DeviceMeta(NS.inverter_device_id("deye1"), "Deye 1", "inverter", "deye1", None)
+    comps = writes_doc()["components"]
+    out = {}
+    for name in ("set_battery_charge_current", "set_tou_enable", "set_tou_slot2_start"):
+        out[name] = replay_document(NS, meta, name, comps[name])
+    out["write_result"] = replay_document(NS, meta, "write_result", comps["write_result"])
+    for doc in out.values():
+        (only,) = doc["components"].values()
+        if only["platform"] != "event":
+            assert only["command_topic"] == NS.cleanup_command_topic  # never the live one
+            assert only["value_template"] == "{{ none }}"
+    golden("discovery_cleanup_writes.json", out)
+
+
+def test_write_components_follow_the_guarded_shape() -> None:
+    comps = writes_doc()["components"]
+    kinds = {c["platform"] for c in comps.values()}
+    assert kinds == {"number", "switch", "time", "event"}
+    for key, c in comps.items():
+        if c["platform"] == "event":
+            assert "command_topic" not in c
+            continue
+        assert (c["retain"], c["optimistic"], c["entity_category"]) == (False, False, "config")
+        assert c["command_topic"].startswith("deye/ab12cd34/deye1/write/set/t1/")
+        assert c["unique_id"] == f"deye_ab12cd34_deye1_{key}"
+        assert c["default_entity_id"] == f"{c['platform']}.deye_ab12cd34_deye1_{key}"
+        assert c["availability"][-1] == {
+            "topic": NS.write_availability_topic("deye1", key.removeprefix("set_"))
+        }
+        assert "command_template" not in c and "value_template" in c
+    for key, desc_key in (("set_battery_charge_current", "battery_charge_current"),
+                          ("set_tou_slot1_power", "tou_slot1_power")):  # fmt: skip
+        assert comps[key]["mode"] == "box" and comps[key]["step"] == 1, desc_key
+    assert comps["set_smart_load_on_voltage"]["step"] == 0.01
+    assert comps["set_smart_load_on_voltage"]["min"] == 38.0
+    assert comps["set_tou_slot1_grid_charge"]["platform"] == "switch"
+    assert comps["write_result"]["event_types"] == list(EVENT_TYPES)
+
+
+def _write_doc(mutate: Any) -> dict[str, Any]:
+    doc = copy.deepcopy(writes_doc())
+    mutate(doc["components"])
+    return doc
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda c: c["set_battery_charge_current"].update(retain=True),
+        lambda c: c["set_battery_charge_current"].update(optimistic=True),
+        lambda c: c["set_battery_charge_current"].pop("retain"),
+        lambda c: c["set_battery_charge_current"].update(entity_category="diagnostic"),
+        lambda c: c["set_battery_charge_current"].pop("entity_category"),
+        lambda c: c["set_battery_charge_current"].pop("command_topic"),
+        lambda c: c["set_battery_charge_current"].update(command_topic=""),
+        lambda c: c["set_battery_charge_current"].update(
+            command_topic=c["set_battery_charge_current"]["state_topic"]
+        ),
+        lambda c: c["set_battery_charge_current"].update(command_template="{{ value }}"),
+        lambda c: c["set_battery_charge_current"].update(mode="slider"),
+        lambda c: c["set_battery_charge_current"].update(min=300, max=10),
+        lambda c: c["set_battery_charge_current"].update(step=0),
+        lambda c: c["set_battery_charge_current"].update(max=float("inf")),
+        lambda c: c["set_battery_charge_current"].update(device_class="voltage"),
+        lambda c: c["set_battery_charge_current"].update(state_class="measurement"),
+        lambda c: c["set_tou_enable"].update(payload_on="1"),
+        lambda c: c["set_tou_enable"].update(min=0),
+        lambda c: c["set_tou_slot1_start"].update(unit_of_measurement="h"),
+        lambda c: c["set_tou_enable"].update(default_entity_id="switch2.x"),
+        lambda c: c["set_tou_enable"].update(availability=[]),
+        lambda c: c["write_result"].update(command_topic="x"),
+        lambda c: c["write_result"].update(event_types=[]),
+        lambda c: c["write_result"].update(value_template="{{ x }}"),
+        lambda c: c["write_result"].update(retain=False),
+        lambda c: c.update(rogue={"platform": "select", "unique_id": "x"}),
+    ],
+)
+def test_the_write_allowlist_rejects(mutate: Any) -> None:
+    with pytest.raises(DiscoveryError):
+        validate_document(_write_doc(mutate))
+
+
+def test_a_command_topic_never_exists_on_a_measurement_platform() -> None:
+    doc = inverter_doc()
+    for platform in ("sensor", "binary_sensor"):
+        key = "battery_soc" if platform == "sensor" else "alarm_fan"
+        bad = copy.deepcopy(doc)
+        bad["components"][key].update(command_topic="deye/x/set", retain=False)
+        with pytest.raises(DiscoveryError):
+            validate_document(bad)
+
+
+def test_the_write_topics_are_disjoint_from_every_profile_group() -> None:
+    groups = set(PROFILE.groups) | {"diagnostics"}
+    assert "write" not in groups
+    topics = {
+        NS.write_state_topic("deye1"),
+        NS.write_result_topic("deye1"),
+        NS.command_topic("deye1", "t1", "tou_enable"),
+        NS.write_availability_topic("deye1", "tou_enable"),
+    }
+    assert not topics & {NS.group_topic("deye1", g) for g in groups}
+    other = Namespace("ff00ee11", "homeassistant", "deye")
+    assert not topics & {other.write_state_topic("deye1"), other.write_result_topic("deye1")}
+    assert NS.command_topic("deye1", "t1", "k") != NS.command_topic("deye1", "t2", "k")

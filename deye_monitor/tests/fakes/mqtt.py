@@ -34,6 +34,7 @@ class FakeConnection:
     number: int
     sent: list[Sent] = field(default_factory=list)
     subscriptions: list[tuple[str, int]] = field(default_factory=list)
+    unsubscribed: list[str] = field(default_factory=list)
     incoming: asyncio.Queue[IncomingMessage | None] = field(default_factory=asyncio.Queue)
     fail_publish: Callable[[Sent], Exception | None] | None = None
     closed: bool = False
@@ -50,6 +51,9 @@ class FakeConnection:
 
     async def subscribe(self, topic: str, *, qos: int) -> None:
         self.subscriptions.append((topic, qos))
+
+    async def unsubscribe(self, topic: str) -> None:
+        self.unsubscribed.append(topic)
 
     async def messages(self) -> AsyncIterator[IncomingMessage]:
         while True:

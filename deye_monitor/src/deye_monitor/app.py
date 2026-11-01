@@ -8,7 +8,7 @@ import logging
 import os
 import signal
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from deye_monitor import __version__
@@ -31,6 +31,7 @@ from deye_monitor.mqtt import (
     aiomqtt_factory,
 )
 from deye_monitor.mqtt_discovery import valid_discovery_document
+from deye_monitor.mqtt_settings import SettingsPlane
 from deye_monitor.plant import PlantService, PlantStore, SwitchError
 from deye_monitor.profiles.plan import SelectionError
 from deye_monitor.runtime import Runtime
@@ -133,6 +134,7 @@ def build_publisher(
         diagnostics_of=lambda i: invs[i].diagnostics(),
         totals=build_totals(cfg, runtime, ns, store, directory),
         settings=settings,
+        plane=SettingsPlane(ns, {i.id: i.poll for i in cfg.inverters}, runtime.writes),
     )
 
 
@@ -210,6 +212,9 @@ class Application:
         self.running = False
         self.unaccepted = False
         self.proposing = False
+        # The plant revision commands are bound to (set once the plant service exists): a second
+        # transport (MQTT) must not depend on a web request having wired it first.
+        self.plant_revision: Callable[[], int | None] = lambda: None
 
     def install(self, cfg: AppConfig) -> Runtime:
         """Build runtime and publisher for ``cfg`` (synchronous: nothing awaits in between, so the
@@ -229,6 +234,7 @@ class Application:
         )
         for inverter_id, inv in runtime.inverters.items():
             inv.awaiting_selection = not self.manager.selection(inverter_id).chosen
+        runtime.writes.plant_revision = lambda: self.plant_revision()
         publisher: MqttPublisher | None = None
         if self.mqtt.host is None:
             log.error("no MQTT broker configured and no MQTT service found: nothing is published")
@@ -367,6 +373,7 @@ async def serve(cfg: AppConfig, stop: asyncio.Event) -> None:
     if devices:
         runtime = application.install(effective)
         service = PlantService(plant_store, cfg, manager, application)
+        application.plant_revision = lambda: service.revision
         web = WebApi(runtime, manager, publisher=application.publisher, plant=service)
         application.web = web
         await application.start_generation()

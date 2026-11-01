@@ -14,6 +14,7 @@ import copy
 import importlib.metadata
 import json
 import tempfile
+from types import SimpleNamespace
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,15 +25,36 @@ from homeassistant.components.mqtt.binary_sensor import (
     DISCOVERY_SCHEMA as BINARY_SCHEMA,
 )
 from homeassistant.components.mqtt.binary_sensor import MqttBinarySensor
+from homeassistant.components.mqtt.event import DISCOVERY_SCHEMA as EVENT_SCHEMA
+from homeassistant.components.mqtt.event import MqttEvent
 from homeassistant.components.mqtt.models import ReceiveMessage
+from homeassistant.components.mqtt.number import DISCOVERY_SCHEMA as NUMBER_SCHEMA
+from homeassistant.components.mqtt.number import MqttNumber
 from homeassistant.components.mqtt.schemas import DEVICE_DISCOVERY_SCHEMA, SHARED_OPTIONS
 from homeassistant.components.mqtt.sensor import DISCOVERY_SCHEMA as SENSOR_SCHEMA
 from homeassistant.components.mqtt.sensor import MqttSensor
+from homeassistant.components.mqtt.switch import DISCOVERY_SCHEMA as SWITCH_SCHEMA
+from homeassistant.components.mqtt.switch import MqttSwitch
+from homeassistant.components.mqtt.time import DISCOVERY_SCHEMA as TIME_SCHEMA
+from homeassistant.components.mqtt.time import MqttTimeEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
 
 GOLDEN = Path(__file__).resolve().parents[2] / "deye_monitor" / "tests" / "golden"
-DOCS = ("discovery_inverter.json", "discovery_app.json", "discovery_app_plant.json")
+DOCS = (
+    "discovery_inverter.json",
+    "discovery_app.json",
+    "discovery_app_plant.json",
+    "discovery_inverter_writes.json",
+)
+SCHEMAS = {
+    "sensor": SENSOR_SCHEMA,
+    "binary_sensor": BINARY_SCHEMA,
+    "number": NUMBER_SCHEMA,
+    "switch": SWITCH_SCHEMA,
+    "time": TIME_SCHEMA,
+    "event": EVENT_SCHEMA,
+}
 
 
 def load(name: str) -> dict[str, Any]:
@@ -68,8 +90,7 @@ def effective(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         for field in SHARED_OPTIONS:
             if field in payload:
                 config.setdefault(field, payload[field])
-        schema = SENSOR_SCHEMA if platform == "sensor" else BINARY_SCHEMA
-        result = dict(schema(config))
+        result = dict(SCHEMAS[platform](config))
         stripped = set(config) - set(result)
         assert not stripped, f"{key}: schema silently removed {sorted(stripped)}"
         out[key] = result
@@ -90,6 +111,9 @@ def test_goldens_pass_root_and_platform_schemas(name: str) -> None:
         assert comps and set(comps) == set(payload["components"])
         for key, comp in comps.items():
             assert comp["unique_id"] and comp["state_topic"], key
+            if comp.get("command_topic"):  # a writable entity: guarded shape survives the schema
+                assert comp["retain"] is False and comp["optimistic"] is False, key
+                assert comp["entity_category"] == "config", key
 
     run_in_ha(check)
 
@@ -103,6 +127,19 @@ def test_tombstone_and_cleanup_documents_pass_the_root_schema() -> None:
             assert doc["availability_mode"] == "all", name
         retained = cleanup["retained_with_tombstone"]["components"]
         assert any(c == {"platform": "sensor"} for c in retained.values())
+
+    run_in_ha(check)
+
+
+def test_cleanup_replays_of_writable_components_pass_the_schemas() -> None:
+    docs = load("discovery_cleanup_writes.json")
+
+    async def check(_hass: HomeAssistant) -> None:
+        for name, doc in docs.items():
+            comps = effective(doc)
+            assert comps and doc["availability_mode"] == "all", name
+            (only,) = comps.values()
+            assert only.get("command_topic", "x/cleanup/void").endswith("/cleanup/void"), name
 
     run_in_ha(check)
 
@@ -311,5 +348,155 @@ def test_plant_sensors_render_values_and_guard_the_energy_series() -> None:
         tpl = Template(comps["plant_master"]["json_attributes_template"], hass)
         rendered = json.loads(str(tpl.async_render_with_possible_json_value(json.dumps(body))))
         assert rendered == {"inverter_id": "a"}
+
+    run_in_ha(check)
+
+
+# -- write entities: the real number/switch/time/event handlers -----------------------------------
+
+
+def make_entity(hass: HomeAssistant, cls: Any, schema: Any, comp: dict[str, Any]) -> Any:
+    config = copy.deepcopy(comp)
+    config.pop("platform")
+    obj = object.__new__(cls)
+    obj.hass = hass
+    obj.entity_id = comp["default_entity_id"]
+    obj._attr_name = comp["name"]
+    obj._config = schema(config)
+    for value in obj._config.values():
+        if isinstance(value, Template):
+            value.hass = hass
+    obj._setup_from_config(obj._config)
+    return obj
+
+
+def published(obj: Any) -> list[tuple[str, Any]]:
+    sent: list[tuple[str, Any]] = []
+
+    async def capture(topic: str, payload: Any, *args: Any, **kw: Any) -> None:
+        sent.append((topic, payload))
+
+    obj.async_publish_with_config = capture
+    obj.async_write_ha_state = lambda: None
+    return sent
+
+
+def test_number_entities_read_the_state_and_send_plain_numbers() -> None:
+    comps = load("discovery_inverter_writes.json")["components"]
+
+    async def check(hass: HomeAssistant) -> None:
+        current = make_entity(hass, MqttNumber, NUMBER_SCHEMA, comps["set_battery_charge_current"])
+        assert (current.native_min_value, current.native_max_value, current.native_step) == (
+            0.0, 190.0, 1.0,
+        )  # fmt: skip
+        assert current.mode == "box" and current.native_unit_of_measurement == "A"
+        assert current.assumed_state is False  # non-optimistic: the old state stays until read back
+        sent = published(current)
+        current._message_received(message({"battery_charge_current": 50}))
+        assert current.native_value == 50
+        current._message_received(message({"battery_charge_current": None}))
+        assert current.native_value is None
+        await current.async_set_native_value(40.0)
+        assert sent == [("deye/ab12cd34/deye1/write/set/t1/battery_charge_current", 40)]
+        assert current.native_value is None  # nothing is shown before the read-back arrives
+
+        volts = make_entity(hass, MqttNumber, NUMBER_SCHEMA, comps["set_smart_load_on_voltage"])
+        assert (volts.native_min_value, volts.native_max_value, volts.native_step) == (
+            38.0, 63.0, 0.01,
+        )  # fmt: skip
+        sent = published(volts)
+        volts._message_received(message({"smart_load_on_voltage": 50.25}))
+        assert volts.native_value == 50.25
+        await volts.async_set_native_value(52.25)
+        assert sent[0][1] == 52.25  # str() of this is exactly what the app parses
+
+    run_in_ha(check)
+
+
+def test_switch_entities_use_on_off_and_unknown_is_not_guessed() -> None:
+    comps = load("discovery_inverter_writes.json")["components"]
+
+    async def check(hass: HomeAssistant) -> None:
+        for key in ("set_grid_charge_enable", "set_tou_enable", "set_tou_slot3_grid_charge"):
+            switch = make_entity(hass, MqttSwitch, SWITCH_SCHEMA, comps[key])
+            name = key.removeprefix("set_")
+            sent = published(switch)
+            switch._state_message_received(message({name: True}))
+            assert switch.is_on is True
+            switch._state_message_received(message({name: False}))
+            assert switch.is_on is False
+            switch._state_message_received(message({name: None}))
+            assert switch.is_on is None
+            switch._state_message_received(message({name: "false"}))  # never guessed
+            assert switch.is_on is None
+            await switch.async_turn_on()
+            await switch.async_turn_off()
+            assert [p for _, p in sent] == ["ON", "OFF"]  # what the app accepts, nothing else
+            assert switch.assumed_state is False
+
+    run_in_ha(check)
+
+
+def test_time_entities_read_hh_mm_ss_and_send_iso_times_without_timezone() -> None:
+    import datetime
+
+    comps = load("discovery_inverter_writes.json")["components"]
+
+    async def check(hass: HomeAssistant) -> None:
+        slot = make_entity(hass, MqttTimeEntity, TIME_SCHEMA, comps["set_tou_slot2_start"])
+        sent = published(slot)
+        slot._handle_state_message_received(message({"tou_slot2_start": "05:00:00"}))
+        assert slot.native_value == datetime.time(5, 0)
+        slot._handle_state_message_received(message({"tou_slot2_start": None}))
+        assert slot.native_value is None
+        await slot.async_set_value(datetime.time(21, 5))
+        await slot.async_set_value(datetime.time(23, 55, 30))  # HA can send seconds: refused later
+        assert [p for _, p in sent] == ["21:05:00", "23:55:30"]
+        assert slot.assumed_state is False
+
+    run_in_ha(check)
+
+
+def test_the_event_entity_accepts_exactly_the_declared_types() -> None:
+    comp = load("discovery_inverter_writes.json")["components"]["write_result"]
+
+    async def check(hass: HomeAssistant) -> None:
+        event = make_entity(hass, MqttEvent, EVENT_SCHEMA, comp)
+        triggered: list[tuple[str, dict[str, Any]]] = []
+        hass.data["mqtt"] = SimpleNamespace(
+            state_write_requests=SimpleNamespace(write_state_request=lambda entity: None)
+        )
+        event._trigger_event = lambda kind, attrs: triggered.append((kind, attrs))
+        for kind in comp["event_types"]:
+            body = {
+                "event_type": kind,
+                "setting": "battery_charge_current",
+                "requested_value": 40,
+                "reason": None,
+                "audit_id": "ab12",
+                "value": 40,
+            }
+            event._event_received(message(body))
+        assert [k for k, _ in triggered] == comp["event_types"]
+        assert triggered[0][1]["setting"] == "battery_charge_current"
+        assert triggered[0][1]["audit_id"] == "ab12"
+        assert event.event_types == comp["event_types"]
+
+    run_in_ha(check)
+
+
+def test_the_setting_templates_render_the_read_back_and_unknown() -> None:
+    comps = load("discovery_inverter_writes.json")["components"]
+
+    async def check(hass: HomeAssistant) -> None:
+        number = comps["set_battery_low_soc"]["value_template"]
+        assert render(hass, number, {"battery_low_soc": 35}) == "35"
+        assert render(hass, number, {"battery_low_soc": 0}) == "0"  # a real zero stays zero
+        assert render(hass, number, {"battery_low_soc": None}) == "None"
+        assert render(hass, number, {}) == "None"
+        assert render(hass, number, "not a mapping") == "None"
+        switch = comps["set_tou_enable"]["value_template"]
+        for value, expected in [(True, "ON"), (False, "OFF"), (None, "None"), ("false", "None")]:
+            assert render(hass, switch, {"tou_enable": value}) == expected
 
     run_in_ha(check)

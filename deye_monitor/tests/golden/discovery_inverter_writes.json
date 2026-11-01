@@ -1,0 +1,1059 @@
+{
+ "availability": [
+  {
+   "topic": "deye/ab12cd34/status"
+  },
+  {
+   "topic": "deye/ab12cd34/deye1/availability"
+  }
+ ],
+ "availability_mode": "all",
+ "components": {
+  "set_battery_charge_current": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/battery_charge_current"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/battery_charge_current",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_battery_charge_current",
+   "device_class": "current",
+   "entity_category": "config",
+   "max": 190,
+   "min": 0,
+   "mode": "box",
+   "name": "Maximum battery charge current (R108)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_battery_charge_current",
+   "unit_of_measurement": "A",
+   "value_template": "{{ value_json.get('battery_charge_current') if value_json is mapping else none }}"
+  },
+  "set_battery_discharge_current": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/battery_discharge_current"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/battery_discharge_current",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_battery_discharge_current",
+   "device_class": "current",
+   "entity_category": "config",
+   "max": 190,
+   "min": 0,
+   "mode": "box",
+   "name": "Maximum battery discharge current (R109)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_battery_discharge_current",
+   "unit_of_measurement": "A",
+   "value_template": "{{ value_json.get('battery_discharge_current') if value_json is mapping else none }}"
+  },
+  "set_battery_low_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/battery_low_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/battery_low_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_battery_low_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "Battery low SOC (R117)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_battery_low_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('battery_low_soc') if value_json is mapping else none }}"
+  },
+  "set_battery_restart_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/battery_restart_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/battery_restart_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_battery_restart_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "Battery restart SOC (R116)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_battery_restart_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('battery_restart_soc') if value_json is mapping else none }}"
+  },
+  "set_battery_shutdown_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/battery_shutdown_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/battery_shutdown_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_battery_shutdown_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "Battery shutdown SOC (R115)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_battery_shutdown_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('battery_shutdown_soc') if value_json is mapping else none }}"
+  },
+  "set_generator_charge_current": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/generator_charge_current"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/generator_charge_current",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_generator_charge_current",
+   "device_class": "current",
+   "entity_category": "config",
+   "max": 190,
+   "min": 0,
+   "mode": "box",
+   "name": "Generator charge current (R125)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_generator_charge_current",
+   "unit_of_measurement": "A",
+   "value_template": "{{ value_json.get('generator_charge_current') if value_json is mapping else none }}"
+  },
+  "set_grid_charge_current": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/grid_charge_current"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/grid_charge_current",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_grid_charge_current",
+   "device_class": "current",
+   "entity_category": "config",
+   "max": 190,
+   "min": 0,
+   "mode": "box",
+   "name": "GRID charge current (R128)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_grid_charge_current",
+   "unit_of_measurement": "A",
+   "value_template": "{{ value_json.get('grid_charge_current') if value_json is mapping else none }}"
+  },
+  "set_grid_charge_enable": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/grid_charge_enable"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/grid_charge_enable",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_grid_charge_enable",
+   "entity_category": "config",
+   "name": "GRID charge enable (R130)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_grid_charge_enable",
+   "value_template": "{% set v = value_json.get('grid_charge_enable') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_grid_charge_start_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/grid_charge_start_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/grid_charge_start_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_grid_charge_start_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 90,
+   "min": 10,
+   "mode": "box",
+   "name": "GRID charge start SOC (R127)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_grid_charge_start_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('grid_charge_start_soc') if value_json is mapping else none }}"
+  },
+  "set_smart_load_off_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/smart_load_off_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/smart_load_off_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_smart_load_off_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "Smart Load OFF SOC (R135)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_smart_load_off_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('smart_load_off_soc') if value_json is mapping else none }}"
+  },
+  "set_smart_load_off_voltage": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/smart_load_off_voltage"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/smart_load_off_voltage",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_smart_load_off_voltage",
+   "device_class": "voltage",
+   "entity_category": "config",
+   "max": 63.0,
+   "min": 38.0,
+   "mode": "box",
+   "name": "Smart Load OFF voltage (R134)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 0.01,
+   "unique_id": "deye_ab12cd34_deye1_set_smart_load_off_voltage",
+   "unit_of_measurement": "V",
+   "value_template": "{{ value_json.get('smart_load_off_voltage') if value_json is mapping else none }}"
+  },
+  "set_smart_load_on_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/smart_load_on_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/smart_load_on_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_smart_load_on_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "Smart Load ON SOC (R137)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_smart_load_on_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('smart_load_on_soc') if value_json is mapping else none }}"
+  },
+  "set_smart_load_on_voltage": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/smart_load_on_voltage"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/smart_load_on_voltage",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_smart_load_on_voltage",
+   "device_class": "voltage",
+   "entity_category": "config",
+   "max": 63.0,
+   "min": 38.0,
+   "mode": "box",
+   "name": "Smart Load ON voltage (R136)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 0.01,
+   "unique_id": "deye_ab12cd34_deye1_set_smart_load_on_voltage",
+   "unit_of_measurement": "V",
+   "value_template": "{{ value_json.get('smart_load_on_voltage') if value_json is mapping else none }}"
+  },
+  "set_tou_enable": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_enable"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_enable",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_enable",
+   "entity_category": "config",
+   "name": "ToU schedule enable (R146 bit 0)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_enable",
+   "value_template": "{% set v = value_json.get('tou_enable') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_tou_slot1_grid_charge": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot1_grid_charge"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot1_grid_charge",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_slot1_grid_charge",
+   "entity_category": "config",
+   "name": "ToU slot 1: allow GRID charging (R172 bit 0)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot1_grid_charge",
+   "value_template": "{% set v = value_json.get('tou_slot1_grid_charge') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_tou_slot1_power": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot1_power"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot1_power",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot1_power",
+   "device_class": "power",
+   "entity_category": "config",
+   "max": 8000,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 1: discharge power (R154)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot1_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('tou_slot1_power') if value_json is mapping else none }}"
+  },
+  "set_tou_slot1_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot1_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot1_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot1_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 1: target SOC (R166)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot1_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('tou_slot1_soc') if value_json is mapping else none }}"
+  },
+  "set_tou_slot1_start": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot1_start"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot1_start",
+   "default_entity_id": "time.deye_ab12cd34_deye1_set_tou_slot1_start",
+   "entity_category": "config",
+   "name": "ToU slot 1: start time (R148)",
+   "optimistic": false,
+   "platform": "time",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot1_start",
+   "value_template": "{{ value_json.get('tou_slot1_start') if value_json is mapping else none }}"
+  },
+  "set_tou_slot2_grid_charge": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot2_grid_charge"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot2_grid_charge",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_slot2_grid_charge",
+   "entity_category": "config",
+   "name": "ToU slot 2: allow GRID charging (R173 bit 0)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot2_grid_charge",
+   "value_template": "{% set v = value_json.get('tou_slot2_grid_charge') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_tou_slot2_power": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot2_power"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot2_power",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot2_power",
+   "device_class": "power",
+   "entity_category": "config",
+   "max": 8000,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 2: discharge power (R155)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot2_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('tou_slot2_power') if value_json is mapping else none }}"
+  },
+  "set_tou_slot2_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot2_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot2_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot2_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 2: target SOC (R167)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot2_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('tou_slot2_soc') if value_json is mapping else none }}"
+  },
+  "set_tou_slot2_start": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot2_start"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot2_start",
+   "default_entity_id": "time.deye_ab12cd34_deye1_set_tou_slot2_start",
+   "entity_category": "config",
+   "name": "ToU slot 2: start time (R149)",
+   "optimistic": false,
+   "platform": "time",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot2_start",
+   "value_template": "{{ value_json.get('tou_slot2_start') if value_json is mapping else none }}"
+  },
+  "set_tou_slot3_grid_charge": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot3_grid_charge"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot3_grid_charge",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_slot3_grid_charge",
+   "entity_category": "config",
+   "name": "ToU slot 3: allow GRID charging (R174 bit 0)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot3_grid_charge",
+   "value_template": "{% set v = value_json.get('tou_slot3_grid_charge') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_tou_slot3_power": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot3_power"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot3_power",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot3_power",
+   "device_class": "power",
+   "entity_category": "config",
+   "max": 8000,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 3: discharge power (R156)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot3_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('tou_slot3_power') if value_json is mapping else none }}"
+  },
+  "set_tou_slot3_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot3_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot3_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot3_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 3: target SOC (R168)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot3_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('tou_slot3_soc') if value_json is mapping else none }}"
+  },
+  "set_tou_slot3_start": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot3_start"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot3_start",
+   "default_entity_id": "time.deye_ab12cd34_deye1_set_tou_slot3_start",
+   "entity_category": "config",
+   "name": "ToU slot 3: start time (R150)",
+   "optimistic": false,
+   "platform": "time",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot3_start",
+   "value_template": "{{ value_json.get('tou_slot3_start') if value_json is mapping else none }}"
+  },
+  "set_tou_slot4_grid_charge": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot4_grid_charge"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot4_grid_charge",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_slot4_grid_charge",
+   "entity_category": "config",
+   "name": "ToU slot 4: allow GRID charging (R175 bit 0)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot4_grid_charge",
+   "value_template": "{% set v = value_json.get('tou_slot4_grid_charge') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_tou_slot4_power": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot4_power"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot4_power",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot4_power",
+   "device_class": "power",
+   "entity_category": "config",
+   "max": 8000,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 4: discharge power (R157)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot4_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('tou_slot4_power') if value_json is mapping else none }}"
+  },
+  "set_tou_slot4_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot4_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot4_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot4_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 4: target SOC (R169)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot4_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('tou_slot4_soc') if value_json is mapping else none }}"
+  },
+  "set_tou_slot4_start": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot4_start"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot4_start",
+   "default_entity_id": "time.deye_ab12cd34_deye1_set_tou_slot4_start",
+   "entity_category": "config",
+   "name": "ToU slot 4: start time (R151)",
+   "optimistic": false,
+   "platform": "time",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot4_start",
+   "value_template": "{{ value_json.get('tou_slot4_start') if value_json is mapping else none }}"
+  },
+  "set_tou_slot5_grid_charge": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot5_grid_charge"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot5_grid_charge",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_slot5_grid_charge",
+   "entity_category": "config",
+   "name": "ToU slot 5: allow GRID charging (R176 bit 0)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot5_grid_charge",
+   "value_template": "{% set v = value_json.get('tou_slot5_grid_charge') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_tou_slot5_power": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot5_power"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot5_power",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot5_power",
+   "device_class": "power",
+   "entity_category": "config",
+   "max": 8000,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 5: discharge power (R158)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot5_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('tou_slot5_power') if value_json is mapping else none }}"
+  },
+  "set_tou_slot5_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot5_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot5_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot5_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 5: target SOC (R170)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot5_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('tou_slot5_soc') if value_json is mapping else none }}"
+  },
+  "set_tou_slot5_start": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot5_start"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot5_start",
+   "default_entity_id": "time.deye_ab12cd34_deye1_set_tou_slot5_start",
+   "entity_category": "config",
+   "name": "ToU slot 5: start time (R152)",
+   "optimistic": false,
+   "platform": "time",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot5_start",
+   "value_template": "{{ value_json.get('tou_slot5_start') if value_json is mapping else none }}"
+  },
+  "set_tou_slot6_grid_charge": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot6_grid_charge"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot6_grid_charge",
+   "default_entity_id": "switch.deye_ab12cd34_deye1_set_tou_slot6_grid_charge",
+   "entity_category": "config",
+   "name": "ToU slot 6: allow GRID charging (R177 bit 0)",
+   "optimistic": false,
+   "platform": "switch",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot6_grid_charge",
+   "value_template": "{% set v = value_json.get('tou_slot6_grid_charge') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "set_tou_slot6_power": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot6_power"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot6_power",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot6_power",
+   "device_class": "power",
+   "entity_category": "config",
+   "max": 8000,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 6: discharge power (R159)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot6_power",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('tou_slot6_power') if value_json is mapping else none }}"
+  },
+  "set_tou_slot6_soc": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot6_soc"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot6_soc",
+   "default_entity_id": "number.deye_ab12cd34_deye1_set_tou_slot6_soc",
+   "device_class": "battery",
+   "entity_category": "config",
+   "max": 100,
+   "min": 0,
+   "mode": "box",
+   "name": "ToU slot 6: target SOC (R171)",
+   "optimistic": false,
+   "platform": "number",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "step": 1,
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot6_soc",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.get('tou_slot6_soc') if value_json is mapping else none }}"
+  },
+  "set_tou_slot6_start": {
+   "availability": [
+    {
+     "topic": "deye/ab12cd34/status"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/availability"
+    },
+    {
+     "topic": "deye/ab12cd34/deye1/write/available/tou_slot6_start"
+    }
+   ],
+   "command_topic": "deye/ab12cd34/deye1/write/set/t1/tou_slot6_start",
+   "default_entity_id": "time.deye_ab12cd34_deye1_set_tou_slot6_start",
+   "entity_category": "config",
+   "name": "ToU slot 6: start time (R153)",
+   "optimistic": false,
+   "platform": "time",
+   "retain": false,
+   "state_topic": "deye/ab12cd34/deye1/write/state",
+   "unique_id": "deye_ab12cd34_deye1_set_tou_slot6_start",
+   "value_template": "{{ value_json.get('tou_slot6_start') if value_json is mapping else none }}"
+  },
+  "write_result": {
+   "default_entity_id": "event.deye_ab12cd34_deye1_write_result",
+   "event_types": [
+    "write_readback_confirmed",
+    "write_rejected",
+    "write_failed",
+    "write_outcome_unknown",
+    "write_noop"
+   ],
+   "name": "Write result",
+   "platform": "event",
+   "state_topic": "deye/ab12cd34/deye1/write/result",
+   "unique_id": "deye_ab12cd34_deye1_write_result"
+  }
+ },
+ "device": {
+  "identifiers": [
+   "deye_ab12cd34_deye1"
+  ],
+  "manufacturer": "Deye",
+  "model": "Deye SG04LP3 three-phase low-voltage hybrid inverter",
+  "name": "Deye 1",
+  "serial_number": "2401234567",
+  "via_device": "deye_ab12cd34_app"
+ },
+ "origin": {
+  "name": "Deye SG04LP3 Monitor",
+  "sw_version": "0.4.0"
+ }
+}

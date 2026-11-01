@@ -95,8 +95,9 @@ SENT = "sent"
 FAILED = "failed"
 CONFIRMED = "readback_confirmed"
 UNKNOWN = "outcome_unknown"
+NOOP = "noop"  # the fresh word already equals the request: audited, nothing sent (``submit`` only)
 PENDING = "pending"  # accepted for execution, not yet at the send point (in memory only)
-STATUSES = (REJECTED, SENT, FAILED, CONFIRMED, UNKNOWN)
+STATUSES = (REJECTED, SENT, FAILED, CONFIRMED, UNKNOWN, NOOP)
 
 SERIAL_START = 3
 SERIAL_WORDS = 5
@@ -226,6 +227,35 @@ class Permit:
     source: str = "web"
     used: bool = False
     revoked: bool = False
+    noop: bool = False  # ``submit`` found the fresh word already equal to the request
+
+
+# Reasons that take a setting away (the owner's release no longer applies to what the unit is
+# now); every other reason is transient and only makes the setting unavailable.
+WITHDRAWN_REASONS = frozenset({"firmware_changed", PARALLEL_SLAVE, "hardware_not_released"})
+
+
+@dataclass(frozen=True, slots=True)
+class SettingState:
+    """One released setting as read fresh: ``ready`` false means a gate is closed (``reason``)."""
+
+    key: str
+    ready: bool
+    reason: str | None
+    word: int
+    field: int
+    value: int | float | str | None
+    cap: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class SettingsSnapshot:
+    """``ok`` (a fresh read), ``unavailable`` (nothing could be established now, transient) or
+    ``withdrawn`` (the release does not apply: not released, other firmware, a slave)."""
+
+    status: str
+    reason: str | None
+    settings: Mapping[str, SettingState]
 
 
 @dataclass(slots=True)
@@ -574,6 +604,49 @@ class WriteService:
             out.append(row)
         return {"operations": out, "info": {"tou": self._tou_info(words)} if with_tou else {}}
 
+    async def snapshot(self, inverter_id: str) -> SettingsSnapshot:
+        """Fresh state of every released setting for a transport that shows values (MQTT
+        entities): one bus critical section, the same release, identity and role checks as
+        ``current_view``. Reads only."""
+        inv = self._target(inverter_id)
+        enabled = self.enabled(inverter_id)
+        descs = [
+            d
+            for d in DESCRIPTORS
+            if d.key in enabled and not (d.needs_battery and not inv.features.battery)
+        ]
+        if not descs:
+            return SettingsSnapshot("withdrawn", "not_released", {})
+        reason = self._not_ready(inv)
+        if reason is not None:
+            status = "withdrawn" if reason in WITHDRAWN_REASONS else "unavailable"
+            return SettingsSnapshot(status, reason, {})
+        addresses: set[int] = set()
+        for d in descs:
+            addresses |= self._addresses(d)
+        try:
+            words = await self._context(inv, addresses)
+            self._identity(inv, words)
+            self._check_release(inv, words)
+            self._check_role(inv, words)
+        except Refused as exc:
+            status = "withdrawn" if exc.key in WITHDRAWN_REASONS else "unavailable"
+            return SettingsSnapshot(status, exc.key, {})
+        out: dict[str, SettingState] = {}
+        for d in descs:
+            row = self._row(d, words, model_limit(d, words[20], words[21]))
+            hidden = row.get("reason") == "unexpected_bits"  # the bit is not the setting's value
+            out[d.key] = SettingState(
+                key=d.key,
+                ready=row["state"] == "ready",
+                reason=row.get("reason"),
+                word=row["word"],
+                field=row["field"],
+                value=None if hidden else row["value"],
+                cap=row["cap"],
+            )
+        return SettingsSnapshot("ok", None, out)
+
     @staticmethod
     def _tou_info(words: Mapping[int, int]) -> dict[str, Any]:
         word = words[R146]
@@ -746,7 +819,15 @@ class WriteService:
         missing = [p["id"] for p in peers.values() if p["baseline_word"] is None]
         if missing:
             raise Refused("peer_unavailable", 409, peers=missing)
-        cap, old_word, new_word = self._evaluate(inv, desc, field_new, words)
+        noop = False
+        try:
+            cap, old_word, new_word = self._evaluate(inv, desc, field_new, words)
+        except Refused as refusal:
+            if not (direct and refusal.key == "no_change"):
+                raise
+            cap = model_limit(desc, words[20], words[21])
+            old_word = new_word = words[desc.register]
+            noop = True
         route = inv.routes[0]
         permit = Permit(
             operation_id=secrets.token_hex(16),
@@ -765,11 +846,12 @@ class WriteService:
             lifecycle=inv.lifecycle_epoch,
             context=None if direct else dict(words),
             field=field_new,
-            old_word=None if direct else old_word,
-            new_word=None if direct else new_word,
+            old_word=old_word if noop or not direct else None,
+            new_word=new_word if noop or not direct else None,
             peers=peers,
             expires_at=self.clock() + self.settings.permit_s,
             source=source,
+            noop=noop,
         )
         return permit, desc, cap
 
@@ -891,7 +973,20 @@ class WriteService:
             plant_revision=revision,
             direct=True,
         )
+        if permit.noop:
+            return self._noop(permit)
         return await self._run(permit)
+
+    def _noop(self, permit: Permit) -> dict[str, Any]:
+        """The request equals the fresh word: an audited result without a send."""
+        permit.used = True
+        op = self._new_record(permit)
+        op["status"], op["reason"] = NOOP, "no_change"
+        self._ops[permit.operation_id] = op
+        while len(self._ops) > MAX_OPERATIONS:
+            self._ops.popitem(last=False)
+        self._record("result", op)
+        return self.operation_view(op)
 
     async def _run(self, permit: Permit) -> dict[str, Any]:
         permit.used = True  # single use from here on, whatever happens next

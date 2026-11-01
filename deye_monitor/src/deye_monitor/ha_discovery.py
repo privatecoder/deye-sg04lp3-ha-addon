@@ -3,9 +3,13 @@
 Normative contract: ``reviewer-codex-6.1-t8-contract.md`` (HA Core 2026.10.4). Everything here is
 pure: no I/O, no clock, no MQTT client.
 
-* Only the platforms ``sensor`` and ``binary_sensor`` exist. There is no command topic, command
-  template or alias of one: ``validate_document`` accepts exclusively the field names listed
-  below (an allowlist, not a denylist) and is applied to every document before it is sent.
+* The measurement platforms are ``sensor`` and ``binary_sensor`` (no command topic). Released
+  write-layer settings (0.4.0 part B) are ``number``, ``switch`` and ``time`` entities with a
+  command topic, plus one ``event`` entity per inverter for write results. A command topic exists
+  only on those three platforms, always with ``retain: false``, ``optimistic: false`` and
+  ``entity_category: config``, and no command template: ``validate_document`` accepts exclusively
+  the field names listed below (an allowlist, not a denylist) and is applied to every document
+  before it is sent.
 * Keys are always written out in full (never the short forms ``dev``, ``cmps``, ``uniq_id`` ...).
 * ``default_entity_id`` is used instead of the old payload ``object_id``.
 * Energy counters carry their statistics generation in the component key, the unique id, the
@@ -30,8 +34,11 @@ from deye_monitor.config import PollConfig
 from deye_monitor.profiles.alarms import active_items
 from deye_monitor.profiles.decode import Value
 from deye_monitor.profiles.schema import Entry, Profile
+from deye_monitor.write_ops import Kind, WriteDescriptor
 
-PLATFORMS: Final = ("sensor", "binary_sensor")
+READ_PLATFORMS: Final = ("sensor", "binary_sensor")
+WRITE_PLATFORMS: Final = ("number", "switch", "time")
+PLATFORMS: Final = (*READ_PLATFORMS, *WRITE_PLATFORMS, "event")
 MAX_DOCUMENT_BYTES: Final = 256 * 1024  # application limit per device discovery document
 APP_DEVICE_SUFFIX: Final = "app"
 ORIGIN_NAME: Final = "Deye SG04LP3 Monitor"
@@ -40,6 +47,16 @@ INVERTER_MODEL: Final = "Deye SG04LP3 three-phase low-voltage hybrid inverter"
 NONE_TEMPLATE: Final = "{{ none }}"
 APP_HEARTBEAT_S: Final = 30.0
 STATIC_GROUPS: Final = frozenset({"identity", "settings"})
+WRITE_TOPIC: Final = "write"
+WRITE_RESULT_KEY: Final = "write_result"
+SETTING_PREFIX: Final = "set_"
+EVENT_TYPES: Final = (
+    "write_readback_confirmed",
+    "write_rejected",
+    "write_failed",
+    "write_outcome_unknown",
+    "write_noop",
+)
 
 _ROOT_FIELDS = frozenset({"device", "origin", "availability", "availability_mode", "components"})
 _DEVICE_FIELDS = frozenset(
@@ -67,7 +84,18 @@ _COMPONENT_FIELDS = frozenset(
         "json_attributes_topic",
         "json_attributes_template",
         "availability",
+        "command_topic",
+        "min",
+        "max",
+        "step",
+        "mode",
+        "optimistic",
+        "retain",
+        "event_types",
     }
+)
+_READ_FIELDS = _COMPONENT_FIELDS - frozenset(
+    {"command_topic", "min", "max", "step", "mode", "optimistic", "retain", "event_types"}
 )
 _SENSOR_ONLY = frozenset(
     {
@@ -81,6 +109,28 @@ _SENSOR_ONLY = frozenset(
 )
 _BINARY_ONLY = frozenset({"payload_on", "payload_off"})
 _ENTITY_CATEGORIES = frozenset({"diagnostic"})
+_WRITE_FIELDS = frozenset(
+    {
+        "platform",
+        "unique_id",
+        "default_entity_id",
+        "name",
+        "state_topic",
+        "value_template",
+        "entity_category",
+        "availability",
+        "command_topic",
+        "optimistic",
+        "retain",
+    }
+)
+_NUMBER_FIELDS = frozenset({"min", "max", "step", "mode", "device_class", "unit_of_measurement"})
+_EVENT_FIELDS = frozenset(
+    {"platform", "unique_id", "default_entity_id", "name", "state_topic", "event_types"}
+    | {"availability"}
+)
+_NUMBER_CLASSES = frozenset({"current", "battery", "power", "voltage"})
+_NUMBER_UNITS = {"current": "A", "battery": "%", "power": "W", "voltage": "V"}
 _STATE_CLASSES = frozenset({"measurement", "total", "total_increasing"})
 
 
@@ -125,6 +175,31 @@ class Namespace:
     def cleanup_topic(self) -> str:
         """Never published as ``online``: replayed cleanup entities stay unavailable."""
         return f"{self.state_prefix}/{self.instance}/cleanup"
+
+    @property
+    def cleanup_command_topic(self) -> str:
+        """The command topic of a replayed (retired) writable component: nobody subscribes to it."""
+        return f"{self.cleanup_topic}/void"
+
+    def write_base(self, inverter_id: str) -> str:
+        """Topics of the write entities of one inverter (``write`` is no profile group name)."""
+        return f"{self.state_prefix}/{self.instance}/{inverter_id}/{WRITE_TOPIC}"
+
+    def write_state_topic(self, inverter_id: str) -> str:
+        return f"{self.write_base(inverter_id)}/state"
+
+    def write_result_topic(self, inverter_id: str) -> str:
+        return f"{self.write_base(inverter_id)}/result"
+
+    def write_availability_topic(self, inverter_id: str, key: str) -> str:
+        return f"{self.write_base(inverter_id)}/available/{key}"
+
+    def command_prefix(self, inverter_id: str, token: str) -> str:
+        """Generation-scoped: a topic of an older token is no longer subscribed."""
+        return f"{self.write_base(inverter_id)}/set/{token}"
+
+    def command_topic(self, inverter_id: str, token: str, key: str) -> str:
+        return f"{self.command_prefix(inverter_id, token)}/{key}"
 
     def inverter_availability_topic(self, inverter_id: str) -> str:
         return f"{self.state_prefix}/{self.instance}/{inverter_id}/availability"
@@ -540,6 +615,81 @@ def inverter_diagnostic_components(
     return out
 
 
+# -- write entities (0.4.0 part B) ---------------------------------------------------------------
+
+
+def setting_key(operation: str) -> str:
+    """Component key of a released setting."""
+    return f"{SETTING_PREFIX}{operation}"
+
+
+def _setting_template(desc: WriteDescriptor) -> str:
+    key = desc.key
+    if desc.kind is Kind.BIT:
+        return (
+            f"{{% set v = value_json.get('{key}') if value_json is mapping else none %}}"
+            "{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+        )
+    return f"{{{{ value_json.get('{key}') if value_json is mapping else none }}}}"
+
+
+def _number_class(desc: WriteDescriptor) -> str | None:
+    return {"A": "current", "%": "battery", "W": "power", "V": "voltage"}.get(desc.unit)
+
+
+def setting_component(
+    ns: Namespace, inverter_id: str, desc: WriteDescriptor, token: str, cap: int | None
+) -> tuple[str, dict[str, Any]]:
+    """(component key, discovery component) of one released setting. ``cap`` is the model limit
+    (A or W) of a model-limited setting; limits are the descriptor's current ones, nothing is
+    clamped or guessed (an unknown model keeps the document maximum, the entity is unavailable)."""
+    device_id = ns.inverter_device_id(inverter_id)
+    ckey = setting_key(desc.key)
+    platform = {Kind.SCALAR: "number", Kind.BIT: "switch", Kind.TIME: "time"}[desc.kind]
+    comp: dict[str, Any] = {
+        "platform": platform,
+        "unique_id": f"{device_id}_{ckey}",
+        "default_entity_id": f"{platform}.{device_id}_{ckey}",
+        "name": desc.name.en,
+        "state_topic": ns.write_state_topic(inverter_id),
+        "value_template": _setting_template(desc),
+        "command_topic": ns.command_topic(inverter_id, token, desc.key),
+        "optimistic": False,
+        "retain": False,
+        "entity_category": "config",
+        "availability": [
+            {"topic": ns.app_status_topic},
+            {"topic": ns.inverter_availability_topic(inverter_id)},
+            {"topic": ns.write_availability_topic(inverter_id, desc.key)},
+        ],
+    }
+    if platform == "number":
+        high = cap if desc.model_limited and cap is not None else desc.max_raw
+        comp.update(
+            min=desc.display(desc.min_raw),
+            max=desc.display(high),
+            step=1 if desc.scale == 1 else 1 / desc.scale,
+            mode="box",
+        )
+        if desc.unit:
+            comp["unit_of_measurement"] = desc.unit
+        if (device_class := _number_class(desc)) is not None:
+            comp["device_class"] = device_class
+    return ckey, comp
+
+
+def write_result_component(ns: Namespace, inverter_id: str) -> tuple[str, dict[str, Any]]:
+    device_id = ns.inverter_device_id(inverter_id)
+    return WRITE_RESULT_KEY, {
+        "platform": "event",
+        "unique_id": f"{device_id}_{WRITE_RESULT_KEY}",
+        "default_entity_id": f"event.{device_id}_{WRITE_RESULT_KEY}",
+        "name": "Write result",
+        "state_topic": ns.write_result_topic(inverter_id),
+        "event_types": list(EVENT_TYPES),
+    }
+
+
 # -- device documents ----------------------------------------------------------------------------
 
 
@@ -620,8 +770,12 @@ def replay_document(
     unavailable, so no new measurement can appear under the old identity."""
     # no own availability: the cleanup topic of the document root must keep the entity unavailable
     skipped = {"value_template", "availability"}
-    comp = {k: v for k, v in component.items() if k in _COMPONENT_FIELDS and k not in skipped}
-    comp["value_template"] = NONE_TEMPLATE
+    allowed = _READ_FIELDS if component.get("platform") in READ_PLATFORMS else _COMPONENT_FIELDS
+    comp = {k: v for k, v in component.items() if k in allowed and k not in skipped}
+    if comp.get("platform") in WRITE_PLATFORMS:
+        comp["command_topic"] = ns.cleanup_command_topic  # never the old live command topic
+    if comp.get("platform") != "event":
+        comp["value_template"] = NONE_TEMPLATE
     doc = _root(ns, meta, cleanup=True)
     doc["components"] = {key: comp}
     validate_document(doc)
@@ -645,17 +799,87 @@ def _unknown(where: str, keys: set[str], allowed: frozenset[str]) -> None:
         raise DiscoveryError(f"{where}: field(s) not allowed: {', '.join(extra)}")
 
 
+def _check_availability(key: str, comp: Mapping[str, Any]) -> None:
+    own = comp.get("availability")
+    if own is not None and (
+        not isinstance(own, list)
+        or not own
+        or not all(isinstance(i, dict) and set(i) == {"topic"} for i in own)
+    ):
+        raise DiscoveryError(f"component {key}: availability must be a list of topics")
+
+
+def _require_strings(key: str, comp: Mapping[str, Any], names: tuple[str, ...]) -> None:
+    for need in names:
+        if not isinstance(comp.get(need), str) or not comp[need]:
+            raise DiscoveryError(f"component {key}: {need} is required")
+
+
+def _validate_write(key: str, comp: Mapping[str, Any]) -> None:
+    """A writable setting entity: the only components that carry a command topic. Never retained
+    commands, never optimistic, always the config category, no command template."""
+    platform = comp["platform"]
+    allowed = _WRITE_FIELDS | (_NUMBER_FIELDS if platform == "number" else frozenset())
+    _unknown(f"component {key}", set(comp), allowed)
+    _require_strings(
+        key,
+        comp,
+        ("unique_id", "default_entity_id", "state_topic", "value_template", "command_topic"),
+    )
+    if not str(comp["default_entity_id"]).startswith(f"{platform}."):
+        raise DiscoveryError(f"component {key}: default_entity_id must start with {platform}.")
+    if comp["command_topic"] == comp["state_topic"]:
+        raise DiscoveryError(f"component {key}: command and state topic must differ")
+    if comp.get("retain") is not False or comp.get("optimistic") is not False:
+        raise DiscoveryError(f"component {key}: commands are not retained and not optimistic")
+    if comp.get("entity_category") != "config":
+        raise DiscoveryError(f"component {key}: a writable entity is in the config category")
+    _check_availability(key, comp)
+    if platform != "number":
+        return
+    low, high, step = comp.get("min"), comp.get("max"), comp.get("step")
+    numbers = (low, high, step)
+    if not all(isinstance(n, int | float) and not isinstance(n, bool) for n in numbers):
+        raise DiscoveryError(f"component {key}: min, max and step must be numbers")
+    if not all(math.isfinite(n) for n in numbers):  # type: ignore[arg-type]
+        raise DiscoveryError(f"component {key}: min, max and step must be finite")
+    if low > high or step <= 0:  # type: ignore[operator]
+        raise DiscoveryError(f"component {key}: invalid number range")
+    if comp.get("mode") != "box":
+        raise DiscoveryError(f"component {key}: a number uses mode box")
+    device_class = comp.get("device_class")
+    if device_class is not None and (
+        device_class not in _NUMBER_CLASSES
+        or comp.get("unit_of_measurement") != _NUMBER_UNITS[device_class]
+    ):
+        raise DiscoveryError(f"component {key}: device class and unit do not match")
+
+
+def _validate_event(key: str, comp: Mapping[str, Any]) -> None:
+    _unknown(f"component {key}", set(comp), _EVENT_FIELDS)
+    _require_strings(key, comp, ("unique_id", "default_entity_id", "state_topic"))
+    if not str(comp["default_entity_id"]).startswith("event."):
+        raise DiscoveryError(f"component {key}: default_entity_id must start with event.")
+    types = comp.get("event_types")
+    if not isinstance(types, list) or not types or not all(isinstance(t, str) for t in types):
+        raise DiscoveryError(f"component {key}: event_types must be a non-empty list of strings")
+    _check_availability(key, comp)
+
+
 def validate_component(key: str, comp: Mapping[str, Any]) -> None:
-    """Read-only contract for one component (active or tombstone)."""
+    """Contract for one component (active or tombstone): measurement platforms have no command
+    topic, writable platforms have exactly the guarded shape of ``_validate_write``."""
     platform = comp.get("platform")
     if platform not in PLATFORMS:
         raise DiscoveryError(f"component {key}: platform {platform!r} is not allowed")
     if set(comp) == {"platform"}:
         return  # tombstone
-    _unknown(f"component {key}", set(comp), _COMPONENT_FIELDS)
-    for need in ("unique_id", "default_entity_id", "state_topic", "value_template"):
-        if not isinstance(comp.get(need), str) or not comp[need]:
-            raise DiscoveryError(f"component {key}: {need} is required")
+    if platform in WRITE_PLATFORMS:
+        return _validate_write(key, comp)
+    if platform == "event":
+        return _validate_event(key, comp)
+    _unknown(f"component {key}", set(comp), _READ_FIELDS)
+    _require_strings(key, comp, ("unique_id", "default_entity_id", "state_topic", "value_template"))
     if not str(comp["default_entity_id"]).startswith(f"{platform}."):
         raise DiscoveryError(f"component {key}: default_entity_id must start with {platform}.")
     if platform == "sensor" and set(comp) & _BINARY_ONLY:
@@ -666,13 +890,7 @@ def validate_component(key: str, comp: Mapping[str, Any]) -> None:
         raise DiscoveryError(f"component {key}: entity_category not allowed")
     if comp.get("state_class", "measurement") not in _STATE_CLASSES:
         raise DiscoveryError(f"component {key}: state_class not allowed")
-    own = comp.get("availability")
-    if own is not None and (
-        not isinstance(own, list)
-        or not own
-        or not all(isinstance(i, dict) and set(i) == {"topic"} for i in own)
-    ):
-        raise DiscoveryError(f"component {key}: availability must be a list of topics")
+    _check_availability(key, comp)
     options = comp.get("options")
     if options is not None and (
         not isinstance(options, list) or not options or not all(isinstance(o, str) for o in options)

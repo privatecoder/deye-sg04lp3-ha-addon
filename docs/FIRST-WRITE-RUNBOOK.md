@@ -21,7 +21,8 @@ master, which are slaves, whether a GRID charge or a Smart Load circuit is in us
   another path, no rollback, no automatic restore, no write to other inverters.
 - The release is bound to the firmware the inverter showed when you released writing (identity words R11, R14, R15, R17, R18 and the hardware profile). After a firmware change the app refuses with “Firmware changed since release” until you check the inverter and release again. Releasing needs the inverter to be online and identified.
 - Nothing is written by itself: not at start, not after a reconnect, not on a schedule, not from
-  Home Assistant or MQTT. There are no command topics and no writing entities.
+  Home Assistant or MQTT. (History: this runbook is the 0.3.0 field write; since 0.4.0 part B released
+  settings can also be written through Home Assistant entities, see DOCS.md, “Home Assistant entities”.)
 - A write is acknowledged and read back **from the inverter's communication processor (MCU1)**.
   This does not prove that the power-stage processor (MCU2) adopted the value, that it survives a
   restart, or that the inverter behaves as intended. You check the display and the effect.

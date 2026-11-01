@@ -15,7 +15,9 @@ these records, strictly one message at a time:
 * Discovery, availability: QoS 1 retained. States: QoS 1, NOT retained, always a freshly
   closed cycle; at (re)connect and on the HA birth all older measurements are discarded and a new
   read is requested from the device loops - nothing is replayed from a cache.
-* The only subscription is the HA birth topic. There is no command topic and no other handler.
+* Subscriptions: the HA birth topic and, only for the write entities that are exposed right now
+  (``mqtt_settings.SettingsPlane``), their generation-scoped command topics. Retained commands are
+  dropped, nothing else is handled.
 * Messages that were queued before a change are rejected by selection revision, lifecycle epoch
   and energy series (the contract's hand-over rule).
 """
@@ -61,6 +63,7 @@ from deye_monitor.mqtt_discovery import (
     DiscoveryStoreError,
     LedgerFullError,
 )
+from deye_monitor.mqtt_settings import SettingsPlane
 from deye_monitor.profiles.decode import Value
 from deye_monitor.profiles.schema import Entry, Profile
 from deye_monitor.store import JsonStore
@@ -77,6 +80,7 @@ _ENERGY_KEY = re.compile(r"^(?P<base>.+)_(?P<series>(?:[a-z0-9]{8})?g(?P<n>\d+))
 class IncomingMessage:
     topic: str
     payload: bytes
+    retain: bool = False
 
 
 class Connection(Protocol):
@@ -85,6 +89,8 @@ class Connection(Protocol):
     async def publish(self, topic: str, payload: bytes, *, qos: int, retain: bool) -> None: ...
 
     async def subscribe(self, topic: str, *, qos: int) -> None: ...
+
+    async def unsubscribe(self, topic: str) -> None: ...
 
     def messages(self) -> AsyncIterator[IncomingMessage]: ...
 
@@ -166,6 +172,9 @@ class _AiomqttConnection:
     async def subscribe(self, topic: str, *, qos: int) -> None:
         await self._client.subscribe(topic, qos=qos)
 
+    async def unsubscribe(self, topic: str) -> None:
+        await self._client.unsubscribe(topic)
+
     async def abort(self) -> None:
         # Shut the socket down and leave the rest to paho/aiomqtt: the broker sees the connection
         # vanish (no DISCONNECT) and publishes the will. The socket is not closed here because
@@ -179,7 +188,7 @@ class _AiomqttConnection:
         async for message in self._client.messages:
             raw: Any = message.payload
             data = raw if isinstance(raw, bytes | bytearray) else str(raw or "").encode()
-            yield IncomingMessage(str(message.topic), bytes(data))
+            yield IncomingMessage(str(message.topic), bytes(data), bool(message.retain))
 
 
 def aiomqtt_factory(
@@ -267,6 +276,7 @@ class MqttPublisher:
         diagnostics_of: Callable[[str], Mapping[str, Any] | None] | None = None,
         totals: PlantTotals | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
+        plane: SettingsPlane | None = None,
     ) -> None:
         self.ns = ns
         self.birth_topic = birth_topic
@@ -283,6 +293,12 @@ class MqttPublisher:
         self._last_app_publish = -1e18
         self._settle_due: float | None = None  # the extra refresh after a discovery change
         self.totals = totals
+        self.plane = plane
+        self._conn: Connection | None = None
+        self._subscribed: set[str] = set()
+        if plane is not None:
+            plane.on_output = self._wake_up
+            plane.on_change = self._settings_changed
         self._last_plant_publish = -1e18
         self._inv: dict[str, _Inverter] = {}
         for info in inverters:
@@ -315,6 +331,13 @@ class MqttPublisher:
             if active is not None and rec.series in rec.known and rec.series != active:
                 rec.series = active
             rec.known.add(rec.series)
+
+    def _wake_up(self) -> None:
+        self._wake.set()
+
+    def _settings_changed(self) -> None:
+        self._discovery_dirty = True
+        self._wake.set()
 
     # -- StateSink (called by the device loops; must not block) --------------------------------
 
@@ -498,6 +521,7 @@ class MqttPublisher:
             "last_discovery_error": self.last_discovery_error,
             "retired_components": self._engine.retired_count() if self._engine else None,
             "ledger_limit": MAX_RETIRED,
+            "write_entities": self.plane.diagnostics() if self.plane is not None else None,
         }
 
     # -- targets ----------------------------------------------------------------------------------
@@ -530,6 +554,10 @@ class MqttPublisher:
             components.update(
                 inverter_diagnostic_components(ns, inverter_id, states, show_r65=rec.r65_shown)
             )
+            if self.plane is not None:
+                topic = ns.discovery_topic(ns.inverter_device_id(inverter_id))
+                stored = self._store.data.get("devices", {}).get(topic, {}).get("components", {})
+                components.update(self.plane.components(inverter_id, stored))
             meta = DeviceMeta(
                 ns.inverter_device_id(inverter_id),
                 rec.info.name,
@@ -580,6 +608,9 @@ class MqttPublisher:
             self.totals.clear()
         self._birth.clear()
         self._consumer_error = None
+        self._conn, self._subscribed = conn, set()
+        if self.plane is not None:
+            self.plane.begin_session()  # older commands are void, a new generation of topics
         self.sessions += 1
         consumer: asyncio.Task[None] | None = None
         try:
@@ -592,6 +623,8 @@ class MqttPublisher:
             birth = self._birth.is_set()
             self._birth.clear()
             await self._sync(replay=True, birth=birth)
+            if self.plane is not None:
+                self.plane.start()
             await publish(self.ns.app_status_topic, b"online", True)
             self.connected = True
             self._refresh_all()
@@ -603,15 +636,21 @@ class MqttPublisher:
                 if consumer is not None:
                     consumer.cancel()
                     await asyncio.gather(consumer, return_exceptions=True)
+                if self.plane is not None:
+                    await self.plane.stop()
             finally:
+                self._conn = None
                 await self._withdraw(conn, publish)
 
     async def _consume(self, conn: Connection) -> None:
         try:
             async for message in conn.messages():
-                if message.topic == self.birth_topic and message.payload.strip() == BIRTH_PAYLOAD:
-                    self._birth.set()
-                    self._wake.set()
+                if message.topic == self.birth_topic:
+                    if message.payload.strip() == BIRTH_PAYLOAD:
+                        self._birth.set()
+                        self._wake.set()
+                elif self.plane is not None:
+                    self.plane.on_message(message.topic, message.payload, message.retain)
             raise aiomqtt.MqttError("message stream ended")
         except asyncio.CancelledError:
             raise
@@ -666,9 +705,12 @@ class MqttPublisher:
                 self._purges.pop(0)
                 republish = True
                 log.info("cleanup ledger purged (%d entries)", dropped)
+            targets = self._targets()
+            await self._follow_subscriptions(drop=False)  # new topics before their discovery
             report = await self._engine.sync(
-                self._targets(), replay=replay, birth=birth, republish=republish
+                targets, replay=replay, birth=birth, republish=republish
             )
+            await self._follow_subscriptions(drop=True)  # dead topics after it
         except LedgerFullError as exc:
             self.last_discovery_error = f"discovery_ledger_full: {exc}"[:200]
             self._discovery_dirty = True
@@ -681,11 +723,27 @@ class MqttPublisher:
             self.last_discovery_error = f"discovery_invalid: {exc}"[:200]
             raise
         self.last_discovery_error = None
+        if self.plane is not None:
+            self.plane.announce()  # availability and state of the entities that now exist
         log.info(
             "discovery published: %d document(s), %d cleanup replay(s)",
             report.documents,
             report.replays,
         )
+
+    async def _follow_subscriptions(self, *, drop: bool) -> None:
+        """Subscribe the command topics of the exposed entities (and unsubscribe the others once
+        ``drop``). The generation token is part of the topic, so an older topic is never kept."""
+        if self.plane is None or self._conn is None:
+            return
+        wanted = self.plane.topics()
+        for topic in sorted(wanted - self._subscribed):
+            await self._conn.subscribe(topic, qos=QOS)
+            self._subscribed.add(topic)
+        if drop:
+            for topic in sorted(self._subscribed - wanted):
+                await self._conn.unsubscribe(topic)
+                self._subscribed.discard(topic)
 
     async def _pump(self, publish: Callable[[str, bytes, bool], Any]) -> None:
         while not self._stop.is_set():
@@ -726,6 +784,9 @@ class MqttPublisher:
         if self._settle_due is not None and self._clock() >= self._settle_due:
             self._settle_due = None
             self._refresh_all()
+            return True
+        if self.plane is not None and (out := self.plane.pending()) is not None:
+            await publish(out.topic, out.payload, out.retain)
             return True
         for rec in self._inv.values():
             want = "online" if rec.wants_online else "offline"

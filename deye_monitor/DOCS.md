@@ -5,7 +5,7 @@
 > **Status: device loop with MQTT publisher and an opt-in write layer (0.4.0).**
 > The app validates its configuration, then connects to the configured endpoints (read-only
 > by default: Modbus function code 03 only; the 38 settings under “Writing settings” can be
-> released per inverter and are written only from the web interface), identifies each inverter, binds and checks its serial number, polls the selected
+> released per inverter and are written from the web interface or from Home Assistant entities), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
 > discovery state in `/data`. The values are published through MQTT Device Discovery, so
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
@@ -23,9 +23,12 @@ device loop and without the publisher.
 
 * **Devices.** `deye_<instance>_<inverter>` per inverter (only if sensors are selected) and
   `deye_<instance>_app` with diagnostic entities (version, MQTT reconnects, inverters online and,
-  per inverter, its connection state and reason). Only the platforms `sensor` and `binary_sensor`
-  are used. There are no command topics and the app subscribes to nothing but the Home Assistant
-  birth topic.
+  per inverter, its connection state and reason). Measurements use the platforms `sensor` and
+  `binary_sensor` and have no command topic. Settings you have released for writing are
+  `number`, `switch` and `time` entities of the inverter's device plus one `event` entity (see
+  “Home Assistant entities” under “Writing settings”). Without a release the app subscribes to
+  nothing but the Home Assistant birth topic; with one it also subscribes to the command topics of
+  exactly the entities that exist right now.
 * **Identities.** Unique id `deye_<instance>_<inverter>_<key>`, suggested entity id
   `sensor.deye_<instance>_<inverter>_<key>` (`default_entity_id`). Energy counters carry a
   statistics series in all three, e.g. `..._battery_energy_charge_total_g0`. A change of the
@@ -144,10 +147,11 @@ device loop and without the publisher.
 
 Out of the box the app is read-only. The only thing it sends to a device is Modbus function code 03
 (read holding registers), wrapped for the chosen transport; a guard at the sending sink rejects
-every other frame. There are no command topics and no entities that write, in any configuration.
+every other frame. Without a release there are no command topics and no entities that write.
 Writing exists only as an explicit, per-inverter, per-setting opt-in that is used from the web
-interface (see “Writing settings”); `allow_writes` is `false` and `enabled_write_operations` is
-empty until you change them there. The app never scans the network or the serial ports; it
+interface or through the Home Assistant entities of the released settings (see “Writing
+settings”); `allow_writes` is `false` and `enabled_write_operations` is empty until you change them
+there. The app never scans the network or the serial ports; it
 connects only to the endpoints you list.
 
 ## Why `uart: true`
@@ -449,6 +453,109 @@ value before, check the display afterwards and restore a value as a new operatio
 procedure of the first field write is kept in `docs/FIRST-WRITE-RUNBOOK.md`. Never use these buttons
 to “try something” on a plant you depend on.
 
+### Home Assistant entities
+
+Requires Home Assistant 2026.5 or newer for the `time` entities (the app is tested against 2026.10.4).
+
+Every setting you have released for an inverter appears as an entity of that inverter's device in
+Home Assistant (category *Configuration*), written the Home Assistant way: there is no
+confirmation dialog and no preview in Home Assistant. The release is your decision; use Home
+Assistant's own permissions (who may call services, who can reach the MQTT broker) to decide who
+may use the entities.
+
+| Setting | Entity |
+| --- | --- |
+| currents (R108, R109, R125, R128) | `number`, input box, 1 A steps, unit A, 0 up to the model limit |
+| SOC values (R115-R117, R127, R135, R137, slot target SOC) | `number`, input box, 1 % steps (R127 10 to 90) |
+| slot discharge power (R154-R159) | `number`, input box, 1 W steps, 0 up to the rated power |
+| Smart Load voltages (R134, R136) | `number`, input box, 0.01 V steps, 38.00 to 63.00 V |
+| GRID charge enable (R130), ToU enable (R146 bit 0), slot “allow GRID charging” (R172-R177 bit 0) | `switch` |
+| slot start times (R148-R153) | `time` (seconds are always `00`, minutes in steps of 5) |
+| the result of every command | one `event` entity per inverter, “Write result” |
+
+* **When an entity exists.** Only for released settings, only after a fresh read confirmed that
+  the release still applies (same firmware as at the release, and the inverter is a master or not
+  in a parallel system, from the role read at that moment), and only for the master of a parallel
+  system. Revoking the release, a firmware change or losing the master role removes the entity
+  (through the usual clean-up of Home Assistant entities, see below); a command to a removed entity
+  is not read, and the service refuses stale commands in any case. After a restart the entities
+  stay until the first fresh read has decided; until then, and while the inverter cannot be read,
+  they are *unavailable* and take no commands.
+* **Closed settings are unavailable, not removed.** A setting whose precondition is closed right
+  now (battery control mode R111 does not fit, GEN port is not Smart Load, ToU Spain mode, unknown
+  model, a stored value outside the accepted range) stays in Home Assistant, marked unavailable,
+  and becomes usable again when the next fresh read opens it. A command that arrives in the
+  meantime is refused with the reason.
+* **State is always a read-back.** The entities show the value read from the inverter - at
+  start, periodically with the settings poll interval (`poll_settings_s`, default 300 s), after
+  every command and after a Home Assistant restart - never the value you asked for. After a
+  rejected command the freshly read value is published; an input field in the Home Assistant
+  frontend can still show what you typed until it refreshes. The inverter's own display or cloud can change a value at any time;
+  the entity follows at the next read.
+* **Commands.** They go through exactly the same guarded write service as the web interface:
+  release and firmware fingerprint, identity, role, mode gates, order against the neighbours, the
+  old value, the audit intent before the send, one FC16 with one register, at least 5 s between
+  writes, no retry, no fallback, no fan-out, and the read-back afterwards. The old value and all
+  gates come from fresh reads at the moment of the send, not from the time the command arrived.
+  The audit log records `source: mqtt` and no user (the Home Assistant call carries none).
+  A value equal to what the inverter holds is an audited no-op without any write.
+* **Order and queue.** Commands of a plant are executed one at a time in the order they arrive.
+  They are never merged: *OFF, edit, ON* writes three times. The queue holds 32 commands; one more
+  is refused (`queue_full`). A command waits at most 60 s; later it is discarded (`expired`). When
+  the MQTT connection is lost, the Home Assistant restarts the session, the set of entities
+  changes or the plant is changed, everything still waiting is discarded
+  (`superseded_context`).
+* **Strict payloads.** `number`: a plain decimal, an integer where the step is 1, two decimals for
+  volts; `switch`: exactly `ON` or `OFF`; `time`: `HH:MM:SS` with seconds `00` and no time zone.
+  Anything else is refused as `invalid_payload` (or `value_not_exact`, `value_out_of_range`, ...)
+  and never reaches the inverter. Retained messages on a command topic are ignored.
+* **Command topics** contain a generation token that changes with every MQTT session and every
+  change of the entity set: `deye/<instance>/<inverter>/write/set/<token>/<setting>`. Only the
+  current ones are subscribed, so an old or retained command cannot reach a new session. Do not
+  publish to them by hand; do not allow retained publishes on `.../write/set/#` in your broker's
+  access rules (MQTT 3.1.1 cannot mark a live retained delivery as retained).
+* **Events for automations.** The “Write result” entity fires `write_readback_confirmed`,
+  `write_rejected`, `write_failed`, `write_outcome_unknown` or `write_noop`, with the attributes
+  `setting`, `requested_value`, `reason` (for example `tou_order`, `soc_mode_required`,
+  `invalid_payload`, `expired`), `audit_id` (the operation id of the audit log, empty if nothing
+  was recorded) and `value` (the value read back afterwards). Events are not retained: an
+  automation that was not running does not see them. `write_readback_confirmed` means the value
+  was read back from the inverter, with the limits described above.
+
+Example - switch the ToU schedule off, move slot 2 to 06:00 and on again, then look at the result:
+
+```yaml
+actions:
+  - action: switch.turn_off
+    target: { entity_id: switch.deye_<instance>_<inverter>_set_tou_enable }
+  - action: time.set_value
+    target: { entity_id: time.deye_<instance>_<inverter>_set_tou_slot2_start }
+    data: { time: "06:00:00" }
+  - action: switch.turn_on
+    target: { entity_id: switch.deye_<instance>_<inverter>_set_tou_enable }
+```
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: event.deye_<instance>_<inverter>_write_result
+conditions:
+  - "{{ trigger.to_state.attributes.event_type != 'write_readback_confirmed' }}"
+actions:
+  - action: notify.notify
+    data:
+      message: >-
+        Deye: {{ trigger.to_state.attributes.setting }} -
+        {{ trigger.to_state.attributes.event_type }}
+        ({{ trigger.to_state.attributes.reason }})
+```
+
+Because every step is a separate write at least 5 s apart, other inverters (and the display) can
+see the intermediate schedule; the sequence is not an atomic update and the app does not roll it
+back if a step fails. Entity ids can differ if you renamed them or if Home Assistant had to
+disambiguate; the app only suggests them. English names are used (Home Assistant has no
+per-language names in MQTT discovery); the web interface has both languages.
+
 ## First live read test
 
 A step-by-step runbook for the first read-only test against real devices (preparation, minimal
@@ -635,7 +742,8 @@ Without a Home Assistant user (not through Ingress) everything is read-only, wri
   `GET api/writes/catalogue`, `POST api/inverters/<id>/writes/current` (fresh values, read only),
   `POST api/inverters/<id>/writes/preview`, `POST api/writes/operations/<operation id>/confirm`,
   `POST api/writes/operations/<operation id>/verification`, `GET api/writes/operations/<id>` and
-  `GET api/inverters/<id>/writes/operations` (audit list). There is no MQTT path to any of them.
+  `GET api/inverters/<id>/writes/operations` (audit list). These calls are the web path; the MQTT
+  entities use the same write service but not these routes.
 - `POST api/inverters/<id>/sensors` (and `…/sensors/preview`) accept, besides `add` / `remove` /
   `reset`, the plant `features` and `restore_template`, so the interface previews and saves a whole
   draft as one atomic change. The catalog carries a plain-language `description` (de/en) and a
