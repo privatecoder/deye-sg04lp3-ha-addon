@@ -28,7 +28,7 @@ from deye_monitor.mqtt_settings import (
 from deye_monitor.profiles.schema import load_profile
 from deye_monitor.store import JsonStore
 from deye_monitor.write_ops import BY_KEY, Refused
-from deye_monitor.writes import SettingsSnapshot, SettingState
+from deye_monitor.writes import Binding, Intent, SettingsSnapshot, SettingState
 from tests.fakes.mqtt import FakeBroker, FakeConnection, settle
 
 PROFILE = load_profile("sg04lp3_lv_v105_8")
@@ -72,6 +72,7 @@ class FakeSource:
         self.entered = asyncio.Event()
         self.script: dict[str, Callable[[str, Any], dict[str, Any]]] = {}
         self.snapshots = 0
+        self.bind_error: str | None = None
 
     def enabled(self, inverter_id: str) -> frozenset[str]:
         return frozenset(self.released)
@@ -96,10 +97,15 @@ class FakeSource:
             )
         return SettingsSnapshot("ok", None, out)
 
+    def bind(self, inverter_id: str, key: str) -> Binding:
+        if self.bind_error is not None:
+            raise Refused(self.bind_error, 409)
+        return Binding(inverter_id, "SN1", 0, "gw1", 1, 1, None, None, (0, 0, 0, 0, 0), 1)
+
     async def submit(
-        self, inverter_id: str, key: str, value: Any, *, source: str
+        self, inverter_id: str, key: str, value: Any, *, source: str, intent: Intent | None = None
     ) -> dict[str, Any]:
-        assert source == "mqtt"
+        assert source == "mqtt" and intent is not None
         self.submitted.append((key, value))
         self.entered.set()
         if self.hold is not None:
@@ -655,3 +661,119 @@ async def test_diagnostics_count_commands(tmp_path: Path) -> None:
         info = rig.pub.diagnostics()["write_entities"]
         assert info["commands_received"] == 1 and info["retained_dropped"] == 1
         assert info["exposed"] == {"deye1": sorted(START_FIELDS)}
+
+
+# -- review 23: receipt, fresh rejection values, bounded floods -------------------------------
+
+
+async def test_a_rejection_carries_a_fresh_read_never_the_cached_value(tmp_path: Path) -> None:
+    async with make(tmp_path) as rig:
+        await rig.ready()
+        assert rig.last_state()["battery_charge_current"] == 50
+        rig.source.fields["battery_charge_current"] = 30  # an external change, not yet polled
+        rig.send("battery_charge_current", "abc")  # malformed
+        await settle(lambda: len(rig.events()) == 1)
+        event = rig.events()[0]
+        assert (event["reason"], event["value"], event["read_error"]) == (
+            "invalid_payload",
+            30,
+            None,
+        )
+        assert rig.last_state()["battery_charge_current"] == 30  # the state is republished
+
+
+async def test_without_a_fresh_read_the_rejection_has_no_value(tmp_path: Path) -> None:
+    async with make(tmp_path) as rig:
+        await rig.ready()
+        rig.source.status, rig.source.reason = "unavailable", "read_failed"
+        rig.send("battery_charge_current", "abc")
+        await settle(lambda: len(rig.events()) == 1)
+        event = rig.events()[0]
+        assert event["value"] is None and event["read_error"] == "read_failed"
+        assert event["reason"] == "invalid_payload"
+
+
+async def test_a_queue_full_and_an_expired_rejection_are_read_fresh_too(tmp_path: Path) -> None:
+    source = FakeSource()
+    source.hold = asyncio.Event()
+    async with make(tmp_path, source) as rig:
+        await rig.ready()
+        for n in range(QUEUE_LIMIT + 3):
+            rig.send("battery_charge_current", str(40 + n % 2))
+        await settle(lambda: any(e["reason"] == "queue_full" for e in rig.events()))
+        source.fields["battery_discharge_current"] = 77
+        rig.send("battery_discharge_current", "abc")
+        await settle(lambda: any(e["setting"] == "battery_discharge_current" for e in rig.events()))
+        event = next(e for e in rig.events() if e["setting"] == "battery_discharge_current")
+        assert event["value"] == 77 and event["read_error"] is None
+
+
+async def test_a_flood_of_malformed_commands_is_bounded(tmp_path: Path) -> None:
+    async with make(tmp_path) as rig:
+        await rig.ready()
+        before = rig.source.snapshots
+        for _ in range(500):
+            rig.send("battery_charge_current", "abc")
+        await settle(lambda: rig.plane.diagnostics()["rejections_suppressed"] > 0)
+        await rig.idle()
+        events = rig.events()
+        assert len(events) <= 64 + 8 + 1  # the bound plus the reads' own batches and the summary
+        assert any(str(e["reason"]).startswith("suppressed:") for e in events)
+        assert rig.source.snapshots - before < 20  # one fresh read per batch, not per command
+
+
+async def test_a_command_for_a_closed_gate_is_refused_at_receipt_with_that_reason(
+    tmp_path: Path,
+) -> None:
+    source = FakeSource()
+    source.gated["battery_low_soc"] = "soc_mode_required"
+    async with make(tmp_path, source) as rig:
+        await rig.ready()
+        rig.send("battery_low_soc", "40")
+        await settle(lambda: len(rig.events()) == 1)
+        assert rig.events()[0]["reason"] == "soc_mode_required"
+        assert source.submitted == []
+
+
+async def test_a_command_is_refused_at_receipt_while_the_unit_is_unreadable(
+    tmp_path: Path,
+) -> None:
+    async with make(tmp_path) as rig:
+        await rig.ready()
+        rig.source.status, rig.source.reason = "unavailable", "read_failed"
+        rig.plane.request_refresh("deye1")
+        await settle(lambda: rig.availability("battery_charge_current") == "offline")
+        rig.send("battery_charge_current", "40")
+        await settle(lambda: len(rig.events()) == 1)
+        assert rig.events()[0]["reason"] == "unavailable" and rig.source.submitted == []
+
+
+async def test_the_service_refusing_to_bind_at_receipt_is_a_rejection(tmp_path: Path) -> None:
+    async with make(tmp_path) as rig:
+        await rig.ready()
+        rig.source.bind_error = "inverter_not_ready"
+        rig.send("battery_charge_current", "40")
+        await settle(lambda: len(rig.events()) == 1)
+        assert rig.events()[0]["reason"] == "inverter_not_ready" and rig.source.submitted == []
+
+
+async def test_the_intent_carries_the_receipt_deadline_and_a_revocation_test(
+    tmp_path: Path,
+) -> None:
+    seen: list[Intent] = []
+    source = FakeSource()
+    original = source.submit
+
+    async def spy(*args: Any, **kw: Any) -> dict[str, Any]:
+        seen.append(kw["intent"])
+        return await original(*args, **kw)
+
+    source.submit = spy  # type: ignore[method-assign]
+    async with make(tmp_path, source) as rig:
+        await rig.ready()
+        rig.send("battery_charge_current", "40")
+        await settle(lambda: len(seen) == 1)
+        assert seen[0].deadline == 1000.0 + COMMAND_TTL_S and seen[0].binding.serial == "SN1"
+        assert seen[0].revoked() is False
+        rig.plane._revoke_all()  # a session end revokes what has been accepted
+        assert seen[0].revoked() is True

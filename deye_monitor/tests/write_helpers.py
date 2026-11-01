@@ -12,7 +12,7 @@ from tests.fakes.servers import FakeServer
 from tests.plant_helpers import A, B, PlantRig
 
 REGS: dict[str, int] = {
-    "r20": 0x3880,  # R20/R21: 80000 x 0.1 W = 8 kW -> 190 A cap, 8000 W rated power
+    "r20": 0x3880,  # R20/R21: 80000 x 0.1 W = 8 kW -> 185 A cap, 8000 W rated power
     "r21": 1,
     "r62": (26 << 8) | 11,  # inverter clock 2026-11-01 12:30:15
     "r63": (1 << 8) | 12,

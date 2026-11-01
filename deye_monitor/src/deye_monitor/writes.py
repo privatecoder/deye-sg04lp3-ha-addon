@@ -43,7 +43,7 @@ import os
 import secrets
 import time
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -70,13 +70,13 @@ from deye_monitor.write_ops import (
     OBSERVE_DELAY_S,
     PACING_S,
     PERMIT_S,
+    R28,
     R111_SOC,
     R146_SPAIN_BIT,
-    Kind,
     Refused,
     WriteDescriptor,
     check_range,
-    model_limit,
+    limit_from_words,
     parse_value,
 )
 
@@ -89,6 +89,8 @@ AUDIT_FILE = "write-audit.jsonl"
 AUDIT_MAX_BYTES = 8 * 1024 * 1024
 MAX_OPERATIONS = 500
 MAX_PERMITS = 32
+SUPERSEDED = "superseded_context"  # the context an intent was received in no longer holds
+EXPIRED = "expired"  # the intent's own deadline passed before the send point
 
 REJECTED = "rejected"
 SENT = "sent"
@@ -202,6 +204,35 @@ class AuditLog:
                 os.replace(self.path, self.path.with_name(self.path.name + ".1"))
 
 
+@dataclass(frozen=True, slots=True)
+class Binding:
+    """The immutable execution context captured when an intent is RECEIVED (memory only, no bus):
+    which physical inverter (serial), on which connection (lifecycle and route epoch, endpoint,
+    unit), in which role and firmware, under which release revision and plant generation."""
+
+    inverter_id: str
+    serial: str
+    lifecycle: int
+    endpoint_id: str
+    unit: int
+    epoch: int
+    role: tuple[bool | None, bool | None] | None  # (parallel, master) as identified, if known
+    release: WriteRelease | None
+    firmware: tuple[int, ...]  # R11, R14, R15, R17, R18
+    plant_revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class Intent:
+    """What a transport without a human preview hands to ``submit``: the binding of the receipt,
+    the absolute deadline (same monotonic clock as the service) and a revocation test (the
+    transport's session or exposure ended). Both are compared again at the final send point."""
+
+    binding: Binding
+    deadline: float
+    revoked: Callable[[], bool]
+
+
 @dataclass(slots=True)
 class Permit:
     operation_id: str
@@ -228,6 +259,7 @@ class Permit:
     used: bool = False
     revoked: bool = False
     noop: bool = False  # ``submit`` found the fresh word already equal to the request
+    intent: Intent | None = None
 
 
 # Reasons that take a setting away (the owner's release no longer applies to what the unit is
@@ -256,6 +288,48 @@ class SettingsSnapshot:
     status: str
     reason: str | None
     settings: Mapping[str, SettingState]
+
+
+def settings_read_requests(keys: Collection[str], step: int) -> int:
+    """Modbus requests of ONE settings snapshot (``snapshot``): the identity block plus the runs of
+    the other words of the released ``keys``, each split at the endpoint's block limit ``step``."""
+    step = max(1, step)
+    first, last = IDENTITY_SPAN
+    requests = -(-(last - first + 1) // step)
+    addresses: set[int] = set()
+    for key in keys:
+        if key in BY_KEY:
+            addresses |= WriteService._addresses(BY_KEY[key])
+    run = 0
+    previous: int | None = None
+    for address in sorted(addresses - set(IDENTITY_ADDRESSES)):
+        if previous is None or address != previous + 1:
+            requests += -(-run // step) if run else 0
+            run = 0
+        run += 1
+        previous = address
+    return requests + (-(-run // step) if run else 0)
+
+
+def settings_poll_budget(inv: InverterRuntime) -> dict[str, float | int] | None:
+    """Recurring bus cost of the periodic settings snapshot of ``inv`` (conditional: only while the
+    Home Assistant entities poll it): requests per snapshot after splitting at the endpoint's
+    block limit, the cadence (``poll_settings_s``) and the resulting bus utilisation."""
+    cfg = inv.cfg
+    keys = [k for k in cfg.enabled_write_operations if k in BY_KEY]
+    if not cfg.allow_writes or not keys:
+        return None
+    route = inv.routes[0]
+    requests = settings_read_requests(keys, route.max_read_registers)
+    cycle = requests * (route.response_time_s + route.bus_gap_s)
+    interval = float(cfg.poll.settings_s)
+    return {
+        "requests": requests,
+        "max_block": route.max_read_registers,
+        "cadence_s": interval,
+        "cycle_s": cycle,
+        "utilisation": cycle / interval,
+    }
 
 
 @dataclass(slots=True)
@@ -509,6 +583,8 @@ class WriteService:
         if desc.tou:
             out.add(R146)
         out.update(BY_KEY[key].register for key in desc.related)
+        if desc.firmware_clamp == "charge":
+            out.add(R28)  # selector of the 10/12 kW charge ceiling (R14 is in the identity block)
         return out
 
     @staticmethod
@@ -542,6 +618,83 @@ class WriteService:
         """The release is bound to the firmware seen when the owner gave it."""
         if inv.cfg.write_release_firmware != self._fingerprint(inv, words):
             raise Refused("firmware_changed", 409)
+
+    def bind(self, inverter_id: str, key: str) -> Binding:
+        """The execution binding of an intent received now (no bus access). Refuses when the
+        setting or the unit is not available for writing at this moment."""
+        if not self._open:
+            raise Refused("writes_stopped", 409)
+        if key not in BY_KEY:
+            raise Refused("unknown_operation", 404)
+        inv = self._target(inverter_id)
+        if key not in self.enabled(inverter_id):
+            raise Refused("writes_not_enabled", 403)
+        reason = self._not_ready(inv)
+        if reason is not None:
+            raise Refused("inverter_not_ready", 409, reason=reason)
+        revision = self.plant_revision()
+        if revision is None:
+            raise Refused("writes_stopped", 409)
+        firmware = self._identified_firmware(inv)
+        if firmware is None or inv.seen_serial is None:
+            raise Refused("inverter_not_ready", 409, reason="identifying")
+        role = self._identified_role(inv)
+        if role is not None and self._slave_locked({"parallel": role[0], "master": role[1]}):
+            raise Refused(PARALLEL_SLAVE, 409)
+        route = inv.routes[0]
+        return Binding(
+            inverter_id=inverter_id,
+            serial=inv.seen_serial,
+            lifecycle=inv.lifecycle_epoch,
+            endpoint_id=route.endpoint_id,
+            unit=route.unit,
+            epoch=route.verified_epoch or 0,
+            role=role,
+            release=inv.cfg.write_release_firmware,
+            firmware=firmware,
+            plant_revision=revision,
+        )
+
+    @staticmethod
+    def _identified_firmware(inv: InverterRuntime) -> tuple[int, ...] | None:
+        seen = inv.identity_info.get("firmware_words")
+        if not isinstance(seen, Mapping):
+            return None
+        words = tuple(seen.get(a) for a in FINGERPRINT_ADDRESSES)
+        return None if any(not isinstance(w, int) for w in words) else cast(tuple[int, ...], words)
+
+    @staticmethod
+    def _identified_role(inv: InverterRuntime) -> tuple[bool | None, bool | None] | None:
+        role = inv.identity_info.get("role")
+        if not isinstance(role, Mapping):
+            return None
+        enable, master = role.get("parallel_enable"), role.get("master")
+        return (
+            enable if isinstance(enable, bool) else None,
+            master if isinstance(master, bool) else None,
+        )
+
+    def _check_intent(self, intent: Intent) -> None:
+        """Revocation, deadline and binding of an intent against the live state."""
+        if intent.revoked():
+            raise Refused(SUPERSEDED, 409)
+        if self.clock() > intent.deadline:
+            raise Refused(EXPIRED, 410)
+        bound = intent.binding
+        inv = self._target(bound.inverter_id)
+        route = inv.routes[0]
+        if (
+            self.plant_revision() != bound.plant_revision
+            or inv.lifecycle_epoch != bound.lifecycle
+            or inv.seen_serial != bound.serial
+            or route.verified_epoch != bound.epoch
+            or route.endpoint_id != bound.endpoint_id
+            or route.unit != bound.unit
+            or inv.cfg.write_release_firmware != bound.release
+            or self._identified_firmware(inv) != bound.firmware
+            or (bound.role is not None and self._identified_role(inv) != bound.role)
+        ):
+            raise Refused(SUPERSEDED, 409)
 
     async def release_fingerprint(self, inverter_id: str) -> WriteRelease:
         """Fresh identity read for a release (reads only)."""
@@ -599,7 +752,7 @@ class WriteService:
             return {"operations": [self._locked(d, exc.key) for d in descs], "info": {}}
         out = []
         for d in descs:
-            row = self._row(d, words, model_limit(d, words[20], words[21]))
+            row = self._row(d, words, limit_from_words(d, words))
             self._check_drift(inverter_id, d, words[d.register])
             out.append(row)
         return {"operations": out, "info": {"tou": self._tou_info(words)} if with_tou else {}}
@@ -634,7 +787,8 @@ class WriteService:
             return SettingsSnapshot(status, exc.key, {})
         out: dict[str, SettingState] = {}
         for d in descs:
-            row = self._row(d, words, model_limit(d, words[20], words[21]))
+            row = self._row(d, words, limit_from_words(d, words))
+            self._check_drift(inverter_id, d, words[d.register])
             hidden = row.get("reason") == "unexpected_bits"  # the bit is not the setting's value
             out[d.key] = SettingState(
                 key=d.key,
@@ -707,9 +861,7 @@ class WriteService:
         word = words[desc.register]
         if desc.whole_word_bool and word not in (0, 1):
             return "unexpected_bits"
-        field_now = desc.field_of(word)
-        low, high = desc.limits(cap)
-        if not low <= field_now <= high or (desc.kind is Kind.TIME and field_now % 100 > 59):
+        if not desc.incumbent_valid(desc.field_of(word), cap):
             return "existing_value_outside_range"
         return None
 
@@ -725,30 +877,61 @@ class WriteService:
         order against the companions, encoding. Returns the model limit, old word and new word."""
         if desc.needs_battery and not inv.features.battery:
             raise Refused("no_battery", 409)
-        cap = model_limit(desc, words[20], words[21])
+        cap = limit_from_words(desc, words)
         locked = self._precondition(desc, words, cap)
         if locked is not None:
             raise Refused("operation_locked", 409, reason=locked)
         check_range(desc, field_new, cap)
-        for keys, relation in ((desc.below, "below"), (desc.above, "above")):
-            for key in keys:
-                other = BY_KEY[key]
-                other_field = other.field_of(words[other.register])
-                if (relation == "below" and field_new >= other_field) or (
-                    relation == "above" and field_new <= other_field
-                ):
-                    raise Refused(
-                        desc.order_error,
-                        422,
-                        companion=other.key,
-                        companion_value=other.display(other_field),
-                        ordering=relation,
-                    )
+        if desc.chain:
+            self._check_group(desc, field_new, words, cap)
         old_word = words[desc.register]
         new_word = desc.encode(old_word, field_new)
         if new_word == old_word:
             raise Refused("no_change", 409)
         return cap, old_word, new_word
+
+    @staticmethod
+    def _check_group(
+        desc: WriteDescriptor, field_new: int, words: Mapping[int, int], cap: int | None
+    ) -> None:
+        """The whole ordered group (all three SOC thresholds, all six ToU starts, an ON/OFF pair)
+        as it would stand after this edit: every member read fresh and valid in its own domain, the
+        result strictly ascending. No neighbour-only repair: a group that is broken elsewhere is
+        refused until each edit produces a valid group (or the owner repairs it on the inverter)."""
+        fields: list[int] = []
+        for key in desc.chain:
+            other = BY_KEY[key]
+            if key == desc.key:
+                fields.append(field_new)
+                continue
+            value = other.field_of(words[other.register])
+            if not other.incumbent_valid(value, cap if other.model_limited else None):
+                raise Refused(
+                    "companion_invalid",
+                    409,
+                    companion=other.key,
+                    companion_value=other.display(value),
+                )
+            fields.append(value)
+        me = desc.chain.index(desc.key)
+        pairs = [(i, i + 1) for i in range(len(fields) - 1)]
+        # the pairs next to the edited member first: they explain the refusal best
+        pairs.sort(key=lambda p: me not in p)
+        for i, j in pairs:
+            if fields[i] >= fields[j]:
+                if me in (i, j):
+                    near = j if i == me else i
+                    relation = "below" if near > me else "above"
+                else:
+                    near, relation = i, "group"  # broken elsewhere in the group
+                other = BY_KEY[desc.chain[near]]
+                raise Refused(
+                    desc.order_error,
+                    422,
+                    companion=other.key,
+                    companion_value=other.display(fields[near]),
+                    ordering=relation,
+                )
 
     def _check_drift(self, inverter_id: str, desc: WriteDescriptor, word: int) -> None:
         """A later fresh read that differs from the value of the last operation on this register
@@ -792,6 +975,7 @@ class WriteService:
         user_id: str,
         plant_revision: int,
         direct: bool = False,
+        intent: Intent | None = None,
     ) -> tuple[Permit, WriteDescriptor, int | None]:
         """Validate a request against fresh reads and bind it to the current identity, role,
         route and release. A preview keeps the words it saw (the send point must find them
@@ -803,6 +987,8 @@ class WriteService:
         if desc is None:
             raise Refused("unknown_operation", 404)
         inv = self._target(inverter_id)
+        if intent is not None:
+            self._check_intent(intent)
         if key not in self.enabled(inverter_id):
             raise Refused("writes_not_enabled", 403)
         reason = self._not_ready(inv)
@@ -825,10 +1011,12 @@ class WriteService:
         except Refused as refusal:
             if not (direct and refusal.key == "no_change"):
                 raise
-            cap = model_limit(desc, words[20], words[21])
+            cap = limit_from_words(desc, words)
             old_word = new_word = words[desc.register]
             noop = True
         route = inv.routes[0]
+        if intent is not None:
+            self._check_intent(intent)  # the reads above can take long
         permit = Permit(
             operation_id=secrets.token_hex(16),
             user_id=user_id,
@@ -852,6 +1040,7 @@ class WriteService:
             expires_at=self.clock() + self.settings.permit_s,
             source=source,
             noop=noop,
+            intent=intent,
         )
         return permit, desc, cap
 
@@ -956,11 +1145,15 @@ class WriteService:
         source: str,
         user_id: str = "",
         plant_revision: int | None = None,
+        intent: Intent | None = None,
     ) -> dict[str, Any]:
         """A write request without a human preview (a second transport, for example MQTT). Same
         release, identity, role, gates, ordering, audit, pacing, single FC16 and observation as the
         Web path: nothing is taken from the request except the value; the old word and every
-        guard come from the fresh reads at the send point. ``source`` is recorded in the audit."""
+        guard come from the fresh reads at the send point. ``source`` is recorded in the audit.
+        An ``intent`` (binding of the receipt, deadline, revocation) is compared again at the
+        final send point, after every lock, pacing and bus wait: a change is a rejection, never a
+        write."""
         revision = self.plant_revision() if plant_revision is None else plant_revision
         if revision is None:
             raise Refused("writes_stopped", 409)
@@ -972,6 +1165,7 @@ class WriteService:
             user_id=user_id,
             plant_revision=revision,
             direct=True,
+            intent=intent,
         )
         if permit.noop:
             return self._noop(permit)
@@ -1105,6 +1299,8 @@ class WriteService:
             raise Refused("writes_stopped", 409)
         if permit.revoked:
             raise Refused("permit_revoked", 409)
+        if permit.intent is not None:
+            self._check_intent(permit.intent)
         if self.clock() > permit.expires_at:
             raise Refused("permit_expired", 410)
         if self.plant_revision() != permit.plant_revision:
@@ -1138,6 +1334,14 @@ class WriteService:
         serial, _ = self._identity(inv, words)
         if serial != permit.serial:
             raise Refused("binding_changed", 409)
+        if permit.intent is not None:
+            bound = permit.intent.binding
+            fresh_role = self._role(inv, words)
+            if tuple(words[a] for a in FINGERPRINT_ADDRESSES) != bound.firmware or (
+                bound.role is not None
+                and (fresh_role["parallel"], fresh_role["master"]) != bound.role
+            ):
+                raise Refused(SUPERSEDED, 409)
         if permit.context is not None and words != permit.context:
             raise Refused("conflict", 409)  # the preview's reads are no longer true
         _, fresh, new = self._evaluate(inv, desc, permit.field, words)

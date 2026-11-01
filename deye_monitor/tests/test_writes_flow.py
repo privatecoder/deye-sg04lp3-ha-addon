@@ -125,7 +125,7 @@ async def test_full_flow_for_one_write(tmp_path: Path, monkeypatch: pytest.Monke
             "word": 20,
             "field": 20,
             "value": 20,
-            "cap": 190,
+            "cap": 185,
         }
         assert rows["grid_charge_enable"]["word"] == 0 and rows["grid_charge_enable"]["field"] == 0
         assert rows["smart_load_off_voltage"]["value"] == 45.0
@@ -140,7 +140,7 @@ async def test_full_flow_for_one_write(tmp_path: Path, monkeypatch: pytest.Monke
             "0x0032",
             "0xFFFF",
         )
-        assert pre["inverter"]["serial"] == A and pre["cap"] == 190
+        assert pre["inverter"]["serial"] == A and pre["cap"] == 185
         assert [(p["id"], p["baseline_word"], p["baseline_value"]) for p in pre["peers"]] == [
             ("deye2", 20, 20)
         ]
@@ -748,17 +748,34 @@ async def test_unknown_model_locks_the_current_operations(
 
 
 @pytest.mark.parametrize(
-    ("watts", "cap"), [(5000, 120), (6000, 150), (8000, 190), (10000, 210), (12000, 240)]
+    ("watts", "cap", "r14", "r28"),
+    [
+        (5000, 120, 0x2005, 5),
+        (6000, 130, 0x2005, 5),
+        (8000, 185, 0x2005, 5),
+        (10000, 210, 0x2005, 5),  # intersection of the 220 A firmware ceiling and policy 210 A
+        (12000, 240, 0x2005, 5),
+        (10000, 200, 0x2001, 3),  # R28 != 5 and hardware word 1: the 200 A charge branch
+        (12000, 200, 0x2001, 3),
+    ],
 )
 async def test_the_model_cap_limits_the_current(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, watts: int, cap: int
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, watts: int, cap: int, r14: int, r28: int
 ) -> None:
     raw = watts * 10
     async with plant_rig(tmp_path, monkeypatch) as rig:
         await build_plant(
             rig,
             inverters=("deye1",),
-            regs={"deye1": {"r20": raw & 0xFFFF, "r21": raw >> 16, "r108": cap - 5}},
+            regs={
+                "deye1": {
+                    "r20": raw & 0xFFFF,
+                    "r21": raw >> 16,
+                    "r14": r14,
+                    "r28": r28,
+                    "r108": cap - 5,
+                }
+            },
         )
         status, body = await preview(rig, "deye1", "battery_charge_current", cap + 1)
         assert (status, err(body)) == (422, "value_out_of_range")
@@ -773,7 +790,7 @@ async def test_an_existing_value_outside_the_envelope_blocks_the_edit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async with plant_rig(tmp_path, monkeypatch) as rig:
-        # 8 kW model (190 A) with a stored 210 A: it could not be restored inside the envelope
+        # 8 kW model (185 A) with a stored 210 A: it could not be restored inside the envelope
         await build_plant(
             rig, inverters=("deye1",), regs={"deye1": {"r108": 210, "r111": 0, "r136": 9000}}
         )

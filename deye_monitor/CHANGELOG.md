@@ -2,6 +2,25 @@
 
 ## 0.4.0
 
+### Review 23 fixes
+
+- **MQTT commands are bound to what they were received for** (R23-01/02/03): serial, lifecycle and
+  connection epoch, route, role, release, firmware and plant generation are captured at receipt,
+  the deadline is `received + 60 s`, and both are checked again at the final send point of the
+  shared service (after lock, pacing and bus waits). A rebind, reset, role loss, session end or
+  exposure withdrawal ends in `write_rejected` (`superseded_context` / `expired`), never in a
+  write. Commands for an unavailable setting are refused at receipt.
+- **Ordered groups are validated as a whole** (R23-04/05): all three SOC thresholds and all six ToU
+  starts are read and validated at execution; a broken group is not edited (repair it on the
+  inverter or in the cloud). A stored 23:56-23:59 is a valid incumbent and can be replaced.
+- **Rejection events carry a fresh read** or `value: null` with `read_error`; floods are bounded
+  (R23-06).
+- **Current limits are the intersection of firmware ceilings and app policy** (R23-07): 5K 120 A,
+  6K 130 A, 8K 185 A, 10K 210 A, 12K 240 A; 200 A charging for an unproven 10/12 kW hardware
+  variant. R125/R128 use the policy only.
+- **The periodic settings snapshot is part of the bus-load accounting** (R23-08) and records drift
+  (R23-09); stale R130 and "nine operations" wording removed.
+
 Write layer v2. Writing is a regular feature now, not a test phase; the runbook of the first
 field write stays as history. Part A: settings, guards, web path. Part B: Home Assistant entities
 on top of the same guarded service (below).

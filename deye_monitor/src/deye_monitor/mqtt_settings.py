@@ -17,8 +17,15 @@ before the send, one FC16 with count 1, pacing, observation) stays in ``WriteSer
   ``write_rejected`` event and never reaches the service. Valid commands wait in ONE bounded FIFO
   per plant (no coalescing: ``OFF -> edit -> ON`` keeps its order), expire after
   ``COMMAND_TTL_S`` and are discarded when the session, the exposed set or the generation changes.
+* **Intents.** A command is rejected at receipt while its setting or unit is unavailable. An
+  accepted one captures an immutable execution binding (serial, lifecycle and connection epoch,
+  route, role, release, firmware, plant generation) and the deadline ``received + COMMAND_TTL_S``;
+  both go into ``WriteService.submit`` together with a revocation test (session end, exposure
+  withdrawal) and are compared again at the final send point, after every lock, pacing and bus
+  wait. A write that was already transmitted keeps its observation and audit.
 * **State.** Entity state is only ever a fresh read-back (periodically with the settings poll and
-  after every command). A rejected command publishes the freshly read value, never the request.
+  after every command). A rejected command is reported with a freshly read value, or with
+  ``value: null`` and a ``read_error`` when no fresh read is possible: never a cached value.
 * **Results.** One ``event`` entity per inverter carries the outcome of every command.
 """
 
@@ -48,13 +55,14 @@ from deye_monitor.ha_discovery import (
     write_result_component,
 )
 from deye_monitor.write_ops import BY_KEY, DESCRIPTORS, Kind, Refused, WriteDescriptor, parse_value
-from deye_monitor.writes import SettingsSnapshot, SettingState
+from deye_monitor.writes import Binding, Intent, SettingsSnapshot, SettingState
 
 log = logging.getLogger(__name__)
 
 COMMAND_TTL_S = 60.0  # a queued command older than this is discarded, not executed
 QUEUE_LIMIT = 32  # per plant
 OUTBOX_LIMIT = 256
+REPORT_LIMIT = 64  # rejections waiting for their fresh read; more are counted, not reported
 MAX_PAYLOAD = 32
 SOURCE = "mqtt"
 
@@ -80,8 +88,10 @@ class SettingsSource(Protocol):
 
     async def snapshot(self, inverter_id: str) -> SettingsSnapshot: ...
 
+    def bind(self, inverter_id: str, key: str) -> Binding: ...
+
     async def submit(
-        self, inverter_id: str, key: str, value: Any, *, source: str
+        self, inverter_id: str, key: str, value: Any, *, source: str, intent: Intent | None = None
     ) -> dict[str, Any]: ...
 
 
@@ -143,6 +153,7 @@ class _Plan:
     token: str = ""
     values: dict[str, Any] = field(default_factory=dict)  # last read-back per key
     ready: dict[str, bool] = field(default_factory=dict)  # gate open per key
+    reasons: dict[str, str | None] = field(default_factory=dict)  # why a gate is closed
     reachable: bool = False  # the last read worked
     published: dict[str, str] = field(default_factory=dict)  # availability last sent per key
 
@@ -155,6 +166,19 @@ class _Command:
     token: str
     received: float
     shown: Any  # the request as the owner sees it, for the result event
+    session: int = 0
+    revoked: bool = False
+    intent: Intent | None = None
+
+
+@dataclass(slots=True)
+class _Report:
+    """A rejection that waits for the fresh read its event carries."""
+
+    inverter_id: str
+    key: str
+    requested: Any
+    reason: str
 
 
 class SettingsPlane:
@@ -185,12 +209,18 @@ class SettingsPlane:
         self._force: set[str] = set()
         self._outbox: deque[Out] = deque()
         self._carry: list[tuple[str, str, Any, str]] = []  # discarded by a session end
+        self._session = 0  # a command of another session is revoked (checked at the send point)
+        self._reports: deque[_Report] = deque()
+        self._report_wake = asyncio.Event()
+        self._suppressed: dict[str, int] = {}
         self._tasks: list[asyncio.Task[None]] = []
         self.on_change: Callable[[], None] = lambda: None  # the exposed set changed
         self.on_output: Callable[[], None] = lambda: None  # something to publish
         self.received = 0
         self.dropped_retained = 0
         self.executed = 0
+        self.reported = 0
+        self.suppressed = 0
 
     # -- identity of a generation ---------------------------------------------------------------
 
@@ -244,11 +274,7 @@ class SettingsPlane:
     def begin_session(self) -> None:
         """A new connection: older commands are void, the generation is new, every availability
         is announced again."""
-        for command in self._queue:
-            self._carry.append(
-                (command.inverter_id, command.key, command.shown, "superseded_context")
-            )
-        self._queue.clear()
+        self._revoke_all()
         self._have.clear()
         self._outbox.clear()
         for inverter_id, plan in self._plans.items():
@@ -257,22 +283,34 @@ class SettingsPlane:
             plan.reachable = False
         self._force = set(self._plans)
 
-    def start(self) -> None:
-        self._tasks = [
-            asyncio.create_task(self._refresh_loop(), name="settings-refresh"),
-            asyncio.create_task(self._worker(), name="settings-commands"),
-        ]
-
-    async def stop(self) -> None:
-        tasks, self._tasks = self._tasks, []
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+    def _revoke_all(self) -> None:
+        """Every intent that has not been sent is void: the queued ones are dropped, the one that
+        may already be inside the service fails its revocation test at the final send point."""
+        self._session += 1
         for command in self._queue:
+            command.revoked = True
             self._carry.append(
                 (command.inverter_id, command.key, command.shown, "superseded_context")
             )
         self._queue.clear()
+        for report in self._reports:
+            self._carry.append((report.inverter_id, report.key, report.requested, report.reason))
+        self._reports.clear()
+
+    def start(self) -> None:
+        self._tasks = [
+            asyncio.create_task(self._refresh_loop(), name="settings-refresh"),
+            asyncio.create_task(self._worker(), name="settings-commands"),
+            asyncio.create_task(self._reporter(), name="settings-rejections"),
+        ]
+
+    async def stop(self) -> None:
+        self._revoke_all()  # first: an execution that is past the cancel point is revoked too
+        tasks, self._tasks = self._tasks, []
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._revoke_all()
 
     # -- output ---------------------------------------------------------------------------------
 
@@ -293,9 +331,9 @@ class SettingsPlane:
             self._publish_availability(inverter_id)
             if plan.status != "unknown":
                 self._publish_state(inverter_id)
-        for inverter_id, key, shown, reason in self._carry:
-            self._event(inverter_id, REJECTED, key, shown, reason, None)
-        self._carry.clear()
+        carry, self._carry = self._carry, []
+        for inverter_id, key, shown, reason in carry:
+            self._event(inverter_id, REJECTED, key, shown, reason, None, None, "not_read")
 
     def _publish_availability(self, inverter_id: str) -> None:
         plan = self._plans[inverter_id]
@@ -321,28 +359,83 @@ class SettingsPlane:
         self,
         inverter_id: str,
         event_type: str,
-        key: str,
+        key: str | None,
         requested: Any,
         reason: str | None,
         audit_id: str | None,
+        value: Any,
+        read_error: str | None,
     ) -> None:
+        """One result event. ``value`` is only ever a fresh read-back; without one it is ``None``
+        and ``read_error`` says why."""
         assert event_type in EVENT_TYPES
-        plan = self._plans.get(inverter_id)
         body = {
             "event_type": event_type,
             "setting": key,
             "requested_value": requested,
             "reason": reason,
             "audit_id": audit_id,
-            "value": (plan.values.get(key) if plan is not None else None),
+            "value": None if read_error else value,
+            "read_error": read_error,
         }
         self._emit(Out(self.ns.write_result_topic(inverter_id), encode(body), False))
 
+    def _reject(self, inverter_id: str, key: str, requested: Any, reason: str) -> None:
+        """A rejection that never reached the service: reported by ``_reporter`` with a fresh read,
+        bounded (a flood of bad commands is counted, not read for each)."""
+        if len(self._reports) >= REPORT_LIMIT:
+            self.suppressed += 1
+            self._suppressed[inverter_id] = self._suppressed.get(inverter_id, 0) + 1
+        else:
+            self._reports.append(_Report(inverter_id, key, requested, reason))
+        self._report_wake.set()
+
+    async def _reporter(self) -> None:
+        while True:
+            await self._report_wake.wait()
+            self._report_wake.clear()
+            batch, self._reports = list(self._reports), deque()
+            suppressed, self._suppressed = self._suppressed, {}
+            try:
+                while batch or suppressed:
+                    inverter_id = batch[0].inverter_id if batch else next(iter(suppressed))
+                    mine = [r for r in batch if r.inverter_id == inverter_id]
+                    batch = [r for r in batch if r.inverter_id != inverter_id]
+                    error = await self.refresh(inverter_id)  # one read for all of them
+                    plan = self._plans[inverter_id]
+                    for r in mine:
+                        self.reported += 1
+                        self._event(
+                            inverter_id,
+                            REJECTED,
+                            r.key,
+                            r.requested,
+                            r.reason,
+                            None,
+                            plan.values.get(r.key),
+                            error,
+                        )
+                    if count := suppressed.pop(inverter_id, 0):
+                        self._event(
+                            inverter_id,
+                            REJECTED,
+                            None,
+                            None,
+                            f"suppressed:{count}",
+                            None,
+                            None,
+                            "not_read",
+                        )
+            except asyncio.CancelledError:
+                self._carry.extend((r.inverter_id, r.key, r.requested, r.reason) for r in batch)
+                raise
+
     # -- fresh state ----------------------------------------------------------------------------
 
-    async def refresh(self, inverter_id: str) -> None:
+    async def refresh(self, inverter_id: str) -> str | None:
         """One fresh read-back of an inverter's released settings; publishes availability and
-        state, and reports a change of the exposed set."""
+        state, and reports a change of the exposed set. Returns ``None`` for a fresh read, else
+        the reason there is none."""
         try:
             snap = await self._source.snapshot(inverter_id)
         except asyncio.CancelledError:
@@ -351,6 +444,7 @@ class SettingsPlane:
             log.warning("%s: settings read failed (%s)", inverter_id, type(exc).__name__)
             snap = SettingsSnapshot("unavailable", "read_failed", {})
         self._apply(inverter_id, snap)
+        return None if snap.status == "ok" else (snap.reason or snap.status)
 
     def _apply(self, inverter_id: str, snap: SettingsSnapshot) -> None:
         plan = self._plans[inverter_id]
@@ -359,6 +453,7 @@ class SettingsPlane:
             keys = {k: s.cap for k, s in snap.settings.items()}
             plan.reachable = True
             plan.ready = {k: s.ready for k, s in snap.settings.items()}
+            plan.reasons = {k: s.reason for k, s in snap.settings.items()}
             plan.values = {k: state_value(BY_KEY[k], s) for k, s in snap.settings.items()}
             status = "exposed" if keys else "none"
             if status != plan.status or keys != plan.keys:
@@ -421,15 +516,40 @@ class SettingsPlane:
         try:
             value, field_ = parse_command(desc, payload)
         except Refused as refusal:
-            self._event(inverter_id, REJECTED, key, self._text(payload), refusal.key, None)
+            self._reject(inverter_id, key, self._text(payload), refusal.key)
             return True
         shown = desc.display(field_)
-        if len(self._queue) >= QUEUE_LIMIT:
-            self._event(inverter_id, REJECTED, key, shown, "queue_full", None)
+        if not plan.reachable or not plan.ready.get(key, False):
+            self._reject(inverter_id, key, shown, plan.reasons.get(key) or "unavailable")
             return True
-        self._queue.append(_Command(inverter_id, key, value, plan.token, self._clock(), shown))
+        if len(self._queue) >= QUEUE_LIMIT:
+            self._reject(inverter_id, key, shown, "queue_full")
+            return True
+        try:
+            binding = self._source.bind(inverter_id, key)
+        except Refused as refusal:
+            self._reject(inverter_id, key, shown, self._reason(refusal.key, refusal.params))
+            return True
+        now = self._clock()
+        command = _Command(inverter_id, key, value, plan.token, now, shown, self._session)
+        command.intent = Intent(binding, now + COMMAND_TTL_S, self._revocation(command))
+        self._queue.append(command)
         self._have.set()
         return True
+
+    def _revocation(self, command: _Command) -> Callable[[], bool]:
+        return lambda: self._revoked(command)
+
+    def _revoked(self, command: _Command) -> bool:
+        """The session or the exposure this command was accepted in is gone."""
+        plan = self._plans[command.inverter_id]
+        return (
+            command.revoked
+            or command.session != self._session
+            or plan.status != "exposed"
+            or command.token != plan.token
+            or command.key not in plan.keys
+        )
 
     def _lookup(self, topic: str) -> tuple[str, _Plan, str] | None:
         for inverter_id, plan in self._plans.items():
@@ -456,16 +576,20 @@ class SettingsPlane:
     async def _execute(self, command: _Command) -> None:
         inverter_id, key = command.inverter_id, command.key
         plan = self._plans[inverter_id]
-        if self._clock() - command.received > COMMAND_TTL_S:
-            self._event(inverter_id, REJECTED, key, command.shown, "expired", None)
+        intent = command.intent
+        assert intent is not None
+        if self._revoked(command):
+            self._reject(inverter_id, key, command.shown, "superseded_context")
             return
-        if plan.status != "exposed" or command.token != plan.token or key not in plan.keys:
-            self._event(inverter_id, REJECTED, key, command.shown, "superseded_context", None)
+        if self._clock() > intent.deadline:
+            self._reject(inverter_id, key, command.shown, "expired")
             return
         self.executed += 1
         event_type, reason, audit_id = REJECTED, None, None
         try:
-            op = await self._source.submit(inverter_id, key, command.value, source=SOURCE)
+            op = await self._source.submit(
+                inverter_id, key, command.value, source=SOURCE, intent=intent
+            )
         except Refused as refusal:
             reason = self._reason(refusal.key, refusal.params)
             event_type = NOOP if refusal.key == "no_change" else REJECTED
@@ -482,8 +606,17 @@ class SettingsPlane:
             if status == "rejected" and reason == "no_change":
                 event_type = NOOP
         # the fresh read-back first: the result event comes with the true state
-        await self.refresh(inverter_id)
-        self._event(inverter_id, event_type, key, command.shown, reason, audit_id)
+        error = await self.refresh(inverter_id)
+        self._event(
+            inverter_id,
+            event_type,
+            key,
+            command.shown,
+            reason,
+            audit_id,
+            plan.values.get(key),
+            error,
+        )
 
     @staticmethod
     def _reason(key: str, params: Mapping[str, Any]) -> str:
@@ -502,6 +635,8 @@ class SettingsPlane:
             "commands_executed": self.executed,
             "retained_dropped": self.dropped_retained,
             "queued": len(self._queue),
+            "rejections_reported": self.reported,
+            "rejections_suppressed": self.suppressed,
             "exposed": {i: sorted(p.keys) for i, p in self._plans.items() if p.status == "exposed"},
         }
 

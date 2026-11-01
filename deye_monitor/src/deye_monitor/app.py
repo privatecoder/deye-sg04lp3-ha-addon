@@ -120,6 +120,7 @@ def build_publisher(
     ns = Namespace(instance_id, mqtt.discovery_prefix, mqtt.topic_prefix)
     settings = settings or PublisherSettings()
     invs = runtime.inverters
+    runtime.settings_polling = True  # the entities poll the settings: part of the bus load
     store = open_discovery_store(data_dir(directory) / "discovery.json")
     return MqttPublisher(
         ns,
@@ -134,7 +135,12 @@ def build_publisher(
         diagnostics_of=lambda i: invs[i].diagnostics(),
         totals=build_totals(cfg, runtime, ns, store, directory),
         settings=settings,
-        plane=SettingsPlane(ns, {i.id: i.poll for i in cfg.inverters}, runtime.writes),
+        plane=SettingsPlane(
+            ns,
+            {i.id: i.poll for i in cfg.inverters},
+            runtime.writes,
+            clock=runtime.writes.clock,  # the intent deadlines are in the service's clock
+        ),
     )
 
 

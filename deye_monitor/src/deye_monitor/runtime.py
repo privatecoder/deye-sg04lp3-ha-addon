@@ -44,7 +44,7 @@ from deye_monitor.transport.modbus_tcp import ModbusTcpTransport, tcp_connector
 from deye_monitor.transport.rtu_over_tcp import RtuOverTcpTransport
 from deye_monitor.transport.serial_rtu import SerialRtuTransport
 from deye_monitor.transport.solarman_v5_tcp import SolarmanV5Transport
-from deye_monitor.writes import WriteService
+from deye_monitor.writes import WriteService, settings_poll_budget
 
 log = logging.getLogger(__name__)
 
@@ -153,6 +153,7 @@ class Runtime:
         self.transports: dict[str, StreamTransport] = {}
         self.inverters: dict[str, InverterRuntime] = {}
         self.writes = WriteService(self, directory=base)
+        self.settings_polling = False  # the MQTT entities poll the settings snapshot (set by app)
         self._tasks: list[asyncio.Task[None]] = []
         self._unit_owner: dict[tuple[str, int], str] = {}
         self._buses: dict[str, str] = {ep.id: ep.bus for ep in cfg.endpoints}
@@ -280,17 +281,33 @@ class Runtime:
         """Rough load per canonical bus: the plan budgets of every inverter on its active path
         plus a small allowance for identity probes and failover reads. Above 1 the bus cannot
         keep all intervals: ticks are coalesced (never caught up) and requests are served in
-        FIFO order across inverters."""
+        FIFO order across inverters. With the settings entities active the periodic settings
+        snapshot of every inverter with released writes is part of the load (its own requests,
+        split at the block limit, at ``poll_settings_s``)."""
         load = dict.fromkeys(self.schedulers, 0.0)
         for inv in self.inverters.values():
             bus = self._buses[inv.route.endpoint_id]
             plan = (candidates or {}).get(inv.id) or inv.current_plan()
             load[bus] += plan.budget.utilisation + PROBE_SHARE
+            if self.settings_polling and (extra := settings_poll_budget(inv)) is not None:
+                load[self._buses[inv.routes[0].endpoint_id]] += float(extra["utilisation"])
         return load
+
+    def settings_snapshots(self) -> dict[str, dict[str, float | int]]:
+        """Per inverter: requests per periodic settings snapshot, block limit, cadence, cycle
+        time and utilisation (empty while no entity polls them)."""
+        if not self.settings_polling:
+            return {}
+        out = {}
+        for inverter_id, inv in self.inverters.items():
+            if (budget := settings_poll_budget(inv)) is not None:
+                out[inverter_id] = budget
+        return out
 
     def diagnostics(self) -> dict[str, object]:
         return {
             "bus_utilisation": self.bus_utilisation(),
+            "settings_snapshots": self.settings_snapshots(),
             "inverters": {i: r.diagnostics() for i, r in self.inverters.items()},
         }
 

@@ -41,15 +41,15 @@ def test_exactly_the_released_descriptors() -> None:
         assert "test" not in d.risk.en.lower() and "Test" not in d.risk.de
 
 
-def test_model_cap_comes_from_the_vendor_datasheet_per_model() -> None:
-    assert CURRENT_CAP_BY_RATED_W == {5000: 120, 6000: 150, 8000: 190, 10000: 210, 12000: 240}
+def test_model_cap_is_the_app_policy_per_model() -> None:
+    assert CURRENT_CAP_BY_RATED_W == {5000: 120, 6000: 130, 8000: 185, 10000: 210, 12000: 240}
     for watts, cap in CURRENT_CAP_BY_RATED_W.items():
         assert model_cap(*rated(watts)) == cap
     for watts in (0, 4999, 7000, 9000, 15000, 80000):
         assert model_cap(*rated(watts)) is None
-    assert model_cap(*rated(8000)) == 190
+    assert model_cap(*rated(8000)) == 185
     assert model_cap(0x3881, 1) is None  # 80001 in 0.1 W is not a whole watt
-    assert "Datenblatt SUN-5-12k-SG04LP3.pdf" in BY_KEY["battery_charge_current"].source
+    assert "firmware ceilings" in BY_KEY["battery_charge_current"].source
 
 
 @pytest.mark.parametrize("key", ["battery_charge_current", "battery_discharge_current"])
@@ -357,7 +357,7 @@ def test_slot_power_is_limited_by_the_rated_power() -> None:
         assert rated_watts(*rated(watts)) is None
         assert model_limit(d, *rated(watts)) is None
     assert rated_watts(0x3881, 1) is None  # not a whole watt
-    assert model_limit(BY_KEY["grid_charge_current"], *rated(8000)) == 190
+    assert model_limit(BY_KEY["grid_charge_current"], *rated(8000)) == 185
     assert model_limit(BY_KEY["tou_slot2_soc"], *rated(8000)) is None
 
 
@@ -402,3 +402,66 @@ def test_inverter_config_defaults_and_validation() -> None:
     }
     inv = parse_config(base).inverters[0]
     assert inv.allow_writes is False and inv.enabled_write_operations == ()
+
+
+# -- R23-07: firmware ceilings intersected with the app policy -----------------------------------
+
+R108, R109 = BY_KEY["battery_charge_current"], BY_KEY["battery_discharge_current"]
+R125, R128 = BY_KEY["generator_charge_current"], BY_KEY["grid_charge_current"]
+PROVEN = {"r14": 0x2005, "r28": 5}  # R28 == 5 takes the ordinary branch
+BRANCH = {"r14": 0x2001, "r28": 3}  # R28 != 5 and hardware word 1: the 200 A charge branch
+
+
+@pytest.mark.parametrize(
+    ("watts", "charge", "discharge"),
+    [(5000, 120, 120), (6000, 130, 130), (8000, 185, 185), (10000, 210, 210), (12000, 240, 240)],
+)
+def test_direct_clamps_are_the_intersection_of_firmware_and_policy(
+    watts: int, charge: int, discharge: int
+) -> None:
+    assert model_limit(R108, *rated(watts), **PROVEN) == charge
+    assert model_limit(R109, *rated(watts), **PROVEN) == discharge
+    # R125 and R128 are the application policy, nothing more
+    assert model_limit(R125, *rated(watts)) == model_limit(R128, *rated(watts)) == charge
+
+
+@pytest.mark.parametrize(("watts", "unproven"), [(10000, 200), (12000, 200)])
+def test_an_unproven_10_12_kw_charge_branch_gets_the_conservative_cap(
+    watts: int, unproven: int
+) -> None:
+    assert model_limit(R108, *rated(watts), **BRANCH) == unproven
+    assert model_limit(R108, *rated(watts)) == unproven  # selector words missing: conservative
+    assert model_limit(R108, *rated(watts), r14=0x2005, r28=3) == model_limit(
+        R108, *rated(watts), **PROVEN
+    )  # the hardware word is not 1: the ordinary branch
+    assert model_limit(R109, *rated(watts), **BRANCH) == model_limit(R109, *rated(watts), **PROVEN)
+    assert model_limit(R128, *rated(watts)) == {10000: 210, 12000: 240}[watts]  # policy only
+
+
+def test_smaller_models_ignore_the_hardware_branch() -> None:
+    for watts in (5000, 6000, 8000):
+        assert model_limit(R108, *rated(watts), **BRANCH) == model_limit(
+            R108, *rated(watts), **PROVEN
+        )
+
+
+def test_a_stored_2359_is_a_valid_incumbent_but_not_a_target() -> None:
+    d = BY_KEY["tou_slot6_start"]
+    assert d.incumbent_valid(2359) and d.incumbent_valid(2356) and d.incumbent_valid(7)
+    assert (
+        not d.incumbent_valid(2360) and not d.incumbent_valid(2400) and not d.incumbent_valid(165)
+    )
+    with pytest.raises(Refused):
+        parse_value(d, "23:59")  # new times are 5-minute steps up to 23:55
+    assert parse_value(d, "23:55") == 2355
+
+
+def test_every_ordered_group_is_chained_in_ascending_order() -> None:
+    assert BY_KEY["battery_low_soc"].chain == (
+        "battery_shutdown_soc",
+        "battery_low_soc",
+        "battery_restart_soc",
+    )
+    assert BY_KEY["tou_slot3_start"].chain == tuple(f"tou_slot{n}_start" for n in range(1, 7))
+    assert BY_KEY["smart_load_on_soc"].chain == ("smart_load_off_soc", "smart_load_on_soc")
+    assert set(BY_KEY["battery_shutdown_soc"].related) == {"battery_low_soc", "battery_restart_soc"}

@@ -239,11 +239,11 @@ When several endpoints reach one physical bus under different names, give them t
 | `energy_resolution` | `auto` (derived from register 65), `0.1` or `1` (kWh). |
 | `poll_fast_s` | Interval for power, battery and status values, seconds (at least 1), default 10. |
 | `poll_energy_s` | Interval for energy counters, default 60. |
-| `poll_settings_s` | Interval for settings (diagnostic only), default 300. |
+| `poll_settings_s` | Interval for settings, default 300. With released writes and the Home Assistant entities active, every interval reads the released settings (a dozen requests with all of them released, more with a small block size); this traffic counts toward the reported bus load. |
 | `poll_identity_s` | Interval for identity registers, default 3600. |
 | `allow_writes` | Master switch of the write layer for this inverter (default `false`). Set in the web interface (plant page), never in the inverter form. Without the matching entry in `enabled_write_operations` nothing can be written. |
 | `write_release_firmware` | Set by the app, not by hand: the hardware profile and firmware words (R11, R14, R15, R17, R18) read when you released writing. If the inverter later reports other words (firmware upgrade), writing stays blocked (“Firmware changed since release”) until you release again. Monitoring is not affected. |
-| `enabled_write_operations` | The settings released for writing on this inverter (default: none). A subset of the nine operations listed under “Writing settings”. |
+| `enabled_write_operations` | The settings released for writing on this inverter (default: none). A subset of the 38 operations listed under “Writing settings”. |
 
 On one bus (same host and port, or the same `bus_id`) every `unit_id` can belong to only one inverter.
 Separate gateways may all use unit 1.
@@ -344,9 +344,11 @@ written.
 
 Values must be exact: a fractional or non-finite number is refused, nothing is rounded or clamped.
 
-- **Model limit.** The limit of the four current settings comes from the vendor datasheet (5K 120 A,
-  6K 150 A, 8K 190 A, 10K 210 A, 12K 240 A) and is selected from the rated power the inverter
-  reports (registers 20/21, exactly 5, 6, 8, 10 or 12 kW). The slot discharge power is limited by
+- **Model limit.** The limit of the four current settings is the app policy (5K 120 A, 6K 130 A,
+  8K 185 A, 10K 210 A, 12K 240 A), selected from the rated power the inverter reports (registers
+  20/21, exactly 5, 6, 8, 10 or 12 kW). For the charge and discharge current (R108/R109) the
+  firmware's own ceiling applies as well and the lower of both wins; a 10 or 12 kW unit whose
+  hardware variant cannot be told from its registers is limited to 200 A for charging. The slot discharge power is limited by
   the same rated power in W. If the model cannot be determined, or the stored value is outside the
   allowed range (so it could not be restored), the setting stays locked.
 - **Battery control mode (R111).** SOC settings (R115-R117, R127, R135, R137 and the slot target
@@ -361,8 +363,13 @@ Values must be exact: a fractional or non-finite number is refused, nothing is r
   exactly 0 or 1 and refuses to write while the register holds anything else (`unexpected_bits`).
 - **ToU schedule.** The start times must ascend strictly from slot 1 to 6 (slot 6 runs on until
   slot 1 starts, across midnight). Each time is sent on its own and takes effect immediately, so
-  the neighbouring intervals change with it; the app checks all six times freshly for every edit,
-  refuses a time that would cross a neighbour (`tou_order`) and never rearranges other slots.
+  the neighbouring intervals change with it; the app reads all six times freshly for every edit and
+  writes only if the result is a valid, strictly ascending schedule (`tou_order`); a schedule that
+  is already broken elsewhere, or holds an invalid time (`companion_invalid`), is not edited at all
+  - correct it on the inverter display or in the cloud. A stored 23:56-23:59 is valid and can be
+  replaced; new times are 5-minute steps up to 23:55. The same whole-group rule holds for the SOC
+  protection thresholds (shutdown < low < restart, each 0 to 100 %, SOC mode); the app sets no
+  further battery limits, the commissioned limits remain your responsibility.
   Several edits are never one atomic schedule change: other units can observe the intermediate
   schedule. The app does not switch the ToU off by itself. The ToU switch shows the configuration
   read; the firmware can set bit 0 itself (for example with peak shaving). All ToU settings are
@@ -375,7 +382,7 @@ Values must be exact: a fractional or non-finite number is refused, nothing is r
   slaves, so only the master is written (see below).
 
 All gates are decided at the moment of writing from fresh reads (release and firmware
-fingerprint, identity, parallel role, R111/R133/R146, the neighbours of an ordered value and the old
+fingerprint, identity, parallel role, R111/R133/R146, the whole ordered group of a value and the old
 word), not only at the preview.
 
 **Enabling.** Plant page → inverter card → “Writing”: tick the master switch **and** the settings
@@ -493,7 +500,7 @@ may use the entities.
   frontend can still show what you typed until it refreshes. The inverter's own display or cloud can change a value at any time;
   the entity follows at the next read.
 * **Commands.** They go through exactly the same guarded write service as the web interface:
-  release and firmware fingerprint, identity, role, mode gates, order against the neighbours, the
+  release and firmware fingerprint, identity, role, mode gates, order of the whole group, the
   old value, the audit intent before the send, one FC16 with one register, at least 5 s between
   writes, no retry, no fallback, no fan-out, and the read-back afterwards. The old value and all
   gates come from fresh reads at the moment of the send, not from the time the command arrived.
@@ -501,10 +508,16 @@ may use the entities.
   A value equal to what the inverter holds is an audited no-op without any write.
 * **Order and queue.** Commands of a plant are executed one at a time in the order they arrive.
   They are never merged: *OFF, edit, ON* writes three times. The queue holds 32 commands; one more
-  is refused (`queue_full`). A command waits at most 60 s; later it is discarded (`expired`). When
-  the MQTT connection is lost, the Home Assistant restarts the session, the set of entities
-  changes or the plant is changed, everything still waiting is discarded
-  (`superseded_context`).
+  is refused (`queue_full`). A command is refused at once while its entity is unavailable. Each
+  accepted command remembers which inverter (serial, connection, role, release, firmware) it was
+  meant for and has 60 s from its arrival until the write is actually sent, including all waiting.
+  Right before sending this is checked again: another device behind the same id, a rebind or
+  reset, a lost master role, a changed release or plant, or a passed deadline ends in
+  `write_rejected` (`superseded_context` / `expired`) and nothing is sent. When the MQTT connection
+  is lost, Home Assistant restarts the session, the set of entities changes or the plant is
+  changed, everything not yet sent is discarded the same way; a write already on the wire is
+  still observed and audited. Rejection events carry a freshly read value, or `null` with a
+  `read_error` when the inverter cannot be read.
 * **Strict payloads.** `number`: a plain decimal, an integer where the step is 1, two decimals for
   volts; `switch`: exactly `ON` or `OFF`; `time`: `HH:MM:SS` with seconds `00` and no time zone.
   Anything else is refused as `invalid_payload` (or `value_not_exact`, `value_out_of_range`, ...)

@@ -69,7 +69,12 @@ async def attach(rig: PlantRig) -> AsyncIterator[Bridge]:
     assert runtime is not None
     runtime.writes.plant_revision = lambda: rig.service.revision
     cfg = rig.app.cfg
-    plane = SettingsPlane(NS, {i.id: i.poll for i in cfg.inverters}, runtime.writes)
+    plane = SettingsPlane(
+        NS,
+        {i.id: i.poll for i in cfg.inverters},
+        runtime.writes,
+        clock=lambda: runtime.writes.clock(),  # the service's clock, patchable by a test
+    )
     broker = FakeBroker()
     store = JsonStore(rig.directory / "discovery.json", validate=valid_discovery_document)
     pub = MqttPublisher(

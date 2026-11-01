@@ -18,25 +18,50 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any, Final
 
-# Maximum battery charge/discharge current per model, from the vendor datasheet
-# "Datenblatt SUN-5-12k-SG04LP3.pdf" (knowledge base, Specs/): 5K 120 A, 6K 150 A, 8K 190 A,
-# 10K 210 A, 12K 240 A. It replaces the generic 0-185 A of the V105.8 document for R108, R109, R125
-# and R128. The model comes from the rated power (R20-R21); an unknown model locks the operation.
+# Battery charge/discharge current envelope per model (SPEC 10.2). Two independent limits:
+# * APP POLICY (owner decision): 5K 120 A, 6K 130 A, 8K 185 A, 10K 210 A, 12K 240 A. It is the
+#   whole envelope of R125 and R128 (application policy, not a firmware clamp).
+# * RETAINED FIRMWARE CEILING of the direct clamps R108/R109 (MCU2 1175, same initializer branch as
+#   the rated power): 5K 125/125, 6K 130/130, 8K 185/185, 10K 220/220, 12K 240/240 A (charge/
+#   discharge); the 10/12 kW charge ceiling is 200 A on the hardware branch (R28 != 5 and hardware
+#   word F7B5 == 1). R108/R109 accept the INTERSECTION of both; a 10/12 kW unit whose branch is not
+#   proven by fresh R14/R28 gets the conservative 200 A charge ceiling.
+# The model comes from the rated power (R20-R21); an unknown model locks the operation.
 CURRENT_CAP_BY_RATED_W: Final[dict[int, int]] = {
     5000: 120,
-    6000: 150,
-    8000: 190,
+    6000: 130,
+    8000: 185,
     10000: 210,
     12000: 240,
 }
+FIRMWARE_CHARGE_CAP_BY_RATED_W: Final[dict[int, int]] = {
+    5000: 125,
+    6000: 130,
+    8000: 185,
+    10000: 220,
+    12000: 240,
+}
+FIRMWARE_DISCHARGE_CAP_BY_RATED_W: Final[dict[int, int]] = {
+    5000: 125,
+    6000: 130,
+    8000: 185,
+    10000: 220,
+    12000: 240,
+}
+HARDWARE_BRANCH_CHARGE_CAP: Final = 200  # 10/12 kW, R28 != 5 and F7B5 == 1
+BRANCH_MODELS: Final = frozenset({10000, 12000})
+R14, R28 = 14, 28  # hardware/profile word, generation selector
+R28_ORDINARY: Final = 5
 CURRENT_CAP_SOURCE: Final = (
-    "Datenblatt SUN-5-12k-SG04LP3.pdf (vendor datasheet): max. charge/discharge current "
-    "5K 120 A, 6K 150 A, 8K 190 A, 10K 210 A, 12K 240 A"
+    "app policy 5K 120 A, 6K 130 A, 8K 185 A, 10K 210 A, 12K 240 A, intersected for R108/R109 "
+    "with the retained firmware ceilings (MCU2 1175: 125/130/185/220/240 A, 200 A charge on the "
+    "10/12 kW hardware branch)"
 )
 
 OBSERVE_DELAY_S: Final = 1.0
@@ -109,6 +134,10 @@ class WriteDescriptor:
     below: tuple[str, ...] = ()
     above: tuple[str, ...] = ()
     order_error: str = "threshold_order"
+    # The WHOLE ordered group this value belongs to (ascending, itself included). At execution every
+    # member is read and validated and the resulting group must be strictly ascending.
+    chain: tuple[str, ...] = ()
+    firmware_clamp: str | None = None  # "charge" / "discharge": R108 / R109 direct firmware clamp
 
     @property
     def field_mask(self) -> int:
@@ -116,7 +145,8 @@ class WriteDescriptor:
 
     @property
     def related(self) -> tuple[str, ...]:
-        return self.below + self.above
+        others = tuple(k for k in self.chain if k != self.key)
+        return others or self.below + self.above
 
     @property
     def model_limited(self) -> bool:
@@ -145,6 +175,15 @@ class WriteDescriptor:
         if self.kind is Kind.TIME:
             return f"{field // 100:02d}:{field % 100:02d}"
         return field if self.scale == 1 else round(field / self.scale, 2)
+
+    def incumbent_valid(self, field: int, cap: int | None = None) -> bool:
+        """Is the stored ``field`` a legal word of this setting? Separate from the target rules: a
+        time is valid as any HHMM 00:00-23:59 (minutes < 60) although new times are 5-minute steps
+        up to 23:55; a scalar must lie in the range accepted now."""
+        if self.kind is Kind.TIME:
+            return 0 <= field <= 2359 and field % 100 < 60
+        low, high = self.limits(cap)
+        return low <= field <= high
 
     def limits(self, cap: int | None) -> tuple[int, int]:
         """Raw range accepted now. A model-limited operation needs a known model, and the cap (A
@@ -178,6 +217,7 @@ class WriteDescriptor:
             "whole_word_bool": self.whole_word_bool,
             "below": list(self.below),
             "above": list(self.above),
+            "chain": list(self.chain),
         }
 
 
@@ -422,6 +462,7 @@ def _build() -> tuple[WriteDescriptor, ...]:
             risk=_CURRENT_RISK,
             source=f"{_V}; cap: {CURRENT_CAP_SOURCE}",
             current_cap=True,
+            firmware_clamp="charge",
             needs_battery=True,
         ),
         WriteDescriptor(
@@ -445,6 +486,7 @@ def _build() -> tuple[WriteDescriptor, ...]:
             ),
             source=f"{_V}; cap: {CURRENT_CAP_SOURCE}",
             current_cap=True,
+            firmware_clamp="discharge",
             needs_battery=True,
         ),
         _soc(
@@ -639,7 +681,18 @@ def _build() -> tuple[WriteDescriptor, ...]:
     return tuple(out)
 
 
-DESCRIPTORS: Final[tuple[WriteDescriptor, ...]] = _build()
+def _chained(descriptors: tuple[WriteDescriptor, ...]) -> tuple[WriteDescriptor, ...]:
+    groups: list[tuple[str, ...]] = [
+        ("battery_shutdown_soc", "battery_low_soc", "battery_restart_soc"),
+        ("smart_load_off_voltage", "smart_load_on_voltage"),
+        ("smart_load_off_soc", "smart_load_on_soc"),
+        tuple(f"tou_slot{n}_start" for n in range(1, TOU_SLOTS + 1)),
+    ]
+    chain_of = {key: group for group in groups for key in group}
+    return tuple(replace(d, chain=chain_of[d.key]) if d.key in chain_of else d for d in descriptors)
+
+
+DESCRIPTORS: Final[tuple[WriteDescriptor, ...]] = _chained(_build())
 BY_KEY: Final[dict[str, WriteDescriptor]] = {d.key: d for d in DESCRIPTORS}
 OPERATION_KEYS: Final[tuple[str, ...]] = tuple(d.key for d in DESCRIPTORS)
 HARDWARE = "sg04lp3_eu"  # the descriptors are released for this hardware profile only
@@ -656,19 +709,59 @@ def rated_watts(r20: int, r21: int) -> int | None:
 
 
 def model_cap(r20: int, r21: int) -> int | None:
-    """Maximum current in A for the model in R20/R21; an unknown model (``None``) locks the
-    current operations."""
+    """App-policy current envelope in A for the model in R20/R21; an unknown model (``None``)
+    locks the current operations. R125 and R128 use exactly this."""
     watts = rated_watts(r20, r21)
     return None if watts is None else CURRENT_CAP_BY_RATED_W[watts]
 
 
-def model_limit(desc: WriteDescriptor, r20: int, r21: int) -> int | None:
-    """The model-dependent maximum of ``desc`` (A or W), ``None`` if unknown or not applicable."""
+def charge_branch_proven(r14: int | None, r28: int | None) -> bool:
+    """Is the ordinary (220/240 A) charge-ceiling branch of a 10/12 kW unit proven by fresh words?
+    R28 == 5 takes it; otherwise the hardware word must not be 1 under any reading of R14 (nibble,
+    byte or either half): the derating condition is R28 != 5 and hardware word == 1."""
+    if r28 == R28_ORDINARY:
+        return True
+    if r14 is None or r28 is None:
+        return False
+    return 1 not in (r14 & 0xF, r14 & 0xFF, r14 >> 8, r14 >> 12)
+
+
+def firmware_ceiling(kind: str, watts: int, r14: int | None, r28: int | None) -> int:
+    """Retained MCU2 firmware ceiling of the direct clamp R108 (``charge``) / R109 (``discharge``);
+    an unproven 10/12 kW charge branch gets the conservative 200 A."""
+    if kind == "charge":
+        ceiling = FIRMWARE_CHARGE_CAP_BY_RATED_W[watts]
+        if watts in BRANCH_MODELS and not charge_branch_proven(r14, r28):
+            return min(ceiling, HARDWARE_BRANCH_CHARGE_CAP)
+        return ceiling
+    return FIRMWARE_DISCHARGE_CAP_BY_RATED_W[watts]
+
+
+def model_limit(
+    desc: WriteDescriptor,
+    r20: int,
+    r21: int,
+    *,
+    r14: int | None = None,
+    r28: int | None = None,
+) -> int | None:
+    """The model-dependent maximum of ``desc`` (A or W), ``None`` if unknown or not applicable.
+    R108/R109: the intersection of the app policy and the firmware ceiling (selector words
+    ``r14``/``r28``, conservative when absent); R125/R128: the app policy."""
     if desc.current_cap:
-        return model_cap(r20, r21)
+        cap = model_cap(r20, r21)
+        watts = rated_watts(r20, r21)
+        if cap is None or watts is None or desc.firmware_clamp is None:
+            return cap
+        return min(cap, firmware_ceiling(desc.firmware_clamp, watts, r14, r28))
     if desc.power_cap:
         return rated_watts(r20, r21)
     return None
+
+
+def limit_from_words(desc: WriteDescriptor, words: Mapping[int, int]) -> int | None:
+    """``model_limit`` from a dict of fresh words (R20, R21 and, for R108, R14 and R28)."""
+    return model_limit(desc, words[20], words[21], r14=words.get(R14), r28=words.get(R28))
 
 
 def parse_time(value: Any) -> int:

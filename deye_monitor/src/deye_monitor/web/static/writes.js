@@ -174,7 +174,10 @@ export function openSettingsDialog(invId) {
     let text = errorText(error);
     if (error instanceof ApiError && (error.key === 'operation_locked' || error.key === 'inverter_not_ready')) text = t(`error.${error.key}`, { reason: reasonText(error.params.reason) });
     if (error instanceof ApiError && error.key === 'parallel_slave') text = t('writes.slave_locked');
-    if (error instanceof ApiError && (error.key === 'threshold_order' || error.key === 'tou_order')) {
+    if (error instanceof ApiError && (error.key === 'companion_invalid' || ((error.key === 'threshold_order' || error.key === 'tou_order') && error.params.ordering === 'group'))) {
+      const other = ops.get(error.params.companion);
+      text = t(error.key === 'companion_invalid' ? 'error.companion_invalid' : 'error.group_order', { companion: other ? localText(other.name) : error.params.companion, companion_value: String(error.params.companion_value) });
+    } else if (error instanceof ApiError && (error.key === 'threshold_order' || error.key === 'tou_order')) {
       const other = ops.get(error.params.companion);
       text = t(`error.${error.key}`, { companion: other ? localText(other.name) : error.params.companion, companion_value: String(error.params.companion_value), ordering: t(`writes.ordering.${error.params.ordering}`) });
     }
