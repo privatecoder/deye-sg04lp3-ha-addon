@@ -2,7 +2,7 @@
 
 Runbook for four SUN-10K-SG04LP3-EU in island parallel operation, each with one RS485 LAN gateway **on the ModeBUS** and one WiFi logger. Reported firmware: HMI `1001-C070`, Main `2005-1175-1807`. This document prepares the test remotely; no plant connections were made while writing it. This version is based on the reviewer's runbook (Codex, 29.10.2026) and has been brought up to the **current app state** (web interface, two-slot selection, diagnostic entities). You set up connections and inverters **in the web interface** (wizard "Set up plant"); the app options hold only MQTT and the log level.
 
-The app is **read-only**: it sends only FC03 read accesses to inverters (see section 9).
+This runbook is a **read-only** test: with the default configuration the app sends only FC03 read accesses to inverters (see section 9). Writing (version 0.3.0 and later) is off by default and is **not part of this test**; the separate owner-only procedure is `docs/FIRST-WRITE-RUNBOOK.md`.
 
 ## 1. Start prerequisites – tick these off first
 
@@ -86,7 +86,7 @@ If you want the template unchanged, use **"Accept the template unchanged"**; not
 Setup is done in the web interface (sidebar **Deye Monitor**): with an empty plant the **setup wizard** starts by itself, otherwise you open **Set up plant** (or "Start setup" on the empty overview). The wizard leads through **create connection → create inverter → check connection → choose sensors**. Changes apply immediately; the app does not need a restart for this.
 
 1. **Connection** (step 1): type **"Gateway (Modbus TCP → RTU)"** – only for a confirmed Modbus TCP→RTU mode –, address (e.g. `192.0.2.11`) and port `502`, identifier `gw1`. Under **Advanced** set cautious start values: timeout `5`, block size `20`, gap `250`, queue `8`. For a **demonstrably transparent** gateway use **"Gateway transparent (RTU over TCP)"** instead, with its actually configured port. There an optional **late-answer window** of `10` s can be set: with timeout 5 this corresponds to today's default (`max(1 s, 2 × timeout)`). These ten seconds are an **assumption about late answers**, not a Deye guarantee. With unknown delays/cache effects do not test further; no unconfirmed answer is published as fresh.
-2. **Inverter** (step 2): name `Deye 1`, identifier `deye1` (cannot be changed after creation), connection `gw1` from the selection list, Modbus address `1`, **expected serial number** `2401230001` (the confirmed inverter SN), energy resolution "Automatic". Under **Polling intervals (advanced)**: `30` / `300` / `600` / `3600` s. Writing is not available in this version (the interface shows "Writing: not available", `allow_writes` cannot be set there).
+2. **Inverter** (step 2): name `Deye 1`, identifier `deye1` (cannot be changed after creation), connection `gw1` from the selection list, Modbus address `1`, **expected serial number** `2401230001` (the confirmed inverter SN), energy resolution "Automatic". Under **Polling intervals (advanced)**: `30` / `300` / `600` / `3600` s. Leave the inverter's **Writing** section on the plant page untouched (it shows "Writing: off"; the master switch and every setting stay unchecked for this test).
 3. **Check** (step 3): "Check connection" reads only the inverter's identifier (FC03, through the send guard, via the bus scheduler of the running connection) and shows serial number, MPPT/phase count and anomalies. On an error the display names typical causes (e.g. "Wrong transport? Check the gateway mode"). The same check is available later per connection and per inverter under **Set up plant**.
 4. **Sensors** (step 4): continue with section 3.1 using **"Basics only"**.
 
@@ -215,7 +215,7 @@ A reset is **not** a means to bypass `quarantined`/`blocked`.
 
 ## 9. Hard limit of this test
 
-The app sends **only FC03 read accesses** to inverters, in the framing matching the transport; a send guard at the lowest path enforces this independently of any option. `allow_writes: false` stays set for every device (the option has no effect in this version anyway). No FC06/FC16, no write probe, no command/control entities (the app publishes only `sensor`/`binary_sensor`, subscribes only to the HA birth message), no gateway or logger admin action by the app.
+In this test the app sends **only FC03 read accesses** to inverters, in the framing matching the transport; a send guard at the lowest path enforces this. `allow_writes: false` stays set and `enabled_write_operations` stays empty for every device (both are the defaults; do not release any setting in the plant page during this test, and do not open “Change settings”). No FC06/FC16, no write probe, no command/control entities (the app publishes only `sensor`/`binary_sensor`, subscribes only to the HA birth message), no gateway or logger admin action by the app.
 
 Also excluded "just briefly": R80 OFF/ON, "No Battery" R111, parallel roles/count R336/R337, ToU, remote mode or changing setpoints; simulating master/slave failure; disconnecting AC/battery/CAN; trying socket chains between ModeBUS, Meter-485 and BMS. All configuration of gateway and logger (protocol mode, IP, polling, upload, restart) is changed **only by you**; the app changes nothing there. A separately justified change to your plant is **not part of this read test**.
 

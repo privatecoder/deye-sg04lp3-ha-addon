@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from deye_monitor.protocol.guard import Framing
-from deye_monitor.protocol.modbus import build_rtu_request
+from deye_monitor.protocol.guard import Framing, WriteGrant
+from deye_monitor.protocol.modbus import WriteAck, build_rtu_request, build_rtu_write
 from deye_monitor.protocol.solarman_v5 import (
     MAX_FRAME_LEN,
     V5Counters,
     V5StreamParser,
     build_v5_request,
+    build_v5_write_request,
     decode_read_response,
+    decode_write_response,
 )
 from deye_monitor.transport.base import StreamTransport, TransportSettings
 from deye_monitor.transport.modbus_tcp import tcp_connector
@@ -48,6 +50,18 @@ class SolarmanV5Transport(StreamTransport):
                 raise EOFError("connection closed by peer")
             for response in self.v5.feed(data, self._seq):
                 return decode_read_response(response, unit, count, self.v5.counters)
+
+    async def _write_request(self, grant: WriteGrant) -> WriteAck:
+        assert self.logger_serial is not None
+        self._seq = (self._seq + 1) & 0xFF
+        rtu = build_rtu_write(grant.unit, grant.register, grant.new_word)
+        await self._write_checked(build_v5_write_request(self.logger_serial, self._seq, rtu), grant)
+        while True:
+            data = await self._stream.read(MAX_FRAME_LEN)
+            if not data:
+                raise EOFError("connection closed by peer")
+            for response in self.v5.feed(data, self._seq):
+                return decode_write_response(response, grant.unit, grant.register)
 
     def _partial_response_pending(self) -> bool:
         """An incomplete frame that outlives the request deadline is dropped with the

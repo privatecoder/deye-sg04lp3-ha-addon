@@ -1,9 +1,14 @@
-# E2E acceptance (read-only phase)
+# E2E acceptance (read-only by default; the fakes also take the v1 write)
 
 A real Home Assistant Core (`ghcr.io/home-assistant/home-assistant:2026.10.4`, digest pinned in
 `harness/docker.py`), Mosquitto 2.0.22 and the app against fake inverters, all on `127.0.0.1` /
 a private Docker network (`172.30.32.0/23`, so the ingress proxy owns the real Supervisor peer
 address). No real device or plant broker is ever contacted; nothing is pushed.
+
+Write layer (0.3.0): the fake inverters understand exactly one write, FC16 with one register (the
+word is stored and echoed; `reject_writes` / `silent_writes` simulate a device exception and a lost
+acknowledgement). `Wire.assert_clean` fails on **any** write unless a test passes `allow_writes=True`,
+so every acceptance run also proves that the app writes nothing while writing is not released.
 
 ```sh
 cd e2e

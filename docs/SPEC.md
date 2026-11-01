@@ -1,6 +1,6 @@
 # Deye SG04LP3 Monitor — Specification v1
 
-Home Assistant app (formerly "add-on") that polls 1..n Deye SUN-5/6/8/10/12K-SG04LP3 (LV, three-phase) inverters, exposes the values to Home Assistant via MQTT Device Discovery and, later and only when explicitly enabled, can control selected settings. **The test phase is strictly read-only** (user not on site); the write layer is implemented only after the read part has been accepted (§10), but the architecture provides for it from the start.
+Home Assistant app (formerly "add-on") that polls 1..n Deye SUN-5/6/8/10/12K-SG04LP3 (LV, three-phase) inverters, exposes the values to Home Assistant via MQTT Device Discovery and, only when explicitly enabled per inverter and per setting, can change nine reviewed settings from the web interface (§10, write layer v1, version 0.3.0). **Without that enablement the app is strictly read-only**; live writes are performed exclusively by the owner.
 
 Knowledge base: `KB = <local knowledge base>`, in particular
 `KB/.orch/reviewer-codex-6.1-addon-grundlagen.md` (referred to below as **GRUNDLAGEN**, cited with section numbers),
@@ -9,9 +9,9 @@ Knowledge base: `KB = <local knowledge base>`, in particular
 ## 1. Hard limits (non-negotiable)
 
 1. **Read = FC03 only.** Without write enablement, every byte stream to a device (inverter, logger, gateway) is an FC03 read frame (Modbus TCP MBAP, RTU ADU or Solarman V5 request with inner FC03 RTU frame). No mask, broadcast, time, heartbeat-reply, logger-HTTP or restart paths, even with write enablement. No generic `execute(function_code)`.
-2. **Guard at the lowest send path:** a single function through which every device transmission runs decodes the frame. Allowed: FC03 (unit 1..247, count 1..125). FC16 (0x10) **only** if write enablement of the target inverter is active **and** every target address is in the write whitelist of the profile. Everything else → exception. In the test phase (until §10 is implemented) the FC16 path does not exist. Tests check wire bytes, not method names.
+2. **Guard at the lowest send path:** a single function through which every device transmission runs decodes the frame. Allowed: FC03 (unit 1..247, count 1..125). FC16 (0x10) with **count 1** only through the separate write guard (§10): the register must be in the fixed v1 table, the word must be the one a single-use grant names and only the bits of the register's mask may differ. FC06 never; everything else → exception. Tests check wire bytes, not method names.
 3. **No third-party library for device protocols** (no pysolarmanv5, which automatically sends time replies, GRUNDLAGEN §2.2; no pymodbus/ESPHome code). Framing is implemented in-house (small, tested).
-4. **Without write enablement no MQTT command topics**, no writing entity platforms and no subscriptions to command topics.
+4. **No MQTT command topics, no writing entity platforms and no subscriptions to command topics, with or without write enablement** (the write layer is reachable only through the Ingress web interface).
 5. No automatic network scans. Configured targets only.
 
 ## 2. Architecture
@@ -23,7 +23,7 @@ Python 3.14, asyncio, a single process. Package `deye_monitor` (src layout), ful
 | `config` | Loads `/data/options.json` (or path from env), pydantic v2 models, domain validation (§4). No I/O to devices. |
 | `protocol/modbus` | FC03 request construction, RTU CRC16, RTU response parser, MBAP construction/parser, exception responses (0x83). |
 | `protocol/solarman_v5` | V5 request construction (header 0xA5, control 0x4510, sequence, logger SN LE, checksum, 0x15) and stream parser (fragmented/coalesced frames, discard heartbeat/foreign frames, sequence/SN check, double-CRC quirk with re-validation). **Never reply** to incoming management/time frames. GRUNDLAGEN §2. |
-| `protocol/guard` | Read-only guard (§1.2). |
+| `protocol/guard` | Send guard (§1.2): the read guard and the separate single-register write guard with the fixed v1 table (§10). |
 | `transport` | `modbus_tcp`, `rtu_over_tcp`, `serial_rtu` (pyserial-asyncio-fast), `solarman_v5_tcp`. Persistent connection, deadline per request (default 5 s), reconnect with exponential backoff + jitter (2..60 s), byte-stream-safe reading. |
 | `scheduler` | Per `bus_id` FIFO + lock, max. 1 request in flight per endpoint, short pause between requests (default 50 ms), bounded queue. |
 | `profiles` | Curated, versioned register profiles as a data file (YAML) in the package + loader + decoder. Default profile `sg04lp3_lv_v105_8`. |
@@ -79,7 +79,7 @@ Connections (`endpoints`) and inverters (`inverters`) are created and edited **e
 
 * **Store.** `/data/plant.a.json` / `plant.b.json`: like the selection (§9.6), two complete slots with `seq` and SHA-256, atomic, the newest valid slot applies, a damaged slot is ignored/reported (copy `*.corrupt` when overwriting); if no slot is valid, the plant is empty and nothing runs until the user sets it up again (fail closed, no migration from the options). Own revision (`If-Match` of every plant change).
 * **Migration.** If the options contain `endpoints`/`inverters` and **no** plant file exists, they are taken over once (log + notice in the interface: please remove them from the options). Afterwards the store is authoritative; differing option entries only produce a notice, never a silent overwrite. A plant emptied by the user is not migrated again. The manifest keeps `endpoints`/`inverters` as optional lists (default empty).
-* **Interface.** Connections: transport as an explained choice (`modbus_tcp` port 502 = "Gateway (Modbus TCP → RTU)"; `rtu_over_tcp` = "Gateway transparent"; `solarman_v5_tcp` port 8899 with logger serial number *of the stick*; `serial_rtu` with dropdown from `/dev/serial/by-id/*`, listed only, baud rate 9600), fields per transport, Advanced section. Inverter: connection and fallback connection as dropdowns, unit ID (default 1), expected SN, energy resolution, intervals; the ID cannot be changed after creation. `allow_writes` cannot be set in the interface or in the API (display "Writing: not available"). A connection can be deleted only if no inverter uses it; when deleting an inverter, the identity binding is removed only after explicit confirmation.
+* **Interface.** Connections: transport as an explained choice (`modbus_tcp` port 502 = "Gateway (Modbus TCP → RTU)"; `rtu_over_tcp` = "Gateway transparent"; `solarman_v5_tcp` port 8899 with logger serial number *of the stick*; `serial_rtu` with dropdown from `/dev/serial/by-id/*`, listed only, baud rate 9600), fields per transport, Advanced section. Inverter: connection and fallback connection as dropdowns, unit ID (default 1), expected SN, energy resolution, intervals; the ID cannot be changed after creation. `allow_writes` and `enabled_write_operations` are not part of the inverter form or its API (the form keeps them unchanged, and drops them when the connection, unit, fallback or expected serial changes); they are set only by the dedicated release call (§10, display "Writing: off" by default). A connection can be deleted only if no inverter uses it; when deleting an inverter, the identity binding is removed only after explicit confirmation.
 * **Connection test (read-only).** Runs exactly the identity blocks of the profile via the normal guarded transport (FC03 only, deadline), via the bus scheduler of the running connection (same target in the running plant) or a temporary transport that is closed afterwards. Result: reachable, serial number (against expected and bound), model/MPPT plausibility, conflicts, typical hints per transport on errors. No change to the plant, one test at a time; the same target with a different connection type is rejected (`endpoint_in_use_by_other_transport`).
 * **Live adoption.** validate → adopt (stop the running generation of inverter runtimes, transports, schedulers and MQTT publisher in order, build new ones; discovery cleanup of removed inverters via the existing ledger; selection records of removed inverters are discarded, new inverters start with `awaiting_selection`) → persist durably. If adoption or persisting fails, the previous generation is restored (`adoption_failed` / `persist_failed`; only if that also fails `plant_recovery_failed`). Selection changes never run concurrently (shared lock). Security rules as in §9.5: Supervisor peer, user, CSRF, `If-Match`, strict schemas, no free registers/frames.
 
@@ -219,7 +219,7 @@ Per signal: number of responses, zero share, min/max, variability, daylight samp
 - Features per inverter (with suggestion from 9.2), searchable catalog grouped by category/measurement location with checkboxes; deviations from the template marked and individually resettable; hints from 9.4; plan budget display. "Apply to all inverters" with preview and capability check per target device (no transfer of SN binding or write enablements). Status view: connection path, identity (SN, firmware, role from R336), capability conflicts, energy generation, last successful poll, error counters. Action "Rebind identity" with explicit inverter selection.
 - **First start:** Card and setup show "Please select sensors" (link to the setup); quick actions in step 2: "Base only" (serial number, operating state, fault words 1–4) and "Deselect all", each as ordinary deviations from the template with preview and save; "Apply template unchanged" ends the state without change.
 - Technology: `ingress: true`, internal port, relative URLs, no host port exposure. Lightweight frontend without a build chain (Lit/Preact as vendor files in the package, no CDN requests), backend `aiohttp` in the same process, JSON API, HA look incl. dark mode, DE/EN, keyboard operation.
-- **Security (DR2-08):** Connections only from the Supervisor peer `172.30.32.2`, otherwise 403; evaluate `X-Remote-User-*`/Forwarded headers only after this peer check; missing user information does not count as admin. `panel_admin: true`. State-changing calls only via POST/PUT with revision number (`If-Match`-like) and CSRF token; never via GET. Request schema only known catalog keys/features, no free registers/paths/frames. Sensor checkboxes cannot set `allow_writes`. Rebinding invalidates old snapshots, capabilities and (later) write permits.
+- **Security (DR2-08):** Connections only from the Supervisor peer `172.30.32.2`, otherwise 403; evaluate `X-Remote-User-*`/Forwarded headers only after this peer check; missing user information does not count as admin. `panel_admin: true`. State-changing calls only via POST/PUT with revision number (`If-Match`-like) and CSRF token; never via GET. Request schema only known catalog keys/features, no free registers/paths/frames. Sensor checkboxes, the setup assistant and "apply to all" cannot set `allow_writes` or `enabled_write_operations`. Rebinding invalidates old snapshots, capabilities and write permits.
 
 ### 9.5a Addendum T14
 
@@ -249,15 +249,60 @@ succeeds. Battery state comes from the single member whose R336 says parallel ma
 power per member is battery voltage x battery current (positive = discharging); the BMS bank view is
 `-(BMS voltage x BMS current)` because R216 is positive while charging.
 
-## 10. Write layer (T13+, after acceptance of the read part)
+## 10. Write layer v1 (version 0.3.0)
 
-Framework: per inverter `allow_writes: false` (default); without enablement, behavior exactly as in §1. Before implementation, a separate write contract is accepted that satisfies at least REVIEW2 DR2-09 through DR2-13:
+Accepted contract: Codex' write contract v1 (`reviewer-codex-6.1-write-contract-1.md` with its catalogue evidence) on top of REVIEW2 DR2-09 through DR2-13, with the owner decisions below. Per inverter `allow_writes: false` and `enabled_write_operations: []` are the defaults; without them the behavior is exactly §1. Live writes are performed exclusively by the owner; agents and tests only ever write to fake devices (the E2E and unit harnesses refuse real endpoints).
 
-- **Guard (DR2-09):** separate, typed read/write operations; FC16 = 0x10; count 1..123, byte count `2n`, PDU `6+2n`, RTU ADU `9+2n`, MBAP total length `13+2n`; V5 envelope unchanged strict. Check write response echo (FC/start/count), exception 0x90. Every operation binds SN, identity/profile revision, endpoint, unit, permitted value encoding and mask. Re-check `allow_writes` + permit **immediately when sending**; fallback/rebinding/profile change revokes permits. No global "FC16 allowed".
-- **Bit fields (DR2-10):** own bit mask/enum per operation; read-modify-write on the same identity-checked connection within the bus lock; foreign bits are preserved; report a conflict instead of overwriting. ToU plans as a domain-level multi-register operation.
-- **Result (DR2-11):** status `rejected, sent, readback_confirmed, failed, outcome_unknown`; no automatic retry, no write fallback to another endpoint, no auto-rollback. HA telemetry always shows the read value; command result separately.
-- **Authorization/MQTT (DR2-12):** all inputs check the current server-side enablement; deactivation revokes queues/permits and removes command subscriptions; no commands replayed after reconnect/restart; expiry, deduplication, boot/enablement generation; retained commands are ignored.
-- **Whitelist (DR2-13):** starts empty; every function individually with profile/firmware/precondition/verification contract and explicit user decision. Topology, protection, battery type, factory, reset, watchdog functions (among others R80, R111, R336, R341, R1100–R1121) not as a by-catch; R336 not as the first demo. Live writes are performed exclusively by the user.
+### 10.1 Owner decisions (version 0.3.0)
+
+- **Whitelist v1 = nine descriptors**: R108, R109, R125, R128, R130 bit 0, R134, R135, R136, R137 (table in 10.2). Each must still be enabled per inverter by the owner (`allow_writes` **and** the operation in `enabled_write_operations`).
+- **Current cap per model** replaces the generic 0-185 A of V105.8 for R108/R109/R125/R128. Source: vendor datasheet `Datenblatt SUN-5-12k-SG04LP3.pdf` (knowledge base, Specs/): maximum charge/discharge current 5K 120 A, 6K 150 A, 8K 190 A, 10K 210 A, 12K 240 A. The model comes from the rated power (R20 low word, R21 high word, 0.1 W units; exactly 5/6/8/10/12 kW). An unknown model locks the operation. The source is documented in the descriptor (`write_ops.py`).
+- **Excluded in v1**: R115/R116/R117 SOC protection thresholds, R141/R142 work mode, time-of-use R146/R148-177, the clock, and the full deny list (R80, R81, R91, R92, R22-R24, R98, R111, R336, R341, R1100-R1121, everything not listed).
+- **Web UI only** (Ingress admin user, CSRF, plant revision); no MQTT command path, no HA number/select/switch entities.
+- **No preselected write target** in a parallel plant. UI text: "Writes this inverter only. Other inverters are observed; matching values do not prove synchronization." Peer observation on all other plant members (same / different / unavailable).
+- **Defaults**: 1 s observation delay, at least 5 s pacing between plant writes, permit 30 s, single-use operation id.
+- FC16 with count=1 only through the lowest byte guard; FC06 never; no retry, fallback, rollback or fan-out. Field read-modify-write with mask (R130 bit 0 preserves all other bits). Durable audit log, intent before the send, with the DR2-11 statuses.
+- Smart Load descriptors are gated on GEN = Smart Load (R133); ON/OFF ordering is application policy; one field per confirmation. The mode (SOC vs voltage) is not inferred from `bms`.
+
+### 10.2 Whitelist
+
+All wire words are unsigned 16-bit, big-endian; engineering values must encode exactly into an integer (no rounding).
+
+| Operation key | Register | Encoding / mask | Range | Preconditions |
+| --- | --- | --- | --- | --- |
+| `battery_charge_current` | R108 | 1 A, `0xFFFF` | 0 to model cap | battery present |
+| `battery_discharge_current` | R109 | 1 A, `0xFFFF` | 0 to model cap | battery present; may reduce island support |
+| `generator_charge_current` | R125 | 1 A, `0xFFFF` | 0 to model cap | battery present; verified generator charging only |
+| `grid_charge_current` | R128 | 1 A, `0xFFFF` | 0 to model cap | battery present |
+| `grid_charge_enable` | R130 bit 0 | `0x0001`, shift 0 | 0 or 1 | battery present; all other bits preserved |
+| `smart_load_off_voltage` | R134 | V x 100, `0xFFFF` | 3800-6300 (38.00-63.00 V) | GEN = Smart Load; OFF < ON |
+| `smart_load_off_soc` | R135 | 1 %, `0xFFFF` | 0-100 | GEN = Smart Load; OFF < ON |
+| `smart_load_on_voltage` | R136 | V x 100, `0xFFFF` | 3800-6300 | GEN = Smart Load; ON > OFF |
+| `smart_load_on_soc` | R137 | 1 %, `0xFFFF` | 0-100 | GEN = Smart Load; ON > OFF |
+
+A stored value outside the accepted range (so that it could not be restored inside the envelope, for instance 210 A on an 8 kW model) locks the operation. The descriptors are released for the hardware profile `sg04lp3_eu` only; the permit binds the full firmware words (R15, R17, R18) read at the preview, so a firmware change voids it.
+
+### 10.3 Guard (DR2-09)
+
+`protocol/modbus` builds FC16 with count 1 (byte count 2, PDU 8 bytes, RTU request 11, MBAP request 15 with length field 9, V5 request 39 bytes); echo is RTU 8 / MBAP 12 bytes, exception `0x90` is RTU 5 / MBAP 9. `protocol/guard.guard_write_frame` checks exactly one complete frame against a `WriteGrant` (unit, register, mask, old word, new word): register in the fixed table (also not in the explicit deny list), mask equal to the register's writable mask, count 1 and byte count 2, unit = configured target (a V5 logger only on inner unit 1), the word equals the grant, bits outside the mask equal the old word, the word differs from the old one, no padding or concatenated frames, V5 envelope and metadata unchanged strict. The read guard still refuses every FC16/FC06 frame. The transport's one write sink (`StreamTransport._write_checked`) runs this guard and sends exactly the bytes it returns. `transport.write_register` returns the echo, raises `ModbusExceptionResponse` for a device exception, `WriteNotSent` if no byte was handed to the stream and `WriteIndeterminate` after a possible transmission; it is never retried.
+
+### 10.4 Flow, permits and serialisation (DR2-12)
+
+1. **Preview** (`POST api/inverters/<id>/writes/preview`, user, CSRF, plant revision): reads the target's context (serial, firmware words, rated power, R336, the register, R133 and the companion threshold) inside one bus critical section on the primary route, snapshots the same register of every other plant inverter with its own bound serial (an unreachable or unidentified peer blocks the preview), validates the value and issues a single-use operation id with a 30 s permit bound to user, boot, plant revision, enablement, inverter, serial, firmware words, role, endpoint, unit, connection epoch, lifecycle epoch, the context words and old/new words. A new preview of the same inverter revokes the older permit.
+2. **Confirm** (`POST api/writes/operations/<id>/confirm`): one plant write at a time (own lock), at least `pacing_s` after the previous send; the authorisation is checked again at the final send point; inside the bus critical section the whole context is read again and must equal the preview's (any change is a conflict, nothing is sent); the audit intent is appended (failure blocks the send); then exactly one FC16. Double submits, replays and other users are refused. The permit is void after expiry, after a revoke, with a plant change (new generation), with any change of enablement, route, unit, serial, firmware or connection, and after a restart (nothing is queued for later or replayed).
+3. **Observe**: after `observe_delay_s` the target and every peer are read back (each with the bound serial read in the same bus section); the bus locks are released during the delays while the write lock is kept. An unanswered write starts the endpoint cooldown; the read-back is retried once after it.
+
+The exchange (read-modify-write and acknowledgement) lies in one physical-bus critical section and does not nest the scheduler locks. It excludes competing app traffic, not external cloud/LCD writers: Modbus has no compare-and-swap, so cross-controller atomicity is not promised.
+
+### 10.5 Result and audit (DR2-11)
+
+Statuses: `rejected` (before sending), `sent` (unresolved), `failed` (validated device exception), `readback_confirmed` (valid acknowledgement and the fresh complete word equals the requested one), `outcome_unknown` (possible transmission with timeout, malformed acknowledgement, or inconclusive/mismatching read-back). After a missing acknowledgement a matching later observation is recorded but does not establish attribution (`attribution: not_established`). `/data/write-audit.jsonl` is append-only and fsynced: intent (before the send), result (after the acknowledgement or failure), final result (after the observation), owner verification and drift records, each with operation id, user, bindings, route, unit, field, register, mask, old/requested/encoded words, the response and the target/peer observations. Unfinished `sent` entries become `outcome_unknown` at the next start and are never replayed. Telemetry always remains read-derived; peers are reported as same/different/unavailable with baseline and later value, never as "propagated". Deviation from the contract: later drift is detected at the next fresh read of the dialog (none of the nine registers is in the polled profile), not on ordinary polls; it is recorded and never reasserted.
+
+An acknowledgement plus read-back proves the value in MCU1's settings RAM only, not MCU2 adoption, not persistence and not the effect; the owner's display/effect check is recorded separately.
+
+### 10.6 Tests (fakes only)
+
+Exact RTU/MBAP/V5 frames and parsers, guard rejections, descriptor boundaries/steps/enums/masks/model caps, permits (expiry, revoke, replay, double submit, restart, plant change), audit failure blocks the send, ambiguous acknowledgements with exactly one FC16, pacing, peer observation wording, zero writes while disabled, and a browser end-to-end test of the whole flow on isolated fake inverters. The E2E fakes store FC16 words and fail any acceptance run in which a write arrives unexpectedly.
 
 ## 11. Not in v1
 

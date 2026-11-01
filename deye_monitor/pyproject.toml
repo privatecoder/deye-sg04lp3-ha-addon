@@ -1,7 +1,7 @@
 [project]
 name = "deye-monitor"
-version = "0.2.13"
-description = "Read-only Home Assistant app for Deye SUN-xK-SG04LP3 inverters"
+version = "0.3.0"
+description = "Home Assistant app for Deye SUN-xK-SG04LP3 inverters (reads by default, opt-in writing)"
 requires-python = ">=3.14,<3.15"
 license = { text = "MIT" }
 dependencies = [
@@ -55,6 +55,7 @@ select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
 "tests/test_ui_t11_fix.py" = ["ASYNC240", "ASYNC110", "RUF001", "F811"]
 "tests/test_ui_awaiting.py" = ["ASYNC240", "RUF001", "F811"]
 "tests/test_ui_plant.py" = ["ASYNC240", "ASYNC110", "RUF001", "F811"]
+"tests/test_ui_writes.py" = ["RUF001", "F811"]
 "tests/test_plant.py" = ["ASYNC240", "ASYNC110"]
 "tests/test_plant_review9.py" = ["ASYNC240", "ASYNC110"]
 "tests/test_ui_plant_review9.py" = ["F811", "RUF001"]

@@ -2,20 +2,21 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher (0.2.10, experimental).** The app validates its
-> configuration, then connects to the configured endpoints (read-only, Modbus function code 03
-> only), identifies each inverter, binds and checks its serial number, polls the selected
+> **Status: device loop with MQTT publisher and an opt-in write layer (0.3.0, experimental).**
+> The app validates its configuration, then connects to the configured endpoints (read-only
+> by default: Modbus function code 03 only; the nine settings under “Writing settings” can be
+> released per inverter and are written only from the web interface), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
 > discovery state in `/data`. The values are published through MQTT Device Discovery, so
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.2.10 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.3.0 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
-The sensor-selection web interface (Ingress) is described under “Web interface”. Planned (not
-implemented yet): the write layer. For tests and CI the environment variable `DEYE_MONITOR_NO_DEVICES=1` starts the app in a validation-only mode without any
+The sensor-selection web interface (Ingress) is described under “Web interface”, the write layer
+under “Writing settings”. For tests and CI the environment variable `DEYE_MONITOR_NO_DEVICES=1` starts the app in a validation-only mode without any
 device loop and without the publisher.
 
 ## MQTT and Home Assistant
@@ -137,14 +138,15 @@ device loop and without the publisher.
   cannot be written, nothing is published and the app stays `offline`.
 * **Inverter id `app`** is reserved for the app device.
 
-## Read-only design
+## Read-only by default
 
-The app is read-only. The only thing it sends to a device is
-Modbus function code 03 (read holding registers), wrapped for the chosen transport; a guard at the
-sending sink rejects every other frame. There are no write paths, no command topics and no entities
-that write. The option `allow_writes` exists only for a later version; setting it to `true` logs a
-warning and changes nothing. The app never scans the network or the serial ports; it connects
-only to the endpoints you list.
+Out of the box the app is read-only. The only thing it sends to a device is Modbus function code 03
+(read holding registers), wrapped for the chosen transport; a guard at the sending sink rejects
+every other frame. There are no command topics and no entities that write, in any configuration.
+Writing exists only as an explicit, per-inverter, per-setting opt-in that is used from the web
+interface (see “Writing settings”); `allow_writes` is `false` and `enabled_write_operations` is
+empty until you change them there. The app never scans the network or the serial ports; it
+connects only to the endpoints you list.
 
 ## Why `uart: true`
 
@@ -233,7 +235,8 @@ When several endpoints reach one physical bus under different names, give them t
 | `poll_energy_s` | Interval for energy counters, default 60. |
 | `poll_settings_s` | Interval for settings (diagnostic only), default 300. |
 | `poll_identity_s` | Interval for identity registers, default 3600. |
-| `allow_writes` | Reserved, no effect (see above). |
+| `allow_writes` | Master switch of the write layer for this inverter (default `false`). Set in the web interface (plant page), never in the inverter form. Without the matching entry in `enabled_write_operations` nothing can be written. |
+| `enabled_write_operations` | The settings released for writing on this inverter (default: none). A subset of the nine operations listed under “Writing settings”. |
 
 On one bus (same host and port, or the same `bus_id`) every `unit_id` can belong to only one inverter.
 Separate gateways may all use unit 1.
@@ -305,6 +308,84 @@ there, or set "Energy resolution" in the inverter's connection settings. The cho
 statistics series (the old one is never continued with another factor). Check afterwards that
 the daily PV energy matches the display.
 
+## Writing settings
+
+Writing is **off by default** and **per inverter and per setting**. It exists for nine reviewed
+settings of the SG04LP3 only (register numbers of the V105.8 protocol document; every write is
+exactly one register, function code 16 with count 1):
+
+| Setting | Register | Range |
+| --- | --- | --- |
+| Maximum battery charge current | R108 | 0 to the model limit |
+| Maximum battery discharge current | R109 | 0 to the model limit |
+| Generator charge current | R125 | 0 to the model limit |
+| GRID charge current | R128 | 0 to the model limit |
+| GRID charge enable (bit 0 only) | R130 | 0 or 1, all other bits are preserved |
+| Smart Load OFF voltage | R134 | 38.00 to 63.00 V (steps of 0.01 V) |
+| Smart Load OFF SOC | R135 | 0 to 100 % |
+| Smart Load ON voltage | R136 | 38.00 to 63.00 V (steps of 0.01 V) |
+| Smart Load ON SOC | R137 | 0 to 100 % |
+
+The model limit of the four current settings comes from the vendor datasheet (5K 120 A, 6K 150 A,
+8K 190 A, 10K 210 A, 12K 240 A) and is selected from the rated power the inverter reports
+(registers 20/21, exactly 5, 6, 8, 10 or 12 kW). If the model cannot be determined, or the stored
+value is outside the allowed range (so it could not be restored), the setting stays locked. The
+Smart Load settings are offered only while the GEN port is already configured as Smart Load; OFF
+must stay below ON (a rule of this app, not a proven firmware check); the app does not infer from
+the BMS setting whether the load works by voltage or by SOC - you enable the pair you really use
+and check the mode at the display. Everything else (protection and shutdown thresholds, work mode,
+time-of-use, clock, battery type, topology, identity and every other register) cannot be written.
+
+**Enabling.** Plant page → inverter card → “Writing”: tick the master switch **and** the settings
+you want to allow, then save. Both are needed; the default is off. This is a plant change (the
+polling generation is rebuilt). There is no way to enable writing through the sensor selection,
+the setup assistant or “apply to all”.
+
+**The flow** (inverter page → “Change settings”; admin user, CSRF and the plant revision are
+required):
+
+1. The dialog reads the enabled settings freshly from the inverter and shows the current value.
+2. You enter a value and open the **preview**: target inverter (serial, role), old → new value,
+   the raw register word and mask, the risk note, and the values of every other inverter of the
+   plant before the change. Nothing is sent. If another inverter is unreachable or not
+   identified, no preview is issued. The text “Writes this inverter only. Other inverters are
+   observed; matching values do not prove synchronization.” is always shown; there is no
+   preselected write target in a parallel plant.
+3. You confirm. The preview issued a **single-use operation id** valid for 30 seconds. At the send
+   point the app checks again that writing is still enabled, that user, plant revision, inverter,
+   serial number, firmware words, role, route, unit and connection are unchanged, reads the whole
+   register again inside one bus critical section (any change since the preview is a conflict
+   that needs a new preview), writes the durable audit log entry (if the log cannot be written,
+   nothing is sent) and sends exactly one FC16 frame for one register through the write guard.
+   There is no retry, no FC06, no fallback endpoint, no fan-out to other inverters and no
+   automatic rollback. Writes of the whole plant are serialised with at least 5 seconds between
+   them (a conservative field workaround, not a vendor guarantee).
+4. After 1 second the app reads the target register back and the same register of every other
+   inverter and shows the result.
+
+**Statuses** (also in the audit log, `/data/write-audit.jsonl`): `rejected` (nothing was sent),
+`sent` (in progress), `failed` (the device answered with an exception code), `readback_confirmed`
+(valid acknowledgement and the fresh complete word equals the requested one) and `outcome_unknown`
+(the frame may have been transmitted but there is no valid acknowledgement, or the read-back is
+missing or different). After a restart an unfinished `sent` entry becomes `outcome_unknown`; an
+operation is never replayed. A restart, a plant change or switching the release off voids every
+pending permit.
+
+**What the read-back proves and what not.** A valid acknowledgement with a matching read-back
+shows the value in the settings memory of the inverter's communication processor (MCU1). It does
+not show that MCU2 adopted it, that it survives a restart, that the setting has the intended
+effect, or that other inverters follow. Other inverters are only observed and reported as
+same / different / unavailable, with their values before and after - never as “propagated”.
+After `outcome_unknown` a later matching value is recorded but does not show that this command
+caused it. External writers (the display, the cloud) are not excluded: Modbus has no
+compare-and-swap. Your own check of the display or the effect is recorded separately (“Checked at
+the device”). A change made by someone else later is noticed the next time the dialog reads the
+values and recorded as drift; the app never reasserts a setting by itself.
+
+**First test.** Use the owner-only procedure `docs/FIRST-WRITE-RUNBOOK.md`: one slave, one
+inactive and reversible setting, baseline and display check first, restore as a new operation.
+Never use these buttons to “try something” on a plant you depend on.
+
 ## First live read test
 
 A step-by-step runbook for the first read-only test against real devices (preparation, minimal
@@ -364,8 +445,10 @@ from the empty overview; the page **Set up plant** (top navigation) edits everyt
   **cannot be changed after creating** because Home Assistant recognises the entities by it),
   **connection** and optional **fallback connection** as drop-downs of the connections you created,
   Modbus address (default 1; fallback address defaults to the same), optional expected serial
-  number, energy resolution, polling intervals (advanced). Writing is not available: the page shows
-  “Writing: not available” and `allow_writes` cannot be set there. Deleting an inverter asks for
+  number, energy resolution, polling intervals (advanced). The inverter form does not set the write
+  release; the card has its own “Writing” section for it (default off, see “Writing settings”).
+  Changing the connection, the Modbus address, the fallback connection or the expected serial
+  number withdraws the release. Deleting an inverter asks for
   confirmation; its stored serial-number binding is only removed if you tick the extra box (its
   entities in Home Assistant are cleaned up through the cleanup ledger, the history stays).
 * **Check connection** (button in the connection and inverter dialogs, on the inverter card and in
@@ -447,7 +530,7 @@ card (totals and the status of every member).
    (marked GLOBAL) and empty the cleanup list. Each action explains its effect and only runs after
    you typed the confirmation text.
 
-Without a Home Assistant user (not through Ingress) everything is read-only.
+Without a Home Assistant user (not through Ingress) everything is read-only, writing included.
 
 ### Backend of the web interface
 
@@ -472,9 +555,16 @@ Without a Home Assistant user (not through Ingress) everything is read-only.
 - The JSON API accepts connections from the Supervisor (`172.30.32.2`) only. Changes need a user
   (`X-Remote-User-Id`), the CSRF token from `GET api/session`, a JSON body with known keys only and
   the current revision in `If-Match`; a stale revision is answered with 409. Placeholder and
-  unsupported entries cannot be enabled, `allow_writes` cannot be set, nothing can write to a
-  device. Identity re-binding and store resets need explicit confirmation fields; resetting all
+  unsupported entries cannot be enabled, `allow_writes` cannot be set through the sensor, inverter
+  or transfer calls, and there is no generic register, hex or frame call. The write layer has its
+  own calls (below). Identity re-binding and store resets need explicit confirmation fields; resetting all
   identity bindings is a separate, explicitly global action.
+- Write layer routes (all changing calls need user, CSRF and the plant revision in `If-Match`):
+  `PUT api/plant/inverters/<id>/writes` (release: `allow_writes` and `operations`; a plant change),
+  `GET api/writes/catalogue`, `POST api/inverters/<id>/writes/current` (fresh values, read only),
+  `POST api/inverters/<id>/writes/preview`, `POST api/writes/operations/<operation id>/confirm`,
+  `POST api/writes/operations/<operation id>/verification`, `GET api/writes/operations/<id>` and
+  `GET api/inverters/<id>/writes/operations` (audit list). There is no MQTT path to any of them.
 - `POST api/inverters/<id>/sensors` (and `…/sensors/preview`) accept, besides `add` / `remove` /
   `reset`, the plant `features` and `restore_template`, so the interface previews and saves a whole
   draft as one atomic change. The catalog carries a plain-language `description` (de/en) and a

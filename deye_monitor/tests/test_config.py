@@ -496,18 +496,26 @@ def test_nan_from_json_rejected(tmp_path: Path) -> None:
         load_config(path)
 
 
-def test_allow_writes_only_warns(caplog: pytest.LogCaptureFixture) -> None:
+def test_write_enablement_defaults_off_and_is_validated() -> None:
     data = minimal()
-    with caplog.at_level(logging.WARNING, logger="deye_monitor.config"):
-        parse_config(data)
-    assert not caplog.records
+    cfg = parse_config(data)
+    assert cfg.inverters[0].allow_writes is False
+    assert cfg.inverters[0].enabled_write_operations == ()
     data["inverters"][0]["allow_writes"] = True
-    with caplog.at_level(logging.WARNING, logger="deye_monitor.config"):
-        cfg = parse_config(data)
-    assert cfg.inverters[0].allow_writes is True
-    assert any("Schreibschicht nicht implementiert" in r.getMessage() for r in caplog.records)
+    data["inverters"][0]["enabled_write_operations"] = [
+        "grid_charge_enable",
+        "battery_charge_current",
+    ]
+    inv = parse_config(data).inverters[0]
+    assert inv.allow_writes is True
+    # canonical order of the whitelist, whatever order was given
+    assert inv.enabled_write_operations == ("battery_charge_current", "grid_charge_enable")
     data["inverters"][0]["allow_writes"] = "yes"
     assert "allow_writes" in bad(data)
+    data["inverters"][0]["allow_writes"] = True
+    for operations in (["work_mode"], ["grid_charge_enable", "grid_charge_enable"], "grid_charge"):
+        data["inverters"][0]["enabled_write_operations"] = operations
+        assert "enabled_write_operations" in bad(data)
 
 
 def test_instance_id_persists_across_loads(tmp_path: Path) -> None:

@@ -4,8 +4,10 @@ Security (DR2-08): connections are accepted only from the Supervisor peer; ``X-R
 read only after that check and a missing user is never an administrator. Changing calls are
 POST/PUT only, need a user, a CSRF token bound to that user, a JSON body that matches a strict
 schema (known keys only, no free registers/paths/frames) and, for selection changes, the current
-revision in ``If-Match``. Nothing here can enable writes to a device. Responses carry text KEYS
-(the UI translates); no secrets and no raw frames.
+revision in ``If-Match``. Writing (SPEC §10) is possible only through the dedicated write calls:
+an inverter must be enabled per operation first (plant change), every write needs its own preview
+and confirmation of a single-use operation id, and there is no generic register/frame call.
+Responses carry text KEYS (the UI translates); no secrets and no raw frames.
 """
 
 from __future__ import annotations
@@ -52,6 +54,8 @@ from deye_monitor.selection import (
     SelectionManager,
 )
 from deye_monitor.totals import PLANT_INPUTS
+from deye_monitor.write_ops import OPERATION_KEYS, Refused
+from deye_monitor.writes import WriteService
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +67,7 @@ MAX_KEYS = 600
 
 _KEY_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _ID_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+_OPERATION_RE = re.compile(r"^[0-9a-f]{32}$")
 _REVISION_RE = re.compile(r'^(?:W/)?"?([0-9]{1,12})"?$')
 _SERIAL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$")
 _ENDPOINT_FIELDS = (
@@ -396,6 +401,14 @@ class WebApi:
             r.add_post("/api/plant/inverters/{inverter}/delete", self._inverter_delete)
             r.add_put("/api/plant/totals", self._totals_update)
             r.add_post("/api/plant/test", self._plant_test)
+            r.add_put("/api/plant/inverters/{inverter}/writes", self._writes_enable)
+            r.add_get("/api/writes/catalogue", self._writes_catalogue)
+            r.add_get("/api/writes/operations/{operation}", self._writes_operation)
+            r.add_post("/api/writes/operations/{operation}/confirm", self._writes_confirm)
+            r.add_post("/api/writes/operations/{operation}/verification", self._writes_verify)
+            r.add_get("/api/inverters/{inverter}/writes/operations", self._writes_operations)
+            r.add_post("/api/inverters/{inverter}/writes/current", self._writes_current)
+            r.add_post("/api/inverters/{inverter}/writes/preview", self._writes_preview)
         return app
 
     async def start(self) -> int:
@@ -536,7 +549,7 @@ class WebApi:
                 "store": {"status": store.status.value, "source": store.source},
                 "problems": [p.as_dict() for p in store.problems]
                 + ([p.as_dict() for p in self.plant.store.problems] if self.plant else []),
-                "writes_enabled": False,
+                "writes_enabled": self._writes_enabled(),
                 "plant_revision": self.plant.revision if self.plant else None,
                 "setup_needed": not self.manager.specs,
                 "plant_notices": (list(self.plant.notices) if self.plant else [])
@@ -965,8 +978,12 @@ class WebApi:
                 data["host"] = e.host_display or e.host
             endpoints.append({**data, "used_by": users[e.id]})
         inverters = [
-            # neither is set in the web interface (the profile is fixed, writing does not exist)
-            i.model_dump(mode="json", exclude_none=True, exclude={"allow_writes", "profile"})
+            # the profile is fixed; write enablement has its own call and its own view below
+            i.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude={"allow_writes", "enabled_write_operations", "profile"},
+            )
             for i in plant.inverters
         ]
         return {
@@ -981,7 +998,16 @@ class WebApi:
             },
             "notices": list(service.notices),
             "limits": {"endpoints": MAX_ENDPOINTS, "inverters": MAX_INVERTERS},
-            "writes": "unavailable",
+            "writes": {
+                "operations": WriteService.catalogue_views(),
+                "inverters": {
+                    i.id: {
+                        "allow_writes": i.allow_writes,
+                        "operations": list(i.enabled_write_operations),
+                    }
+                    for i in plant.inverters
+                },
+            },
         }
 
     async def _plant(self, request: web.Request) -> web.Response:
@@ -1168,12 +1194,28 @@ class WebApi:
 
         def build(plant: PlantConfig) -> PlantConfig:
             updated = self._v5_fallback_default(inverter, body, plant)
+            old = next(i for i in plant.inverters if i.id == inverter_id)
+            updated = self._keep_write_enablement(old, updated)
             return self._plant_checked(
                 list(plant.endpoints),
                 [updated if i.id == inverter_id else i for i in plant.inverters],
             )
 
         return await self._plant_change(expected, build)
+
+    @staticmethod
+    def _keep_write_enablement(old: InverterConfig, new: InverterConfig) -> InverterConfig:
+        """The inverter form never sets write enablement. It is kept, unless the way to the device
+        or its pinned identity changed: then the owner has to enable writing again."""
+        route = ("endpoint", "unit_id", "fallback_endpoint", "fallback_unit_id", "expected_serial")
+        if any(getattr(old, f) != getattr(new, f) for f in route):
+            return new
+        return new.model_copy(
+            update={
+                "allow_writes": old.allow_writes,
+                "enabled_write_operations": old.enabled_write_operations,
+            }
+        )
 
     def _plant_inverter_of(self, request: web.Request) -> str:
         inverter_id = request.match_info["inverter"]
@@ -1298,6 +1340,142 @@ class WebApi:
             except probe.EndpointInUse:
                 raise ChangeError("endpoint_in_use_by_other_transport", 409) from None
         return json_response(result)
+
+    # -- writing (SPEC §10) -----------------------------------------------------------------
+
+    def _writes_enabled(self) -> bool:
+        if self.plant is None or self._in_recovery():
+            return False
+        return any(
+            i.allow_writes and i.enabled_write_operations for i in self.plant.plant.inverters
+        )
+
+    def _writes(self) -> WriteService:
+        service = self.runtime.writes
+        service.plant_revision = lambda: self.plant.revision if self.plant else None
+        return service
+
+    @staticmethod
+    def _refusal(exc: Refused) -> ChangeError:
+        return ChangeError(exc.key, exc.status, **exc.params)
+
+    def _write_gate(self, expected: int | None) -> int:
+        """Writes are bound to the plant revision (enablement is part of it)."""
+        assert expected is not None
+        revision = self._plant_service().revision
+        if expected != revision:
+            raise ChangeError("stale_revision", 409, current=revision)
+        return revision
+
+    async def _writes_catalogue(self, request: web.Request) -> web.Response:
+        return json_response({"operations": WriteService.catalogue_views()})
+
+    async def _writes_enable(self, request: web.Request) -> web.Response:
+        """Per inverter: the master switch and the operations the owner releases. Changing it is a
+        plant change (new generation), so every pending permit is void."""
+        inverter_id = self._plant_inverter_of(request)
+        _, body, expected = await self._mutation(request, revision=True)
+        assert expected is not None
+        data = _object(body, required=["allow_writes", "operations"])
+        flag = data["allow_writes"]
+        operations = data["operations"]
+        if not isinstance(flag, bool):
+            raise _field_error("allow_writes", "invalid")
+        if (
+            not isinstance(operations, list)
+            or len(operations) > len(OPERATION_KEYS)
+            or not all(isinstance(k, str) and k in OPERATION_KEYS for k in operations)
+            or len(set(operations)) != len(operations)
+        ):
+            raise _field_error("operations", "invalid")
+
+        def build(plant: PlantConfig) -> PlantConfig:
+            old = next(i for i in plant.inverters if i.id == inverter_id)
+            try:
+                updated = InverterConfig.model_validate(
+                    {
+                        **old.model_dump(mode="json", exclude_none=True),
+                        "allow_writes": flag,
+                        "enabled_write_operations": operations,
+                    }
+                )
+            except ValidationError as exc:
+                raise _validation_error(exc) from None
+            return self._plant_checked(
+                list(plant.endpoints),
+                [updated if i.id == inverter_id else i for i in plant.inverters],
+            )
+
+        return await self._plant_change(expected, build)
+
+    async def _writes_current(self, request: web.Request) -> web.Response:
+        """Fresh values of the enabled operations (reads only)."""
+        inverter_id = self._inverter_of(request)
+        _, body, _ = await self._mutation(request, revision=False)
+        _object(body)
+        try:
+            rows = await self._writes().current(inverter_id)
+        except Refused as exc:
+            raise self._refusal(exc) from None
+        return json_response({"plant_revision": self._plant_service().revision, "operations": rows})
+
+    async def _writes_preview(self, request: web.Request) -> web.Response:
+        inverter_id = self._inverter_of(request)
+        user, body, expected = await self._mutation(request, revision=True)
+        revision = self._write_gate(expected)
+        data = _object(body, required=["operation", "value"])
+        key = data["operation"]
+        if not isinstance(key, str) or key not in OPERATION_KEYS:
+            raise ChangeError("unknown_operation", 404)
+        try:
+            preview = await self._writes().preview(
+                inverter_id, key, data["value"], user_id=user.id, plant_revision=revision
+            )
+        except Refused as exc:
+            raise self._refusal(exc) from None
+        return json_response({"preview": preview})
+
+    def _operation_of(self, request: web.Request) -> str:
+        operation_id = request.match_info["operation"]
+        if not _OPERATION_RE.match(operation_id):
+            raise ChangeError("unknown_operation", 404)
+        return operation_id
+
+    async def _writes_confirm(self, request: web.Request) -> web.Response:
+        operation_id = self._operation_of(request)
+        user, body, expected = await self._mutation(request, revision=True)
+        revision = self._write_gate(expected)
+        _object(body)
+        try:
+            operation = await self._writes().confirm(
+                operation_id, user_id=user.id, plant_revision=revision
+            )
+        except Refused as exc:
+            raise self._refusal(exc) from None
+        return json_response({"operation": operation})
+
+    async def _writes_verify(self, request: web.Request) -> web.Response:
+        operation_id = self._operation_of(request)
+        user, body, _ = await self._mutation(request, revision=False)
+        data = _object(body, required=["state"], optional=["note"])
+        note = data.get("note", "")
+        if not isinstance(note, str) or not isinstance(data["state"], str):
+            raise ChangeError("invalid_request", field="state")
+        try:
+            operation = self._writes().verify(operation_id, data["state"], note, user.id)
+        except Refused as exc:
+            raise self._refusal(exc) from None
+        return json_response({"operation": operation})
+
+    async def _writes_operation(self, request: web.Request) -> web.Response:
+        operation = self._writes().operation(self._operation_of(request))
+        if operation is None:
+            raise ChangeError("unknown_operation", 404)
+        return json_response({"operation": operation})
+
+    async def _writes_operations(self, request: web.Request) -> web.Response:
+        inverter_id = self._inverter_of(request)
+        return json_response({"operations": self._writes().operations(inverter_id)})
 
 
 def _header(request: web.Request, name: str) -> str | None:

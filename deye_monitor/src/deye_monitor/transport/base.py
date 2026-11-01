@@ -36,8 +36,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from deye_monitor.protocol.guard import Framing, guard_frame
-from deye_monitor.protocol.modbus import ModbusExceptionResponse, ModbusFrameError
+from deye_monitor.protocol.guard import Framing, WriteGrant, guard_frame, guard_write_frame
+from deye_monitor.protocol.modbus import ModbusExceptionResponse, ModbusFrameError, WriteAck
 from deye_monitor.protocol.solarman_v5 import V5LoggerError
 
 Connector = Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]
@@ -69,6 +69,15 @@ class ResyncFailed(TransportError):
     """The line could not be brought into a known state (noise, wrong or missing probe answer)."""
 
 
+class WriteNotSent(TransportError):
+    """A write failed BEFORE any byte of it was handed to the stream: nothing happened."""
+
+
+class WriteIndeterminate(TransportError):
+    """A write failed AFTER it may have been transmitted (timeout, lost connection, malformed or
+    missing acknowledgement): the device may or may not have applied it."""
+
+
 def default_identity_check(words: list[int]) -> bool:
     """Without a bound serial number: EXACTLY five words (ten characters) of printable ASCII.
     Missing characters are never legitimised by a partial syntactic check."""
@@ -91,6 +100,12 @@ class ReadTransport(Protocol):
     async def read_holding(self, unit: int, start: int, count: int) -> list[int]: ...
 
     async def close(self) -> None: ...
+
+
+class WriteTransport(ReadTransport, Protocol):
+    """Adds the one guarded single-register write (write layer v1)."""
+
+    async def write_register(self, grant: WriteGrant) -> WriteAck: ...
 
 
 @dataclass(slots=True)
@@ -202,6 +217,7 @@ class StreamTransport(ABC):
     _uncertain_count: int | None = None
     _sent_at: float = 0.0
     _late_until: float = 0.0
+    _send_attempted: bool = False  # a write frame was handed to the stream (see write_register)
     # Unit of the request whose recovery is running: lets a shared ``identity_check`` find the
     # inverter (and its bound serial number) that is addressed on this endpoint.
     probe_unit: int | None = None
@@ -219,47 +235,67 @@ class StreamTransport(ABC):
 
     async def read_holding(self, unit: int, start: int, count: int) -> list[int]:
         async with self._lock:
-            self.counters.requests += 1
+            return await self._exchange(count, lambda: self._request(unit, start, count), unit)
+
+    async def write_register(self, grant: WriteGrant) -> WriteAck:
+        """The one guarded single-register write. Never retried: the caller learns whether the
+        frame was certainly not sent (``WriteNotSent``), whether the device answered with an
+        exception (``ModbusExceptionResponse``: a validated rejection) or whether the outcome is
+        unknown (``WriteIndeterminate``)."""
+        async with self._lock:
+            self._send_attempted = False
             try:
-                self._check_cooldown()
-                await self._recover(unit)
-                async with asyncio.timeout(self.settings.timeout_s):
-                    await self._ensure_connected()
-                    result = await self._request(unit, start, count)
-            except ConnectBackoff:
+                return await self._exchange(1, lambda: self._write_request(grant), grant.unit)
+            except ModbusExceptionResponse, asyncio.CancelledError:
                 raise
-            except asyncio.CancelledError:
-                self._interrupted(count)
-                raise
-            except ResyncFailed:
-                self.counters.resync_failures += 1
-                self._failed(count, drop=True)
-                raise
-            except TimeoutError:
-                self.counters.timeouts += 1
-                self._failed(count, drop=self._partial_response_pending())
-                raise RequestTimeout("request deadline exceeded") from None
-            except ConnectionLost:
-                raise  # connect failure, already accounted for in _ensure_connected
-            except (ConnectionError, OSError, EOFError) as exc:
-                self.counters.connection_lost += 1
-                self._failed(count, drop=True)
-                raise ConnectionLost(str(exc) or type(exc).__name__) from exc
-            except ModbusFrameError:
-                self.counters.frame_errors += 1
-                self._failed(count, drop=self.drop_on_frame_error)
-                raise
-            except V5LoggerError:
-                self.counters.logger_errors += 1
-                self._failed(count, drop=False)
-                raise
-            except ModbusExceptionResponse:
-                self.counters.modbus_exceptions += 1
-                self._exchange_ok()
-                raise
-            self.counters.successes += 1
+            except Exception as exc:
+                if self._send_attempted:
+                    raise WriteIndeterminate(type(exc).__name__) from exc
+                raise WriteNotSent(type(exc).__name__) from exc
+
+    async def _exchange[T](self, count: int, request: Callable[[], Awaitable[T]], unit: int) -> T:
+        """One exchange with the failure accounting of a read (the lock is held by the caller)."""
+        self.counters.requests += 1
+        try:
+            self._check_cooldown()
+            await self._recover(unit)
+            async with asyncio.timeout(self.settings.timeout_s):
+                await self._ensure_connected()
+                result = await request()
+        except ConnectBackoff:
+            raise
+        except asyncio.CancelledError:
+            self._interrupted(count)
+            raise
+        except ResyncFailed:
+            self.counters.resync_failures += 1
+            self._failed(count, drop=True)
+            raise
+        except TimeoutError:
+            self.counters.timeouts += 1
+            self._failed(count, drop=self._partial_response_pending())
+            raise RequestTimeout("request deadline exceeded") from None
+        except ConnectionLost:
+            raise  # connect failure, already accounted for in _ensure_connected
+        except (ConnectionError, OSError, EOFError) as exc:
+            self.counters.connection_lost += 1
+            self._failed(count, drop=True)
+            raise ConnectionLost(str(exc) or type(exc).__name__) from exc
+        except ModbusFrameError:
+            self.counters.frame_errors += 1
+            self._failed(count, drop=self.drop_on_frame_error)
+            raise
+        except V5LoggerError:
+            self.counters.logger_errors += 1
+            self._failed(count, drop=False)
+            raise
+        except ModbusExceptionResponse:
+            self.counters.modbus_exceptions += 1
             self._exchange_ok()
-            return result
+            raise
+        self.counters.successes += 1
+        self._exchange_ok()
+        return result
 
     async def close(self) -> None:
         writer = self._writer
@@ -273,6 +309,9 @@ class StreamTransport(ABC):
 
     @abstractmethod
     async def _request(self, unit: int, start: int, count: int) -> list[int]: ...
+
+    @abstractmethod
+    async def _write_request(self, grant: WriteGrant) -> WriteAck: ...
 
     def _partial_response_pending(self) -> bool:
         """After a timeout: has a response been started? Then the framing is unknown and the
@@ -342,6 +381,20 @@ class StreamTransport(ABC):
         if writer is None:
             raise ConnectionLost("not connected")
         self._sent_at = self.clock()
+        writer.write(guarded.frame)
+        await writer.drain()
+
+    async def _write_checked(self, frame: bytes, grant: WriteGrant) -> None:
+        """The single device WRITE path: the write guard checks the complete frame against the
+        grant; a rejected frame sends nothing and leaves ``_send_attempted`` unset."""
+        guarded = guard_write_frame(
+            frame, self.framing, grant=grant, logger_serial=self.logger_serial
+        )
+        writer = self._writer
+        if writer is None:
+            raise ConnectionLost("not connected")
+        self._sent_at = self.clock()
+        self._send_attempted = True
         writer.write(guarded.frame)
         await writer.drain()
 

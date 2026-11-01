@@ -1,4 +1,4 @@
-"""Read-only device transports (SPEC §2, §3)."""
+"""Device transports: reads and the single guarded write (SPEC §2, §3, §10)."""
 
 from deye_monitor.transport.base import (
     ConnectBackoff,
@@ -8,6 +8,9 @@ from deye_monitor.transport.base import (
     TransportCounters,
     TransportError,
     TransportSettings,
+    WriteIndeterminate,
+    WriteNotSent,
+    WriteTransport,
 )
 from deye_monitor.transport.modbus_tcp import ModbusTcpTransport, modbus_tcp
 from deye_monitor.transport.rtu_over_tcp import RtuOverTcpTransport, rtu_over_tcp
@@ -26,6 +29,9 @@ __all__ = [
     "TransportCounters",
     "TransportError",
     "TransportSettings",
+    "WriteIndeterminate",
+    "WriteNotSent",
+    "WriteTransport",
     "modbus_tcp",
     "rtu_over_tcp",
     "serial_rtu",

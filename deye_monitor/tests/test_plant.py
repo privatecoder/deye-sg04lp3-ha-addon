@@ -260,8 +260,11 @@ async def test_inverters_cannot_enable_writes_or_reference_unknown_connections(
         status, body = await rig.call("POST", post, {**INV, "id": "deye2", "name": "second"})
         assert status == 422 and body["error"]["params"]["problems"][0]["code"] == "unit_conflict"
         status, body = await rig.call("GET", "/api/plant")
-        assert body["writes"] == "unavailable"
-        assert "allow_writes" not in body["inverters"][0] and "profile" not in body["inverters"][0]
+        assert body["writes"]["inverters"] == {"deye1": {"allow_writes": False, "operations": []}}
+        assert len(body["writes"]["operations"]) == 9
+        assert not {"allow_writes", "enabled_write_operations", "profile"} & set(
+            body["inverters"][0]
+        )
         # what GET shows can be sent back as it is
         status, _ = await rig.call("PUT", "/api/plant/inverters/deye1", body["inverters"][0])
         assert status == 200

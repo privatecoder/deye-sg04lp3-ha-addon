@@ -3,6 +3,7 @@
 import { t } from './i18n.js';
 import { h, append, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant } from './state.js';
+import { writesSection } from './writes.js';
 import {
   endpointForm, inverterForm, testPanel, connectionTest, connectionUsers, routeChecks, savedInverterChecks, loadSerialDevices, transportLabel, endpointTarget,
   saveEndpoint, saveInverter, saveTotals, deleteEndpoint, deleteInverter, existingEndpointIds, existingInverterIds,
@@ -173,8 +174,8 @@ export function plantView() {
         fact(t('plant.inv.connection'), inv.endpoint),
         fact(t('plant.inv.unit'), String(inv.unit_id)),
         fact(t('plant.inv.fallback'), fallback),
-        inv.expected_serial ? fact(t('plant.inv.serial'), inv.expected_serial) : null,
-        fact(t('plant.inv.writes'), t('plant.writes_unavailable'))),
+        inv.expected_serial ? fact(t('plant.inv.serial'), inv.expected_serial) : null),
+      writesSection(inv, { onChanged: render }),
       h('footer', { class: 'card-actions' },
         h('button', { class: 'btn small primary', type: 'button', disabled: !canEdit(), onClick: () => checkInverter(inv) }, t('plant.check')),
         h('a', { class: 'btn small', href: `#/inv/${inv.id}` }, t('plant.pick_sensors')),

@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.0
+
+**Write layer v1 (opt-in).** The app stays read-only by default. Per inverter the owner can now
+release writing for individual settings; everything is written from the web interface only.
+
+- **Nine settings**: maximum battery charge current (R108) and discharge current (R109), generator
+  charge current (R125), GRID charge current (R128), GRID charge enable (R130 bit 0, all other bits
+  preserved) and the Smart Load thresholds OFF/ON voltage (R134/R136) and OFF/ON SOC (R135/R137).
+  Nothing else can be written; protection thresholds (R115-R117), work mode, time-of-use, the clock
+  and everything else are excluded and refused by the send guard.
+- **Per inverter and per setting, default off.** New inverter fields `allow_writes` (master switch)
+  and `enabled_write_operations`; both are needed. Set on the plant page (card section “Writing”,
+  with register, range and risk note per setting); changing connection, address, fallback or the
+  expected serial number withdraws the release. The inverter form, the sensor selection, “apply
+  to all” and the transfer never grant write authority.
+- **Model-specific current cap** from the vendor datasheet (5K 120 A, 6K 150 A, 8K 190 A, 10K
+  210 A, 12K 240 A), chosen from the reported rated power (R20/R21); it replaces the generic 185 A
+  of the protocol document. An unknown model, or a stored value that could not be restored inside
+  the range, locks the setting.
+- **“Change settings” dialog** (inverter page): fresh read of the enabled settings, preview (old →
+  new, raw word and mask, risk note, the other inverters' values before the change), confirmation
+  with a single-use operation id (30 s), result with the read-back, the other inverters' values
+  after the change (same / different / unavailable), your own display check, and the audit list.
+  “Writes this inverter only. Other inverters are observed; matching values do not prove
+  synchronization.” There is no preselected write target in a parallel plant.
+- **Safety**: exactly one FC16 with one register per operation through the lowest byte guard (FC06
+  never, no retry, no fallback endpoint, no fan-out, no rollback); the whole register is read again
+  inside one bus critical section and any change since the preview is a conflict; permits are
+  bound to user, plant revision, enablement, inverter, serial number, firmware words, role, route,
+  unit and connection and die with a restart, a plant change or a release change; writes are
+  serialised with at least 5 s between them; a durable audit log
+  (`/data/write-audit.jsonl`) is written before the frame is sent, and a log that cannot be
+  written blocks the send. Statuses: `rejected`, `sent`, `failed`, `readback_confirmed`,
+  `outcome_unknown`. A read-back proves the value in MCU1's settings memory only.
+- No MQTT command topics, no writing Home Assistant entities, no scheduled, start-up or reconnect
+  writes.
+- Documentation: DOCS.md “Writing settings”, SPEC §10 as the accepted v1 contract with the owner
+  decisions, and the owner-only `docs/FIRST-WRITE-RUNBOOK.md`.
+- Tests use fake devices only; the test fakes (and the E2E fakes) store FC16 words, and the E2E
+  acceptance fails on any unexpected write.
+
 ## 0.2.13
 
 - **One source per battery value.** With BMS communication the template selects the BMS values

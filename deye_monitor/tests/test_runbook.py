@@ -195,8 +195,8 @@ def test_the_runbook_sets_the_plant_up_in_the_web_interface() -> None:
     ):
         assert phrase in RUNBOOK, phrase
         assert phrase in texts, phrase
-    assert "Writing: not available" in RUNBOOK  # shown as label "Writing" + "not available"
+    assert "Writing: off" in RUNBOOK  # label "Writing" + the chip of the card
     assert "'plant.inv.writes': 'Writing'" in texts
-    assert "'plant.writes_unavailable': 'not available'" in texts
+    assert "'writes.summary_off': 'off'" in texts
     assert "bei gestoppter App den Inverter in den Optionen" not in RUNBOOK
     assert "plant.a.json" in RUNBOOK

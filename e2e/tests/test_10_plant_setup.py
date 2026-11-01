@@ -46,7 +46,7 @@ async def test_an_empty_plant_starts_and_asks_for_the_setup(running, instance_p)
     assert status == 200 and session["setup_needed"] is True and session["plant_revision"] == 0
     status, plant = await app.api("GET", "api/plant")
     assert (
-        plant["endpoints"] == [] and plant["inverters"] == [] and plant["writes"] == "unavailable"
+        plant["endpoints"] == [] and plant["inverters"] == [] and plant["writes"]["inverters"] == {}
     )
     assert not fake.wire.reads  # nothing is contacted without a configured connection
     entries = await ours(running.ha, P)

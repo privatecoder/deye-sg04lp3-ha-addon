@@ -2,8 +2,11 @@
 
 Deliberately independent of the app's own protocol code: every received byte is kept and
 decomposed completely by a separate, strict parser (``decompose``). Anything that is not exactly
-one valid FC03 read request (RTU CRC, MBAP header, V5 envelope with the embedded RTU frame) is a
-*violation*; the acceptance fails on the first one. Replies carry the registers of ``regs``."""
+one valid FC03 read request or one single-register FC16 write (RTU CRC, MBAP header, V5 envelope
+with the embedded RTU frame) is a *violation*; the acceptance fails on the first one. A write is
+stored in ``regs`` and answered with the echo; ``assert_clean`` fails on any write unless the test
+expects some (write layer v1: the app never writes unless the owner released and confirmed it).
+Replies carry the registers of ``regs``."""
 
 from __future__ import annotations
 
@@ -47,6 +50,8 @@ class Read:
     tid: int = 0
     seq: int = 0
     serial: int = 0
+    fc: int = 3  # 3 = read holding registers, 0x10 = write of ONE register
+    value: int = 0  # the word of an FC16
 
 
 @dataclass
@@ -57,6 +62,7 @@ class Wire:
     logger_serial: int = LOGGER_SERIAL
     raw: bytearray = field(default_factory=bytearray)
     reads: list[Read] = field(default_factory=list)
+    writes: list[Read] = field(default_factory=list)
     violations: list[str] = field(default_factory=list)
     frames_bytes: int = 0
     pending_bytes: int = 0  # bytes of incomplete frames left when a stream ended
@@ -69,15 +75,20 @@ class Wire:
         self.decompose(buf, closing=True)
         self.streams_closed += 1
 
-    def assert_clean(self, *, name: str = "", expect_traffic: bool = True) -> None:
-        """Every stream finished, every byte belongs to a complete valid frame, none is left over."""
+    def assert_clean(
+        self, *, name: str = "", expect_traffic: bool = True, allow_writes: bool = False
+    ) -> None:
+        """Every stream finished, every byte belongs to a complete valid frame, none is left over.
+        Without ``allow_writes`` not a single write may have arrived."""
         label = name or self.kind
         assert self.violations == [], (label, self.violations[:3])
+        if not allow_writes:
+            assert self.writes == [], (label, "unexpected write", self.writes[:3])
         assert self.pending_bytes == 0, (label, "unparsed tail bytes", self.pending_bytes)
         assert self.streams_closed >= self.streams_opened, (label, "a stream is still open")
         assert self.frames_bytes == len(self.raw), (label, self.frames_bytes, len(self.raw))
         if expect_traffic:
-            assert self.reads, (label, "no traffic at all")
+            assert self.reads or self.writes, (label, "no traffic at all")
 
     def decompose(self, buf: bytearray, *, closing: bool = False) -> list[Read]:
         """Cut ``buf`` into complete frames (consuming them). Incomplete tails stay in ``buf``;
@@ -92,7 +103,7 @@ class Wire:
                 self.violations.append(f"{self.kind}: invalid frame {bytes(buf[:size]).hex()}")
             else:
                 out.append(read)
-                self.reads.append(read)
+                (self.writes if read.fc == 0x10 else self.reads).append(read)
             self.frames_bytes += size
             del buf[:size]
         if closing and buf:
@@ -101,9 +112,10 @@ class Wire:
 
     def _one(self, b: bytes) -> tuple[int, Read | None] | None:
         if self.kind in ("rtu", "serial"):
-            if len(b) < 8:
+            size = 11 if len(b) >= 2 and b[1] == 0x10 else 8
+            if len(b) < size:
                 return None
-            return 8, self._rtu(b[:8])
+            return size, self._rtu(b[:size])
         if self.kind == "mbap":
             if len(b) < 6:
                 return None
@@ -131,31 +143,51 @@ class Wire:
             return None
         return start, count
 
+    @staticmethod
+    def _fc16(unit: int, pdu: bytes) -> tuple[int, int] | None:
+        """One register only: count 1, byte count 2 (start, word)."""
+        if len(pdu) != 8 or pdu[0] != 0x10 or not 1 <= unit <= 247:
+            return None
+        if int.from_bytes(pdu[3:5], "big") != 1 or pdu[5] != 2:
+            return None
+        return int.from_bytes(pdu[1:3], "big"), int.from_bytes(pdu[6:8], "big")
+
     def _rtu(self, f: bytes) -> Read | None:
+        if len(f) == 11 and f[1] == 0x10:
+            if crc16(f[:9]) != int.from_bytes(f[9:11], "little"):
+                return None
+            sw = self._fc16(f[0], f[1:9])
+            return Read(self.kind, f[0], sw[0], 1, fc=0x10, value=sw[1]) if sw else None
         if len(f) != 8 or crc16(f[:6]) != int.from_bytes(f[6:8], "little"):
             return None
         sc = self._fc03(f[0], f[1:6])
         return Read(self.kind, f[0], sc[0], sc[1]) if sc else None
 
     def _mbap(self, f: bytes) -> Read | None:
+        if len(f) == 15 and f[7] == 0x10:
+            if f[2:4] != b"\x00\x00" or int.from_bytes(f[4:6], "big") != 9:
+                return None
+            sw = self._fc16(f[6], f[7:15])
+            tid = int.from_bytes(f[0:2], "big")
+            return Read("mbap", f[6], sw[0], 1, tid=tid, fc=0x10, value=sw[1]) if sw else None
         if len(f) != 12 or f[2:4] != b"\x00\x00" or int.from_bytes(f[4:6], "big") != 6:
             return None
         sc = self._fc03(f[6], f[7:12])
         return Read("mbap", f[6], sc[0], sc[1], tid=int.from_bytes(f[0:2], "big")) if sc else None
 
     def _v5(self, f: bytes) -> Read | None:
-        # A5 | len(2 LE)=23 | control 0x4510 (10 45) | seq(2 LE) | logger serial(4 LE)
-        #    | 15 bytes metadata | RTU request (8) | checksum | 15
-        if len(f) != 36 or f[0] != 0xA5 or f[-1] != 0x15:
+        # A5 | len(2 LE)=23 (26 for a write) | control 0x4510 (10 45) | seq(2 LE) | logger serial
+        # (4 LE) | 15 bytes metadata | RTU request (8, FC16: 11) | checksum | 15
+        if len(f) not in (36, 39) or f[0] != 0xA5 or f[-1] != 0x15:
             return None
-        if int.from_bytes(f[1:3], "little") != 23 or f[3:5] != b"\x10\x45":
+        if int.from_bytes(f[1:3], "little") != len(f) - 13 or f[3:5] != b"\x10\x45":
             return None
         if sum(f[1:-2]) & 0xFF != f[-2]:
             return None
         serial = int.from_bytes(f[7:11], "little")
         if serial != self.logger_serial:
             return None
-        inner = self._rtu(f[26:34])
+        inner = self._rtu(f[26:-2])
         if inner is None:
             return None
         return Read(
@@ -165,6 +197,8 @@ class Wire:
             inner.count,
             seq=int.from_bytes(f[5:7], "little"),
             serial=serial,
+            fc=inner.fc,
+            value=inner.value,
         )
 
 
@@ -201,6 +235,8 @@ class FakeInverter:
         default_factory=list
     )  # reads touching these -> no answer
     gates: list[Gate] = field(default_factory=list)
+    reject_writes: bool = False  # FC16 answered with exception 0x90, nothing stored
+    silent_writes: bool = False  # FC16 applied but never answered
     wire: Wire = field(init=False)
     port: int = 0
     path: str | None = None  # PTY slave path (serial)
@@ -221,6 +257,8 @@ class FakeInverter:
     def _reply(self, read: Read, overrides: dict[int, int] | None = None) -> bytes | None:
         if self.down or read.unit != self.unit:
             return None
+        if read.fc == 0x10:
+            return self._write_reply(read)
         end = read.start + read.count
         if any(read.start < hi and lo < end for lo, hi in self.silent_ranges):
             return None  # the request is received and counted, nothing comes back (a timeout)
@@ -235,6 +273,38 @@ class FakeInverter:
                 for a in range(read.start, end)
             ]
             pdu = bytes([3, 2 * len(words)]) + b"".join(w.to_bytes(2, "big") for w in words)
+        if read.kind == "mbap":
+            return (
+                read.tid.to_bytes(2, "big")
+                + b"\x00\x00"
+                + (len(pdu) + 1).to_bytes(2, "big")
+                + bytes([read.unit])
+                + pdu
+            )
+        rtu = with_crc(bytes([read.unit]) + pdu)
+        if read.kind in ("rtu", "serial"):
+            return rtu
+        payload = bytes([0x02, 0x01]) + bytes(12) + rtu
+        body = (
+            len(payload).to_bytes(2, "little")
+            + b"\x10\x15"
+            + read.seq.to_bytes(2, "little")
+            + read.serial.to_bytes(4, "little")
+            + payload
+        )
+        return b"\xa5" + body + bytes([sum(body) & 0xFF, 0x15])
+
+    def _write_reply(self, read: Read) -> bytes | None:
+        """A single-register write: stored in the register map, answered with the echo (or with
+        exception 0x90 when ``reject_writes`` is set; ``silent_writes`` applies it without any
+        answer, a lost acknowledgement)."""
+        if self.reject_writes:
+            pdu = bytes([0x90, 0x03])
+        else:
+            self.regs[read.start] = read.value
+            if self.silent_writes:
+                return None
+            pdu = bytes([0x10]) + read.start.to_bytes(2, "big") + (1).to_bytes(2, "big")
         if read.kind == "mbap":
             return (
                 read.tid.to_bytes(2, "big")

@@ -51,7 +51,7 @@ _FORBIDDEN = (
 
 def test_manifest_basics() -> None:
     assert MANIFEST["slug"] == "deye_monitor"
-    assert MANIFEST["version"] == deye_monitor.__version__ == "0.2.13"
+    assert MANIFEST["version"] == deye_monitor.__version__ == "0.3.0"
     assert MANIFEST["arch"] == ["aarch64", "amd64"]
     assert MANIFEST["init"] is False
     assert MANIFEST["stage"] == "experimental"
@@ -340,7 +340,7 @@ def test_docs_and_readme_state_the_implementation_status_first() -> None:
         assert "web interface" in head and "does not exist yet" not in head, name
         assert "entities appear" in head, name
     docs = (APP / "DOCS.md").read_text()
-    assert "planned" in docs.lower()  # the write layer is not there yet
+    assert "Writing settings" in docs  # the opt-in write layer is documented
     assert "### Using the web interface" in docs
     assert "not** a successful contact" in docs  # what the `ready` log line does and does not mean
     assert "entities appear in home assistant" in docs.lower()

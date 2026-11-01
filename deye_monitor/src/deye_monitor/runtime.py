@@ -44,6 +44,7 @@ from deye_monitor.transport.modbus_tcp import ModbusTcpTransport, tcp_connector
 from deye_monitor.transport.rtu_over_tcp import RtuOverTcpTransport
 from deye_monitor.transport.serial_rtu import SerialRtuTransport
 from deye_monitor.transport.solarman_v5_tcp import SolarmanV5Transport
+from deye_monitor.writes import WriteService
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +152,7 @@ class Runtime:
         self.schedulers: dict[str, BusScheduler] = {}
         self.transports: dict[str, StreamTransport] = {}
         self.inverters: dict[str, InverterRuntime] = {}
+        self.writes = WriteService(self, directory=base)
         self._tasks: list[asyncio.Task[None]] = []
         self._unit_owner: dict[tuple[str, int], str] = {}
         self._buses: dict[str, str] = {ep.id: ep.bus for ep in cfg.endpoints}
@@ -368,6 +370,7 @@ class Runtime:
             delay = min(delay * 2, self._restart_max_s)
 
     async def stop(self) -> None:
+        await self.writes.close()  # permits die with the generation; a write in flight finishes
         tasks, self._tasks = self._tasks, []
         for task in tasks:
             task.cancel()

@@ -170,3 +170,84 @@ async def test_the_plant_setup_fixture_rejects_an_unparsed_tail_when_it_stops(mo
     finally:
         await gen.aclose()
     assert observed == {"app_cleaned": True, "fake_stopped": True}
+
+
+def fc16(unit: int, start: int, value: int, *, count: int = 1) -> bytes:
+    body = bytes([unit, 0x10]) + start.to_bytes(2, "big") + count.to_bytes(2, "big")
+    body += bytes([2 * count]) + value.to_bytes(2, "big") * count
+    return with_crc(body)
+
+
+async def test_a_single_register_write_is_stored_echoed_and_counted():
+    fake = FakeInverter("w", "rtu", regs={128: 20})
+    await fake.start()
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", fake.port)
+        writer.write(fc16(1, 128, 50))
+        await writer.drain()
+        echo = await reader.readexactly(8)
+        assert echo == with_crc(bytes([1, 0x10, 0, 128, 0, 1]))
+        writer.write(with_crc(bytes([1, 3, 0, 128, 0, 1])))  # the new word is what a read returns
+        await writer.drain()
+        assert (await reader.readexactly(7))[3:5] == (50).to_bytes(2, "big")
+        writer.close()
+    finally:
+        await fake.stop()
+    assert fake.regs[128] == 50
+    assert [(w.start, w.value) for w in fake.wire.writes] == [(128, 50)]
+    with pytest.raises(AssertionError):  # a write nobody expected is an acceptance failure
+        fake.wire.assert_clean(name="w")
+    fake.wire.assert_clean(name="w", allow_writes=True)
+
+
+async def test_writes_over_mbap_and_a_rejecting_or_silent_device():
+    mbap = FakeInverter("m", "mbap", regs={128: 20}, reject_writes=True)
+    await mbap.start()
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", mbap.port)
+        frame = (7).to_bytes(2, "big") + b"\x00\x00\x00\x09\x01\x10\x00\x80\x00\x01\x02\x00\x32"
+        writer.write(frame)
+        await writer.drain()
+        reply = await reader.readexactly(9)
+        assert reply == (7).to_bytes(2, "big") + b"\x00\x00\x00\x03\x01\x90\x03"
+        writer.close()
+    finally:
+        await mbap.stop()
+    assert mbap.regs[128] == 20  # a rejected write stores nothing
+    mbap.wire.assert_clean(name="m", allow_writes=True)
+    silent = FakeInverter("s", "rtu", regs={128: 20}, silent_writes=True)
+    await silent.start()
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", silent.port)
+        writer.write(fc16(1, 128, 50))
+        await writer.drain()
+        await asyncio.sleep(0.15)
+        assert reader.at_eof() is False
+        writer.close()
+    finally:
+        await silent.stop()
+    assert silent.regs[128] == 50  # applied, but the acknowledgement was lost
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        fc16(1, 128, 50, count=2),  # more than one register
+        with_crc(bytes([1, 0x10, 0, 128, 0, 1, 4, 0, 50, 0, 0])),  # byte count not 2
+        fc16(0, 128, 50),  # broadcast unit
+    ],
+)
+async def test_other_write_shapes_stay_violations(frame: bytes):
+    fake = FakeInverter("v", "rtu", regs={128: 20})
+    await fake.start()
+    try:
+        _, writer = await asyncio.open_connection("127.0.0.1", fake.port)
+        writer.write(frame)
+        await writer.drain()
+        await asyncio.sleep(0.1)
+        writer.close()
+    finally:
+        await fake.stop()
+    assert fake.regs[128] == 20
+    with pytest.raises(AssertionError):
+        fake.wire.assert_clean(name="v", expect_traffic=False, allow_writes=True)

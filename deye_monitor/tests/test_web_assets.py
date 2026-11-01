@@ -320,3 +320,28 @@ def test_javascript_sources_parse_as_modules(path: Path) -> None:
         check=False,
     )
     assert done.returncode == 0, done.stderr
+
+
+def test_every_write_refusal_and_reason_has_a_text_in_both_languages() -> None:
+    sources = "".join(
+        path.read_text(encoding="utf-8")
+        for path in SRC.glob("*.py")
+        if path.name in ("write_ops.py", "writes.py", "webapi.py")
+    )
+    keys = set(re.findall(r'Refused\(\s*"([a-z_]+)"', sources))
+    keys |= {"stale_revision", "unknown_operation", "operation_already_used"}
+    for lang, texts in messages().items():
+        assert sorted(k for k in keys if f"error.{k}" not in texts) == [], lang
+    statuses = ("pending", "rejected", "sent", "failed", "readback_confirmed", "outcome_unknown")
+    for lang, texts in messages().items():
+        for status in statuses:
+            assert f"writes.status.{status}" in texts and f"writes.status_help.{status}" in texts
+        for state in ("same", "different", "unavailable"):
+            assert f"writes.peer.{state}" in texts, lang
+        # every refusal key that is also a "reason" shown in a locked row or a result
+        assert "writes.reason.model_unknown" in texts and "writes.reason.conflict" in texts
+    # the contract wording of the scope text, word for word
+    assert messages()["en"]["writes.scope"] == (
+        "Writes this inverter only. Other inverters are observed; "
+        "matching values do not prove synchronization."
+    )

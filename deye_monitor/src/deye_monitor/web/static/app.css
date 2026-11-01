@@ -333,3 +333,28 @@ dialog.modal::backdrop { background: rgb(0 0 0 / 55%); }
 .stepper li.current { color: var(--text); font-weight: 600; }
 .stepper li .step-no { background: var(--line); color: var(--text); }
 .stepper li.current .step-no, .stepper li.done .step-no { background: var(--primary); color: var(--on-primary); }
+
+/* write layer v1: release per inverter, settings dialog */
+.banner.ok { background: var(--ok-soft); color: var(--ok); }
+.writes-section { border-top: 1px solid var(--line); margin-top: .75rem; padding-top: .6rem; }
+.writes-section > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-weight: 600; }
+.writes-section .write-ops { display: grid; gap: .5rem; margin: .5rem 0; }
+.writes-section .opt-help.risk, .write-row .risk { color: var(--warn); }
+.writes-master { margin: .5rem 0; }
+.write-rows { display: grid; gap: .75rem; }
+.write-row { border: 1px solid var(--line); border-radius: 10px; padding: .75rem 1rem; background: var(--card); }
+.write-row h3 { margin: 0 0 .25rem; font-size: 1rem; }
+.write-row.locked { opacity: .85; }
+.write-row p { margin: .25rem 0; }
+.write-edit { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .5rem; }
+.write-edit input[type="text"], .write-edit select { max-width: 9rem; }
+.write-preview, .write-result { border: 2px solid var(--primary); border-radius: 12px; padding: .75rem 1rem; margin: .75rem 0; }
+.write-result[data-status="rejected"], .write-result[data-status="failed"] { border-color: var(--line); }
+.write-result[data-status="outcome_unknown"] { border-color: var(--warn); }
+.write-preview .change { font-weight: 600; }
+.peer-table, .audit-table { width: 100%; border-collapse: collapse; font-size: .9rem; margin: .25rem 0 .75rem; }
+.peer-table th, .peer-table td, .audit-table th, .audit-table td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.peer-table thead th, .audit-table thead th { color: var(--muted); font-weight: 500; }
+.peer-state.different { color: var(--warn); }
+.peer-state.unavailable { color: var(--muted); }
+.writes-dialog .verify { margin-top: .5rem; }

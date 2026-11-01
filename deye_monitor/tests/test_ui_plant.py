@@ -95,7 +95,7 @@ async def test_the_assistant_leads_from_an_empty_plant_to_the_sensor_selection(
         await expect(field(page, "unit_id")).to_have_value("1")  # the default
         await field(page, "name").fill("Deye Keller")
         await expect(field(page, "id")).to_have_value("deye_keller")  # proposed from the name
-        await expect(page.locator(".writes-note")).to_contain_text("nur")
+        await expect(page.locator(".writes-note")).to_contain_text("Standard: aus")
         await shot(page, "plant-wizard-2-de")
         await page.locator("#wiz-next").click()
         # step 3: the read-only check runs by itself and shows the serial number

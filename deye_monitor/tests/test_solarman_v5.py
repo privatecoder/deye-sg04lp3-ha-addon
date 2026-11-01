@@ -80,7 +80,8 @@ def test_builder_rejects_bad_input(serial: int, seq: int, rtu: bytes) -> None:
 def test_no_sending_api() -> None:
     names = [n for n, _ in inspect.getmembers(v5) if not n.startswith("_")]
     assert [n for n in names if n.startswith(("build", "send", "write", "reply", "answer"))] == [
-        "build_v5_request"
+        "build_v5_request",
+        "build_v5_write_request",
     ]
     assert not [n for n in dir(v5.V5StreamParser) if n.startswith(("send", "write", "reply"))]
 

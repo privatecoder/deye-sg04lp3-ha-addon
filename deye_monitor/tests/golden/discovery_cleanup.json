@@ -38,7 +38,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.2.13"
+   "sw_version": "0.3.0"
   }
  },
  "retained_with_tombstone": {
@@ -80,7 +80,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.2.13"
+   "sw_version": "0.3.0"
   }
  },
  "tombstone_step_3": {
@@ -109,7 +109,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.2.13"
+   "sw_version": "0.3.0"
   }
  }
 }

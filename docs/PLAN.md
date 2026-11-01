@@ -16,6 +16,6 @@ Basis: `docs/SPEC.md` (in case of contradictions, the §5 entry schema, §8.1, �
 | T10 | **Sensor selection backend** | Features + predicates (§9.2) incl. suggestion from R111/R133/R189/R336, template logic, server-side capability enforcement, `/data/selection.json` with revision + atomic switch (§9.6), plan budget (§9.3), aiohttp JSON API with Supervisor peer check, CSRF/revision, POST-only (§9.5). Tests per DR2-05..08. |
 | T11 | **Ingress web UI** | Features, searchable catalog, deviation marking, apply with preview/reset, observation hints, plan budget, status view incl. rebinding; DE/EN, dark mode, keyboard; no CDN fetches. E2E via the ingress API. |
 | T12 | **Final read acceptance** | End-to-end against fake servers with 4 inverters over all 4 transports + mandatory local Mosquitto test broker + HA schema check (SPEC §8.1 SR-13); afterwards live read test by the user. |
-| T13+ | **Write layer** (SPEC §10) | Only after T12 acceptance; first review the dedicated write contract (DR2-09..13), then per function with user decision. Fakes only; live writes only by the user. |
+| T13+ | **Write layer v1** (SPEC §10, version 0.3.0) | Implemented after the accepted write contract (DR2-09..13) and the owner decisions of SPEC §10.1: nine settings, opt-in per inverter and setting, web UI only. Fakes only; live writes only by the owner (`docs/FIRST-WRITE-RUNBOOK.md`). |
 
 Review cadence: after **every** task (new project, safety-critical read-only boundary). Reviewer: reviewer-codex-6.1 (+ orchestrator). All findings are fixed.

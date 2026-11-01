@@ -380,17 +380,22 @@ def test_single_write_site_in_transport_package() -> None:
     hits = [
         (p.name, line.strip())
         for p in root.rglob("*.py")
-        if p.name not in ("config.py", "store.py")  # local state files only, never a device
+        # local state files only, never a device (the audit log of the write layer is a file)
+        if p.name not in ("config.py", "store.py", "writes.py")
         for line in p.read_text().splitlines()
         if ".write(" in line or ".send(" in line or "sendall" in line or "write_eof" in line
     ]
-    assert hits == [("base.py", "writer.write(guarded.frame)")]
+    # the read sink and the (guarded, single-register) write sink of the base transport
+    assert hits == [("base.py", "writer.write(guarded.frame)")] * 2
 
 
 def test_no_public_send_api() -> None:
     for cls in (ModbusTcpTransport, RtuOverTcpTransport, SerialRtuTransport, SolarmanV5Transport):
         public = {n for n in dir(cls) if not n.startswith("_")}
-        assert not {n for n in public if n.startswith(("write", "send", "execute", "raw"))}
+        # the one guarded single-register write; no generic send/raw/execute
+        assert {n for n in public if n.startswith(("write", "send", "execute", "raw"))} == {
+            "write_register"
+        }
 
 
 def test_settings_validation() -> None:

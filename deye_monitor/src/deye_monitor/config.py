@@ -1,7 +1,7 @@
 """Configuration: pydantic models, domain validation (SPEC §4, §8.1) and loading.
 
-No device I/O happens here. ``allow_writes`` exists only as a placeholder for the later write
-layer (SPEC §10) and has no effect beyond a log warning.
+No device I/O happens here. ``allow_writes`` and ``enabled_write_operations`` are the per-inverter
+enablement of the write layer (SPEC §10); both default to off/empty.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from pydantic import (
 )
 
 from deye_monitor.scheduler import canonical_bus_key, normalize_host
+from deye_monitor.write_ops import OPERATION_KEYS
 
 log = logging.getLogger(__name__)
 
@@ -212,6 +213,19 @@ class InverterConfig(_Model):
     poll_settings_s: PollSeconds = 300.0
     poll_identity_s: PollSeconds = 3600.0
     allow_writes: Annotated[bool, Field(strict=True)] = False
+    # Write layer v1 (SPEC §10): operations the owner released for this inverter. Writing needs
+    # BOTH ``allow_writes`` and the operation in this list; both default to off/empty.
+    enabled_write_operations: tuple[str, ...] = ()
+
+    @field_validator("enabled_write_operations")
+    @classmethod
+    def _operations(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(v)) != len(v):
+            raise ValueError("duplicate write operation")
+        unknown = sorted(set(v) - set(OPERATION_KEYS))
+        if unknown:
+            raise ValueError(f"unknown write operation: {', '.join(unknown)[:80]}")
+        return tuple(k for k in OPERATION_KEYS if k in v)  # canonical order
 
     @model_validator(mode="before")
     @classmethod
@@ -589,13 +603,6 @@ def parse_config(data: object) -> AppConfig:
                 ep.max_read_registers,
                 MAX_READ_BLOCK,
                 MAX_READ_BLOCK,
-            )
-    for inv in cfg.inverters:
-        if inv.allow_writes:
-            log.warning(
-                "allow_writes is set for inverter '%s', but the write layer is not implemented "
-                "(Schreibschicht nicht implementiert); the setting is ignored",
-                inv.id,
             )
     return cfg
 

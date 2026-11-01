@@ -8,6 +8,7 @@ import { h, uid, modal, toast, debounce } from './ui.js';
 import { state, canEdit, inverterById, profileOf, loadInverters, loadSession, mutate } from './state.js';
 import { stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList, plantInputsOf, plantTotalName } from './common.js';
 import { openTransfer } from './transfer.js';
+import { writesPanel } from './writes.js';
 
 const BASIC_KEYS = ['serial_number', 'operating_state', 'active_warnings', 'active_faults'];
 const POINT_ORDER = ['grid_terminal', 'ups_load', 'inverter_output', 'battery', 'bms', 'pv', 'gen_port', 'parallel', 'tou', 'diagnostic'];
@@ -652,12 +653,13 @@ export function setupView(invId) {
   refs.discard = h('button', { class: 'btn', type: 'button', onClick: discard }, t('setup.discard'));
   const step1 = buildFeatures();
   const step2 = buildSensors();
+  const writes = state.plant ? writesPanel(invId) : null;
   root.append(
     h('nav', { class: 'crumbs', 'aria-label': t('nav.breadcrumb') }, h('a', { href: '#/' }, `← ${t('nav.overview')}`)),
     h('header', { class: 'page-head' },
       h('div', {}, h('h1', {}, base.name, h('span', { class: 'muted id' }, ` ${base.id}`)), refs.status),
       state.inverters.length > 1 ? h('button', { class: 'btn', type: 'button', disabled: !canEdit(), onClick: transfer }, t('overview.transfer')) : null),
-    refs.banner, refs.awaiting, step1, step2,
+    refs.banner, refs.awaiting, step1, step2, writes ? writes.el : null,
     h('div', { class: 'action-bar', role: 'region', 'aria-label': t('setup.actions') },
       h('div', { class: 'bar-info' }, refs.budget, refs.dirtyNote),
       h('div', { class: 'bar-actions' },
@@ -684,6 +686,7 @@ export function setupView(invId) {
       if (!draft.saving && draft.base && draft.base !== base) { base = draft.base; baseRevision = draft.baseRevision; normalise(); }
       if (!dirty() && !draft.saving) { base = inverterById(invId) || base; baseRevision = state.revision; draft.base = base; draft.baseRevision = baseRevision; }
       paintHeader();
+      if (writes) writes.refresh();
       if (!draft.touched) { applySuggestions(); if (dirty()) requestPreview(); }
       paint();
     },

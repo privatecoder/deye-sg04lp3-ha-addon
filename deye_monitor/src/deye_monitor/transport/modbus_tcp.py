@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from deye_monitor.protocol.guard import Framing
+from deye_monitor.protocol.guard import Framing, WriteGrant
 from deye_monitor.protocol.modbus import (
     MAX_READ_REGISTERS,
     ModbusFrameError,
+    WriteAck,
     build_mbap_request,
+    build_mbap_write,
     parse_mbap_response,
+    parse_mbap_write_response,
 )
 from deye_monitor.scheduler import normalize_host
 from deye_monitor.transport.base import READ_CHUNK, StreamTransport, TransportSettings
@@ -52,6 +55,24 @@ class ModbusTcpTransport(StreamTransport):
                 self.counters.stale_frames += 1
                 continue
             return parse_mbap_response(frame, tid, unit, count)
+
+    async def _write_request(self, grant: WriteGrant) -> WriteAck:
+        self._tid = (self._tid + 1) & 0xFFFF
+        tid = self._tid
+        frame = build_mbap_write(tid, grant.unit, grant.register, grant.new_word)
+        await self._write_checked(frame, grant)
+        while True:
+            reply = self._take_frame()
+            if reply is None:
+                data = await self._stream.read(READ_CHUNK)
+                if not data:
+                    raise EOFError("connection closed by peer")
+                self._rx.extend(data)
+                continue
+            if int.from_bytes(reply[0:2], "big") != tid:
+                self.counters.stale_frames += 1
+                continue
+            return parse_mbap_write_response(reply, tid, grant.unit, grant.register)
 
     def _take_frame(self) -> bytes | None:
         rx = self._rx

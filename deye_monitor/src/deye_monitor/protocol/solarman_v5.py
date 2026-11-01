@@ -1,6 +1,7 @@
-"""Solarman V5 framing (read-only): request building and a defensive stream parser.
+"""Solarman V5 framing: request building and a defensive stream parser.
 
-The module only ever builds REQUEST frames carrying an FC03 read. It contains no function that
+The module only ever builds REQUEST frames carrying an FC03 read or the single-register FC16 write
+(write layer v1, SPEC §10). It contains no function that
 builds a response, time, heartbeat or management frame: incoming frames other than the awaited
 response are counted and dropped, never answered (SPEC §1, GRUNDLAGEN §2.2).
 """
@@ -11,9 +12,12 @@ from dataclasses import dataclass, field
 
 from deye_monitor.protocol.modbus import (
     RTU_REQUEST_LEN,
+    RTU_WRITE_REQUEST_LEN,
     ModbusExceptionResponse,
     ModbusFrameError,
+    WriteAck,
     parse_rtu_response,
+    parse_rtu_write_response,
 )
 
 V5_START = 0xA5
@@ -29,6 +33,8 @@ RESPONSE_METADATA_LEN = 14
 REQUEST_METADATA = bytes([0x02]) + bytes(REQUEST_METADATA_LEN - 1)
 REQUEST_PAYLOAD_LEN = REQUEST_METADATA_LEN + RTU_REQUEST_LEN
 REQUEST_FRAME_LEN = HEADER_LEN + REQUEST_PAYLOAD_LEN + TRAILER_LEN
+WRITE_REQUEST_PAYLOAD_LEN = REQUEST_METADATA_LEN + RTU_WRITE_REQUEST_LEN
+WRITE_REQUEST_FRAME_LEN = HEADER_LEN + WRITE_REQUEST_PAYLOAD_LEN + TRAILER_LEN  # 39
 _MIN_RTU_LEN = 5
 # Inverter response metadata accepted by this app (frame type 0x02 = inverter, status 0x01 =
 # real-time data). Other combinations are not decoded: the RTU offset and meaning are unknown.
@@ -60,6 +66,25 @@ def build_v5_request(logger_serial: int, sequence: int, rtu_frame: bytes) -> byt
         raise ValueError("rtu_frame must be exactly one 8-byte RTU request")
     body = (
         REQUEST_PAYLOAD_LEN.to_bytes(2, "little")
+        + CONTROL_REQUEST.to_bytes(2, "little")
+        + sequence.to_bytes(2, "little")
+        + logger_serial.to_bytes(4, "little")
+        + REQUEST_METADATA
+        + rtu_frame
+    )
+    return bytes([V5_START]) + body + bytes([v5_checksum(body), V5_END])
+
+
+def build_v5_write_request(logger_serial: int, sequence: int, rtu_frame: bytes) -> bytes:
+    """Wrap one complete 11-byte RTU FC16 (one register) ADU in a V5 request frame (39 bytes)."""
+    if not 1 <= logger_serial <= _MAX_SERIAL:
+        raise ValueError(f"logger serial out of range: {logger_serial}")
+    if not 0 <= sequence <= 0xFFFF:
+        raise ValueError(f"sequence out of range: {sequence}")
+    if type(rtu_frame) is not bytes or len(rtu_frame) != RTU_WRITE_REQUEST_LEN:
+        raise ValueError("rtu_frame must be exactly one 11-byte RTU write request")
+    body = (
+        WRITE_REQUEST_PAYLOAD_LEN.to_bytes(2, "little")
         + CONTROL_REQUEST.to_bytes(2, "little")
         + sequence.to_bytes(2, "little")
         + logger_serial.to_bytes(4, "little")
@@ -217,3 +242,16 @@ def decode_read_response(
             counters.quirk_double_crc += 1
             return registers
         raise
+
+
+def decode_write_response(response: V5Response, unit: int, start: int) -> WriteAck:
+    """Decode the inner RTU FC16 response of an accepted V5 response. Strict: no double-CRC
+    correction is applied to a write acknowledgement."""
+    if not response.supported:
+        raise V5LoggerError(
+            f"unsupported logger response (frame type 0x{response.frame_type:02x}, "
+            f"status 0x{response.status:02x})"
+        )
+    if len(response.rtu) < _MIN_RTU_LEN:
+        raise V5LoggerError(f"logger returned no modbus response ({len(response.rtu)} bytes)")
+    return parse_rtu_write_response(response.rtu, unit, start)

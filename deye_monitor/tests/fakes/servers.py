@@ -41,6 +41,7 @@ class Behavior:
     bad_inner_crc: bool = False  # V5: corrupt the inner RTU CRC
     stale_frame_first: bool = False  # MBAP: precede the reply by a complete frame of tid-1
     raw_reply: bytes | None = None  # send exactly these bytes instead of a computed reply
+    write_applied: bool = True  # FC16: the register store takes the word (also without a reply)
 
 
 @dataclass(slots=True)
@@ -51,6 +52,9 @@ class Request:
     tid: int = 0
     seq: int = 0
     serial: int = 0
+    fc: int = 3
+    value: int = 0  # FC16 (one register): the word
+    fcount: int = 1  # FC16: the count field as sent
 
 
 def value_of(addr: int) -> int:
@@ -79,6 +83,9 @@ class Responder:
     regs: dict[int, int] = field(default_factory=lambda: dict(SERIAL_REGS))
     any_unit: bool = False  # answer every unit id (a gateway in front of several inverters)
     fail_addresses: set[int] = field(default_factory=set)  # reads touching these get exception 2
+    writes: list[Request] = field(default_factory=list)  # every FC16 that arrived
+    write_exception: int | None = None  # FC16 answers with this exception (nothing is stored)
+    other_fc: list[Request] = field(default_factory=list)  # anything that is neither FC03 nor FC16
     raw: bytearray = field(default_factory=bytearray)
     frames: list[bytes] = field(default_factory=list)
 
@@ -86,14 +93,33 @@ class Responder:
         return FrameExtractor(self)
 
     def reply(self, req: Request, b: Behavior) -> bytes | None:
-        if b.silent or b.close or (req.unit != self.unit and not self.any_unit):
+        unit_ok = req.unit == self.unit or self.any_unit
+        if req.fc == 0x10:
+            self.writes.append(req)
+            if (
+                unit_ok
+                and b.write_applied
+                and self.write_exception is None
+                and b.exception_code is None
+            ):
+                self.regs[req.start] = req.value
+        elif req.fc != 3:
+            self.other_fc.append(req)
+        if b.silent or b.close or not unit_ok:
             return None
         if b.raw_reply is not None:
             return b.raw_reply
         touched = self.fail_addresses & set(range(req.start, req.start + req.count))
-        if touched and b.exception_code is None:
+        if req.fc == 0x10:
+            code = self.write_exception if self.write_exception is not None else b.exception_code
+            if code is not None:
+                pdu = bytes([0x90, code])
+            else:
+                pdu = bytes([0x10]) + req.start.to_bytes(2, "big") + b"\x00\x01"
+        elif touched and b.exception_code is None:
             b = Behavior(exception_code=2)
-        if b.exception_code is not None:
+            pdu = bytes([0x83, b.exception_code or 2])
+        elif b.exception_code is not None:
             pdu = bytes([0x83, b.exception_code])
         else:
             words = [self.regs.get(a, value_of(a)) for a in range(req.start, req.start + req.count)]
@@ -148,31 +174,51 @@ class FrameExtractor:
 
     def _frame_size(self) -> int | None:
         if self.kind == "rtu":
-            return 8
+            if len(self._buf) < 2:
+                return None
+            return 11 if self._buf[1] == 0x10 else 8
         if self.kind == "mbap":
             return 6 + int.from_bytes(self._buf[4:6], "big") if len(self._buf) >= 6 else None
         return 13 + int.from_bytes(self._buf[1:3], "little") if len(self._buf) >= 3 else None
 
-    def _parse(self, frame: bytes) -> Request:
-        if self.kind == "rtu":
+    @staticmethod
+    def _rtu_request(rtu: bytes) -> Request:
+        if rtu[1] == 0x10:
             return Request(
-                frame[0], int.from_bytes(frame[2:4], "big"), int.from_bytes(frame[4:6], "big")
+                rtu[0],
+                int.from_bytes(rtu[2:4], "big"),
+                1,
+                fc=0x10,
+                value=int.from_bytes(rtu[7:9], "big"),
+                fcount=int.from_bytes(rtu[4:6], "big"),
             )
-        if self.kind == "mbap":
-            return Request(
-                frame[6],
-                int.from_bytes(frame[8:10], "big"),
-                int.from_bytes(frame[10:12], "big"),
-                tid=int.from_bytes(frame[0:2], "big"),
-            )
-        rtu = frame[26:34]
         return Request(
             rtu[0],
             int.from_bytes(rtu[2:4], "big"),
             int.from_bytes(rtu[4:6], "big"),
-            seq=int.from_bytes(frame[5:7], "little"),
-            serial=int.from_bytes(frame[7:11], "little"),
+            fc=rtu[1],
         )
+
+    def _parse(self, frame: bytes) -> Request:
+        if self.kind == "rtu":
+            return self._rtu_request(frame)
+        if self.kind == "mbap":
+            pdu = frame[7:]
+            if pdu[0] == 0x10:
+                req = self._rtu_request(frame[6:7] + pdu)  # same field layout after the unit
+            else:
+                req = Request(
+                    frame[6],
+                    int.from_bytes(frame[8:10], "big"),
+                    int.from_bytes(frame[10:12], "big"),
+                    fc=pdu[0],
+                )
+            req.tid = int.from_bytes(frame[0:2], "big")
+            return req
+        req = self._rtu_request(frame[26:-2])
+        req.seq = int.from_bytes(frame[5:7], "little")
+        req.serial = int.from_bytes(frame[7:11], "little")
+        return req
 
 
 async def deliver(write: Callable[[bytes], None], data: bytes, b: Behavior) -> None:
@@ -199,6 +245,7 @@ class FakeServer:
         self.responder = Responder(kind, **kw)  # type: ignore[arg-type]
         self.default = Behavior()
         self.script: list[Behavior] = []
+        self.write_script: list[Behavior] = []  # behaviours of FC16 requests only (consumed first)
         self.on_connect = b""  # sent to every new connection (old downstream frames of a gateway)
         self.connections = 0
         self.active = 0
@@ -270,7 +317,10 @@ class FakeServer:
         try:
             while data := await reader.read(4096):
                 for _, req in extractor.feed(data):
-                    b = self.script.pop(0) if self.script else self.default
+                    if req.fc == 0x10 and self.write_script:
+                        b = self.write_script.pop(0)
+                    else:
+                        b = self.script.pop(0) if self.script else self.default
                     if b.close:
                         writer.close()
                         return
@@ -304,6 +354,7 @@ class FakePty:
         self._extractor = self.responder.new_extractor()
         self.default = Behavior()
         self.script: list[Behavior] = []
+        self.write_script: list[Behavior] = []
         self._tasks: set[asyncio.Task[None]] = set()
         self._closed = False
         self._noise: asyncio.Task[None] | None = None
@@ -338,7 +389,10 @@ class FakePty:
         except OSError:
             data = b""
         for _, req in self._extractor.feed(data):
-            b = self.script.pop(0) if self.script else self.default
+            if req.fc == 0x10 and self.write_script:
+                b = self.write_script.pop(0)
+            else:
+                b = self.script.pop(0) if self.script else self.default
             reply = self.responder.reply(req, b)
             if reply is not None:
                 task = asyncio.ensure_future(deliver(self._write, reply, b))
