@@ -57,7 +57,8 @@ async def build_plant(
             {"id": inverter, "name": inverter, "endpoint": gw, "unit_id": 1},
         )
         assert status == 200, body
-    for inverter in enable:
+    for inverter in enable:  # a release needs a fresh identity read: running first
+        await rig.wait_state(inverter, InverterState.RUNNING)
         status, body = await rig.call(
             "PUT",
             f"/api/plant/inverters/{inverter}/writes",

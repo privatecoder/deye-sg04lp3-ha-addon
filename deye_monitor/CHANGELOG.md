@@ -15,6 +15,8 @@ release writing for individual settings; everything is written from the web inte
   with register, range and risk note per setting); changing connection, address, fallback or the
   expected serial number withdraws the release. The inverter form, the sensor selection, “apply
   to all” and the transfer never grant write authority.
+- **Release bound to the firmware.** Releasing writing stores the firmware the inverter shows (R11, R14, R15, R17, R18 and the hardware profile). Preview and the send point require an exact match; after a firmware change writing is refused (“Firmware changed since release”) until you release again. Monitoring is unaffected.
+- **Complete audit record before every send.** The audit line is written with a checked loop (short writes are completed, no progress blocks the send); an interrupted earlier line cannot corrupt the next record.
 - **Model-specific current cap** from the vendor datasheet (5K 120 A, 6K 150 A, 8K 190 A, 10K
   210 A, 12K 240 A), chosen from the reported rated power (R20/R21); it replaces the generic 185 A
   of the protocol document. An unknown model, or a stored value that could not be restored inside

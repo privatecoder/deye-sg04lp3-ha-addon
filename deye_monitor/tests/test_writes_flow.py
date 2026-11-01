@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -437,7 +438,7 @@ async def test_a_change_since_the_preview_is_a_conflict(
         _, body = await preview(rig, "deye1", "grid_charge_current", 50)
         rig.servers["gw1"].responder.regs[15] = 0x2000
         _status, body = await confirm(rig, body["preview"]["operation_id"])
-        assert body["operation"]["reason"] == "conflict"
+        assert body["operation"]["reason"] == "firmware_changed"
         assert rig.servers["gw1"].responder.writes == []
 
 
@@ -880,3 +881,135 @@ def test_write_entrances_are_only_the_web_ui_calls() -> None:
     assert senders == {"base.py", "writes.py"}  # the transport method and its one caller
     confirmers = {p.name for p in root.rglob("*.py") if ".confirm(" in p.read_text()}
     assert confirmers == {"webapi.py"}
+
+
+# -- firmware release (R17-01) ----------------------------------------------------------------
+
+
+async def test_the_release_stores_the_firmware_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        cfg = rig.app.runtime.inverters["deye1"].cfg  # type: ignore[union-attr]
+        release = cfg.write_release_firmware
+        assert release is not None
+        regs = rig.servers["gw1"].responder.regs
+        assert release.words == tuple(
+            regs.get(a, (a * 3 + 1) & 0xFFFF) for a in (11, 14, 15, 17, 18)
+        )
+        # releasing nothing drops the fingerprint
+        status, body = await rig.call(
+            "PUT", "/api/plant/inverters/deye1/writes", {"allow_writes": False, "operations": []}
+        )
+        assert status == 200, body
+        assert rig.app.runtime.inverters["deye1"].cfg.write_release_firmware is None  # type: ignore[union-attr]
+
+
+async def test_a_release_without_a_fresh_identity_read_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, enable=())
+        rig.servers["gw1"].responder.fail_addresses.add(17)
+        status, body = await rig.call(
+            "PUT",
+            "/api/plant/inverters/deye1/writes",
+            {"allow_writes": True, "operations": ["grid_charge_current"]},
+        )
+        assert status == 409 and err(body) in {"read_failed", "inverter_not_ready"}, body
+        cfg = rig.app.runtime.inverters["deye1"].cfg  # type: ignore[union-attr]
+        assert not cfg.allow_writes and cfg.write_release_firmware is None
+
+
+@pytest.mark.parametrize("address", [11, 14, 15, 17, 18])
+async def test_changed_firmware_words_make_the_release_inert_until_released_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, address: int
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        server = rig.servers["gw1"]
+        regs = server.responder.regs
+        _, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        permit = body["preview"]["operation_id"]
+        regs[address] = 0x9999  # an upgrade (or another board) after the release
+        # the permit issued before is rejected at the send point
+        _, body = await confirm(rig, permit)
+        assert body["operation"]["status"] == "rejected"
+        assert body["operation"]["reason"] == "firmware_changed"
+        # no new preview either
+        status, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        assert (status, err(body)) == (409, "firmware_changed")
+        assert fc16(server) == [] and regs[128] == 20
+        _, body = await rig.call("POST", "/api/inverters/deye1/writes/current", {})
+        assert {r["reason"] for r in body["operations"]} == {"firmware_changed"}
+        # the owner releases again: the new fingerprint replaces the old one
+        status, body = await rig.call(
+            "PUT", "/api/plant/inverters/deye1/writes", {"allow_writes": True, "operations": ALL}
+        )
+        assert status == 200, body
+        await settle(rig, ("deye1", "deye2"))
+        op = await write(rig, "deye1", "grid_charge_current", 50)
+        assert op["status"] == "readback_confirmed"
+        assert len(fc16(server)) == 1
+
+
+async def test_an_unreleased_hardware_profile_name_in_the_fingerprint_blocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        svc = svc_of(rig)
+        inv = rig.app.runtime.inverters["deye1"]  # type: ignore[union-attr]
+        stored = inv.cfg.write_release_firmware
+        assert stored is not None
+        object.__setattr__(
+            inv.cfg, "write_release_firmware", stored.model_copy(update={"profile": "other"})
+        )
+        status, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        assert (status, err(body)) == (409, "firmware_changed")
+        assert svc is not None
+
+
+# -- audit completeness (R17-02) --------------------------------------------------------------
+
+
+async def test_a_short_audit_write_is_completed_before_the_send(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = os.write
+
+    def one_byte(fd: int, data: Any) -> int:
+        return real(fd, bytes(data)[:1])
+
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        monkeypatch.setattr("deye_monitor.writes.os.write", one_byte)
+        op = await write(rig, "deye1", "grid_charge_current", 50)
+        monkeypatch.undo()
+        assert op["status"] == "readback_confirmed"
+        recovered = AuditLog(rig.directory / AUDIT_FILE).load()
+        assert recovered[op["operation_id"]]["status"] == "readback_confirmed"
+
+
+async def test_a_zero_progress_audit_write_blocks_the_send(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig)
+        monkeypatch.setattr("deye_monitor.writes.os.write", lambda fd, data: 0)
+        _, body = await preview(rig, "deye1", "grid_charge_current", 50)
+        _, body = await confirm(rig, body["preview"]["operation_id"])
+        assert body["operation"]["status"] == "rejected"
+        assert body["operation"]["reason"] == "audit_unavailable"
+        assert fc16(rig.servers["gw1"]) == []
+
+
+def test_a_torn_trailing_line_does_not_corrupt_the_next_record(tmp_path: Path) -> None:
+    log = AuditLog(tmp_path / AUDIT_FILE)
+    log.append("intent", {"operation_id": "a", "status": "sent"}, 1.0)
+    with log.path.open("ab") as fh:
+        fh.write(b'{"v":1,"ts":2.0,"event":"result","rec')  # interrupted, no newline
+    log.append("intent", {"operation_id": "b", "status": "sent"}, 3.0)
+    loaded = log.load()
+    assert loaded["a"]["status"] == "sent" and loaded["b"]["status"] == "sent"

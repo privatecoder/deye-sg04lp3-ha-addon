@@ -982,7 +982,12 @@ class WebApi:
             i.model_dump(
                 mode="json",
                 exclude_none=True,
-                exclude={"allow_writes", "enabled_write_operations", "profile"},
+                exclude={
+                    "allow_writes",
+                    "enabled_write_operations",
+                    "write_release_firmware",
+                    "profile",
+                },
             )
             for i in plant.inverters
         ]
@@ -1214,6 +1219,7 @@ class WebApi:
             update={
                 "allow_writes": old.allow_writes,
                 "enabled_write_operations": old.enabled_write_operations,
+                "write_release_firmware": old.write_release_firmware,
             }
         )
 
@@ -1388,15 +1394,28 @@ class WebApi:
             or len(set(operations)) != len(operations)
         ):
             raise _field_error("operations", "invalid")
+        release = None
+        if flag and operations:  # the release is bound to the firmware seen right now
+            try:
+                release = await self._writes().release_fingerprint(inverter_id)
+            except Refused as exc:
+                raise self._refusal(exc) from None
 
         def build(plant: PlantConfig) -> PlantConfig:
             old = next(i for i in plant.inverters if i.id == inverter_id)
             try:
                 updated = InverterConfig.model_validate(
                     {
-                        **old.model_dump(mode="json", exclude_none=True),
+                        **old.model_dump(
+                            mode="json", exclude_none=True, exclude={"write_release_firmware"}
+                        ),
                         "allow_writes": flag,
                         "enabled_write_operations": operations,
+                        **(
+                            {"write_release_firmware": release.model_dump(mode="json")}
+                            if release
+                            else {}
+                        ),
                     }
                 )
             except ValidationError as exc:

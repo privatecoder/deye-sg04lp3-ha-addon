@@ -198,6 +198,21 @@ class PollConfig(_Model):
     identity_s: PollSeconds = 3600.0
 
 
+class WriteRelease(_Model):
+    """The firmware the owner released writing for: hardware profile and the identity words
+    R11, R14, R15, R17, R18 observed at the moment of the release (SPEC §10)."""
+
+    profile: Annotated[str, Field(min_length=1, max_length=64)]
+    words: Annotated[tuple[int, ...], Field(min_length=5, max_length=5)]
+
+    @field_validator("words")
+    @classmethod
+    def _words(cls, v: tuple[int, ...]) -> tuple[int, ...]:
+        if not all(0 <= w <= 0xFFFF for w in v):
+            raise ValueError("firmware word out of range")
+        return v
+
+
 class InverterConfig(_Model):
     id: Id
     name: Annotated[str, Field(min_length=1, max_length=64)]
@@ -216,6 +231,9 @@ class InverterConfig(_Model):
     # Write layer v1 (SPEC §10): operations the owner released for this inverter. Writing needs
     # BOTH ``allow_writes`` and the operation in this list; both default to off/empty.
     enabled_write_operations: tuple[str, ...] = ()
+    # Firmware fingerprint observed at the release; writing is inert when the inverter shows
+    # another one until the owner releases again.
+    write_release_firmware: WriteRelease | None = None
 
     @field_validator("enabled_write_operations")
     @classmethod

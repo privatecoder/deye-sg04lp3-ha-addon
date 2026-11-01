@@ -236,6 +236,7 @@ When several endpoints reach one physical bus under different names, give them t
 | `poll_settings_s` | Interval for settings (diagnostic only), default 300. |
 | `poll_identity_s` | Interval for identity registers, default 3600. |
 | `allow_writes` | Master switch of the write layer for this inverter (default `false`). Set in the web interface (plant page), never in the inverter form. Without the matching entry in `enabled_write_operations` nothing can be written. |
+| `write_release_firmware` | Set by the app, not by hand: the hardware profile and firmware words (R11, R14, R15, R17, R18) read when you released writing. If the inverter later reports other words (firmware upgrade), writing stays blocked (“Firmware changed since release”) until you release again. Monitoring is not affected. |
 | `enabled_write_operations` | The settings released for writing on this inverter (default: none). A subset of the nine operations listed under “Writing settings”. |
 
 On one bus (same host and port, or the same `bus_id`) every `unit_id` can belong to only one inverter.
@@ -337,7 +338,10 @@ and check the mode at the display. Everything else (protection and shutdown thre
 time-of-use, clock, battery type, topology, identity and every other register) cannot be written.
 
 **Enabling.** Plant page → inverter card → “Writing”: tick the master switch **and** the settings
-you want to allow, then save. Both are needed; the default is off. This is a plant change (the
+you want to allow, then save. Both are needed; the default is off. Saving needs a fresh identity read of the inverter and stores the firmware it shows
+(R11, R14, R15, R17, R18, hardware profile) with the release. If the firmware changes later, the
+release is inert (“Firmware changed since release — check and release again”) until you release
+again; there is no built-in firmware list, your release is the acceptance. This is a plant change (the
 polling generation is rebuilt). There is no way to enable writing through the sensor selection,
 the setup assistant or “apply to all”.
 

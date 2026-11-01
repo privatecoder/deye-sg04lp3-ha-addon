@@ -19,6 +19,7 @@ master, which are slaves, whether a GRID charge or a Smart Load circuit is in us
   frame, exactly the word you confirmed.
 - Every write is one function code 16 frame with one register, sent once. No retry, no fallback to
   another path, no rollback, no automatic restore, no write to other inverters.
+- The release is bound to the firmware the inverter showed when you released writing (identity words R11, R14, R15, R17, R18 and the hardware profile). After a firmware change the app refuses with “Firmware changed since release” until you check the inverter and release again. Releasing needs the inverter to be online and identified.
 - Nothing is written by itself: not at start, not after a reconnect, not on a schedule, not from
   Home Assistant or MQTT. There are no command topics and no writing entities.
 - A write is acknowledged and read back **from the inverter's communication processor (MCU1)**.
@@ -70,7 +71,7 @@ master, which are slaves, whether a GRID charge or a Smart Load circuit is in us
    - `Read-back confirmed`: the device acknowledged and the register holds exactly the requested
      word. Now check the **display** of the target (and the other inverters) and record what you
      see with “Checked at the device: correct / not correct”.
-   - `Rejected by the device`: the device answered with an exception code; nothing changed.
+   - `Rejected by the device`: the device answered with an exception code. The app still observes the register afterwards and does not retry; check the value and the LCD yourself before assuming anything.
    - `Rejected`: nothing was sent (the reason is shown).
    - `Outcome unknown`: the answer is missing or malformed, or the read-back differs. **Do not
      repeat the write.** Look at the display, then at the current value in the dialog. A matching

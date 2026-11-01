@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from deye_monitor.config import WriteRelease
 from deye_monitor.device import InverterRuntime, InverterState, Route, _epoch
 from deye_monitor.identity import normalize_serial
 from deye_monitor.profiles.decode import decode
@@ -84,7 +85,8 @@ STATUSES = (REJECTED, SENT, FAILED, CONFIRMED, UNKNOWN)
 
 SERIAL_START = 3
 SERIAL_WORDS = 5
-IDENTITY_ADDRESSES = (3, 4, 5, 6, 7, 15, 17, 18, 20, 21)  # serial, firmware words, rated power
+FINGERPRINT_ADDRESSES = (11, 14, 15, 17, 18)  # board versions: HMI, MCU2, MCU1 words
+IDENTITY_ADDRESSES = (3, 4, 5, 6, 7, 11, 14, 15, 17, 18, 20, 21)  # serial, firmware, rated power
 IDENTITY_SPAN = (3, 21)
 R133 = 133  # GEN port usage
 R336 = 336  # parallel role
@@ -124,12 +126,32 @@ class AuditLog:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
             try:
-                os.write(fd, line.encode() + b"\n")
+                data = line.encode() + b"\n"
+                if self._torn_tail():
+                    data = b"\n" + data  # an interrupted earlier record must not swallow this one
+                view = memoryview(data)
+                while view:
+                    written = os.write(fd, view)
+                    if written <= 0:
+                        raise OSError("audit write made no progress")
+                    view = view[written:]
                 os.fsync(fd)
             finally:
                 os.close(fd)
         except (OSError, ValueError) as exc:
             raise AuditError(type(exc).__name__) from exc
+
+    def _torn_tail(self) -> bool:
+        """The file does not end with a newline (an earlier write was interrupted)."""
+        try:
+            with self.path.open("rb") as fh:
+                fh.seek(0, os.SEEK_END)
+                if fh.tell() == 0:
+                    return False
+                fh.seek(-1, os.SEEK_END)
+                return fh.read(1) != b"\n"
+        except OSError:
+            return False
 
     def load(self) -> dict[str, dict[str, Any]]:
         """The latest record per operation id (damaged lines are skipped)."""
@@ -144,6 +166,8 @@ class AuditLog:
                 record = doc["record"]
                 out[record["operation_id"]] = record
             except ValueError, KeyError, TypeError:
+                if line.strip():
+                    log.warning("write audit: skipped an unreadable line")
                 continue
         return out
 
@@ -406,6 +430,27 @@ class WriteService:
         }
 
     @staticmethod
+    def _fingerprint(inv: InverterRuntime, words: Mapping[int, int]) -> WriteRelease:
+        return WriteRelease(
+            profile=inv.hardware.name, words=tuple(words[a] for a in FINGERPRINT_ADDRESSES)
+        )
+
+    def _check_release(self, inv: InverterRuntime, words: Mapping[int, int]) -> None:
+        """The release is bound to the firmware seen when the owner gave it."""
+        if inv.cfg.write_release_firmware != self._fingerprint(inv, words):
+            raise Refused("firmware_changed", 409)
+
+    async def release_fingerprint(self, inverter_id: str) -> WriteRelease:
+        """Fresh identity read for a release (reads only)."""
+        inv = self._target(inverter_id)
+        reason = self._not_ready(inv)
+        if reason is not None:
+            raise Refused("inverter_not_ready", 409, reason=reason)
+        words = await self._context(inv, set())
+        self._identity(inv, words)
+        return self._fingerprint(inv, words)
+
+    @staticmethod
     def _identity(
         inv: InverterRuntime, words: Mapping[int, int]
     ) -> tuple[str, tuple[int, int, int]]:
@@ -436,6 +481,7 @@ class WriteService:
         try:
             words = await self._context(inv, addresses)
             self._identity(inv, words)
+            self._check_release(inv, words)
         except Refused as exc:
             return [self._locked(d, exc.key) for d in descs]
         cap = model_cap(words[20], words[21])
@@ -521,6 +567,7 @@ class WriteService:
             raise Refused("peer_unavailable", 409, peers=missing)
         words = await self._context(inv, self._addresses(desc))
         serial, firmware = self._identity(inv, words)
+        self._check_release(inv, words)
         cap = model_cap(words[20], words[21])
         locked = self._precondition(desc, words, cap)
         if locked is not None:
@@ -794,6 +841,7 @@ class WriteService:
             words = await self._read_context(route, self._addresses(desc))
         except READ_ERRORS as exc:
             raise Refused("read_failed", 409, error=type(exc).__name__) from None
+        self._check_release(inv, words)
         if words != permit.context:
             raise Refused("conflict", 409)
         fresh = words[desc.register]
