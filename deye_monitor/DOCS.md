@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher and an opt-in write layer (0.3.0, experimental).**
+> **Status: device loop with MQTT publisher and an opt-in write layer (0.3.1, experimental).**
 > The app validates its configuration, then connects to the configured endpoints (read-only
 > by default: Modbus function code 03 only; the nine settings under “Writing settings” can be
 > released per inverter and are written only from the web interface), identifies each inverter, binds and checks its serial number, polls the selected
@@ -11,7 +11,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.3.0 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.3.1 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -121,7 +121,9 @@ device loop and without the publisher.
 * **Plant-total inputs.** In the sensor list every entry that feeds a plant total carries the chip
   "Plant total" (only on a member of the plant totals; battery state and BMS values only on the
   master). Deselecting one shows what happens to that total (it becomes unknown, or no longer
-  includes this share). The list is derived from the same definition as the totals.
+  includes this share). Where a total has alternative sources (battery SOC and temperature: BMS
+  first), an input that is only a fallback while a preferred one is selected shows "Plant total
+  (fallback)". The list is derived from the same definition as the totals.
 * **Fields the device does not report.** Profile entries that declare a not-reported value (R0,
   R22, R24, R65: `0xFFFF`, R65 also `0`, R24 any undefined code) are checked once at the identity
   read and again after a change of serial number, firmware (R15/R17/R18) or profile revision.

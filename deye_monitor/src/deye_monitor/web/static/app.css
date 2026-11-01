@@ -242,6 +242,7 @@ input.locked { background: var(--line); color: var(--muted); cursor: not-allowed
 .unit { color: var(--muted); font-weight: 400; }
 .sensor-desc { color: var(--muted); font-size: .88rem; }
 .chip.plant-total { background: var(--info-soft); color: var(--primary); border-color: transparent; }
+.chip.plant-total.fallback { background: transparent; color: var(--muted); border-color: var(--border, currentColor); }
 .plant-warn { display: block; color: var(--warn); font-size: .88rem; }
 .sensor-meta { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; }
 .sensor-meta:empty { display: none; }

@@ -68,6 +68,36 @@ async def test_plant_total_inputs_are_marked_and_a_deselection_is_explained(
         await s.check()
 
 
+async def test_fallback_inputs_of_a_plant_total_are_marked_as_fallback(
+    browser: Browser,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    async with ui_stack(tmp_path) as stack:
+        stack.api.publisher = StubPublisher(VIEW)  # type: ignore[assignment]
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        page = s.page
+        for key in ("bms_soc", "bms_temperature", "battery_soc", "battery_temperature"):
+            await row(page, key).locator("input").check()
+        for key in ("battery_soc", "battery_temperature"):
+            chip = row(page, key).locator(".chip.plant-total")
+            await expect(chip).to_have_text("Anlagensumme (Ersatz)")
+            await expect(row(page, key).locator(".plant-tip")).to_contain_text("Nur Ersatz")
+        for key in ("bms_soc", "bms_temperature"):
+            await expect(row(page, key).locator(".chip.plant-total")).to_have_text("Anlagensumme")
+            await expect(row(page, key).locator(".plant-tip")).to_contain_text(
+                "Wird für die Anlagensumme verwendet"
+            )
+        await row(page, "bms_soc").locator("input").uncheck()
+        await expect(row(page, "battery_soc").locator(".chip.plant-total")).to_have_text(
+            "Anlagensumme"
+        )
+        await expect(row(page, "battery_temperature").locator(".chip.plant-total")).to_have_text(
+            "Anlagensumme (Ersatz)"
+        )
+        await s.check()
+
+
 async def test_no_marks_without_plant_totals(browser: Browser, tmp_path: Path) -> None:  # noqa: F811
     async with ui_stack(tmp_path) as stack:
         s = await open_ui(browser, stack)

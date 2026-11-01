@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- **Sensor list**: an input of a plant total with alternative sources (battery SOC and temperature:
+  BMS value first, inverter value as fallback) is marked "Plant total (fallback)" while a preferred
+  source is selected; only the source actually used carries the plain "Plant total" chip.
+
 ## 0.3.0
 
 **Write layer v1 (opt-in).** The app stays read-only by default. Per inverter the owner can now

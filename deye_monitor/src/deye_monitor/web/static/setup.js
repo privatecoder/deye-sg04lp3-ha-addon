@@ -313,6 +313,8 @@ export function setupView(invId) {
     const note = h('span', { class: 'chip', hidden: true });
     const plant = plantInputsOf(base, entry);
     const plantTip = plant.length ? t('sensor.plant_total_tip') : '';
+    const plantChip = plant.length ? h('span', { class: 'chip plant-total', title: plantTip }, t('sensor.plant_total')) : null;
+    const plantTipEl = plant.length ? h('span', { class: 'sensor-desc plant-tip' }, plantTip) : null;
     const plantWarn = h('span', { class: 'plant-warn', role: 'status', hidden: true });
     const description = localText(entry.description);
     const row = h('div', { class: 'sensor', 'data-key': entry.key },
@@ -324,13 +326,13 @@ export function setupView(invId) {
           h('span', { class: 'sensor-meta' },
             entry.hint ? h('span', { class: `chip hint-${entry.hint}` }, t(`sensor.hint.${entry.hint}`)) : null,
             expert ? h('span', { class: 'chip' }, t(`point.${entry.point}`)) : null,
-            plant.length ? h('span', { class: 'chip plant-total', title: plantTip }, t('sensor.plant_total')) : null,
+            plantChip,
             warn, note),
-          plant.length ? h('span', { class: 'sensor-desc plant-tip' }, plantTip) : null,
+          plantTipEl,
           plantWarn)),
       h('span', { class: 'sensor-actions' }, state_, reset));
     const search = [entry.key, entry.name.de, entry.name.en, description, entry.unit || '', t(`point.${entry.point}`)].join(' ').toLowerCase();
-    rows.set(entry.key, { entry, row, input, state: state_, reset, warn, note, plant, plantWarn, search });
+    rows.set(entry.key, { entry, row, input, state: state_, reset, warn, note, plant, plantChip, plantTipEl, plantWarn, search });
     return row;
   }
 
@@ -409,6 +411,27 @@ export function setupView(invId) {
     r.plantWarn.textContent = lost.map((item) => t(item.mode === 'optional' ? 'sensor.plant_warn_partial' : 'sensor.plant_warn_unknown', { name: plantTotalName(item) })).join(' ');
   }
 
+  // A plant total with alternative sources (`mode === 'any'`) takes the first selected key of
+  // `item.keys`; a row further down that list is only a fallback while an earlier key is selected.
+  function preferredFor(item, key, eff) {
+    if (item.mode !== 'any') return null;
+    const first = item.keys.find((k) => eff.has(k));
+    return first && first !== key && item.keys.indexOf(first) < item.keys.indexOf(key) ? first : null;
+  }
+
+  function paintPlantMarker(r, key, eff) {
+    if (!r.plant.length) return;
+    const fallbacks = r.plant.map((item) => ({ item, preferred: preferredFor(item, key, eff) }));
+    const onlyFallback = fallbacks.every((f) => f.preferred);
+    const tip = onlyFallback
+      ? fallbacks.map(({ item, preferred }) => t('sensor.plant_total_fallback_tip', { metric: plantTotalName(item), preferred: localName(rows.get(preferred).entry) })).join(' ')
+      : t('sensor.plant_total_tip');
+    r.plantChip.textContent = t(onlyFallback ? 'sensor.plant_total_fallback' : 'sensor.plant_total');
+    r.plantChip.classList.toggle('fallback', onlyFallback);
+    r.plantChip.title = tip;
+    r.plantTipEl.textContent = tip;
+  }
+
   function paintRows() {
     const sel = shown();
     const eff = new Set(sel.effective);
@@ -432,6 +455,7 @@ export function setupView(invId) {
       r.reset.hidden = !(removed.has(key) || added.has(key));
       r.warn.hidden = !warned.has(key);
       paintPlantWarning(r, key, eff, removed);
+      paintPlantMarker(r, key, eff);
       const gone = unreported[key];
       const off = inactive[key];
       r.row.classList.toggle('unreported', !!off || (!!gone && gone.profile_value == null));
