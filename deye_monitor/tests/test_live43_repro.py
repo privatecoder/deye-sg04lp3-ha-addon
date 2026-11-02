@@ -44,3 +44,29 @@ async def test_diagnostics_carry_resolution_source_r65_and_plausibility(tmp_path
         assert status["energy"]["source"] == "override"
         assert status["energy"]["plausibility"]["state"] == "unknown"
         assert "raw" in status["r65"]
+
+
+async def test_counted_power_keys_need_every_active_mppt_and_no_ac_coupling(tmp_path: Path) -> None:
+    """R39-02: the plausibility check only integrates a proven common measuring boundary."""
+    from deye_monitor.profiles.features import Features
+
+    async with rig(
+        [ep("gw1")],
+        [inverter("deye1", "gw1")],
+        {"gw1": device_regs(SN, r65=0xFFFF)},
+        tmp_path,
+    ) as r:
+        inv = r.inv("deye1")
+        both = frozenset({"pv1_power", "pv2_power"})
+        inv.features = Features(bms=False)
+        inv.selection = frozenset(inv.selection) | both
+        assert inv._counted_power_keys() == both
+        inv.selection = frozenset(inv.selection) - {"pv2_power"}  # only PV1 is selected
+        assert inv._counted_power_keys() is None
+        inv.features = Features(bms=False, mppt2_used=False)  # one MPPT in use: PV1 is enough
+        assert inv._counted_power_keys() == frozenset({"pv1_power"})
+        inv.selection = frozenset(inv.selection) | both
+        inv.features = Features(bms=False, gen_port_mode="ac_coupled")
+        assert inv._counted_power_keys() is None
+        inv.features = Features(bms=False, mppt1_used=False, mppt2_used=False)
+        assert inv._counted_power_keys() is None

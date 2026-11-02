@@ -17,7 +17,7 @@ Value = int | float | str | bool | None
 
 _PRINTABLE = range(0x20, 0x7F)
 _ROUND_DIGITS = 6
-# The only kWh-per-count factors R65/override can produce (profiles.energy).
+# The only kWh-per-count factors the profile default and the override can produce (profiles.energy).
 ENERGY_FACTORS = (0.1, 1.0)
 
 

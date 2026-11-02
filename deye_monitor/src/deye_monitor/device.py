@@ -274,7 +274,7 @@ class InverterRuntime:
         self.bus_utilisation: Callable[[], float] | None = None
         self.daylight = daylight
         self.energy = energy
-        self.plausibility = EnergyPlausibility()
+        self.plausibility = EnergyPlausibility(cfg.poll.energy_s)
         self.state = InverterState.STARTING
         self.reason = "starting"
         self.active = 0
@@ -326,7 +326,10 @@ class InverterRuntime:
             "capability_conflicts": list(self.capability_conflicts),
             "unreported": self._unreported_view(),
             "inactive": {k: {"reason": r} for k, r in sorted(self.inactive.items())},
-            "energy": {**self.energy.snapshot(), "plausibility": self.plausibility.view()},
+            "energy": {
+                **self.energy.snapshot(),
+                "plausibility": self.plausibility.view(self.wall()),
+            },
             "coalesced_ticks": self.coalesced_ticks,
             "internal_errors": self.internal_errors,
             "last_internal_error": self.last_internal_error,
@@ -971,9 +974,35 @@ class InverterRuntime:
                 value, daylight=entry.point in _PV_POINTS and self.daylight(snapshot.wall_ts)
             )
         if not failed:
-            self.plausibility.feed(values, snapshot.wall_ts, self.energy.generation)
+            self.plausibility.feed(
+                values,
+                snapshot.wall_ts,
+                self.energy.generation,
+                self.energy.series,
+                self._counted_power_keys(),
+            )
         if values:  # an empty selection (or a group without selected keys) creates no entities
             self.sink.on_state(self.id, snapshot, values)
+
+    def _counted_power_keys(self) -> frozenset[str] | None:
+        """The PV power keys that together make up the daily PV counter, or None when that
+        measuring boundary is not proven: an AC-coupled generator port adds energy the MPPT powers
+        do not show, and a counted MPPT whose power is not read cannot be integrated."""
+        features = self.features
+        if features.gen_port_mode == "ac_coupled":
+            return None
+        keys = {
+            key
+            for key, used in (
+                ("pv1_power", features.mppt1_used),
+                ("pv2_power", features.mppt2_used),
+            )
+            if used
+        }
+        selected = set(self.selection) - set(self.unreported) - set(self.inactive)
+        if not keys or not keys <= selected:
+            return None
+        return frozenset(keys)
 
     def _observation(self, key: str, entry: Entry) -> Observation:
         obs = self.observations.get(key)

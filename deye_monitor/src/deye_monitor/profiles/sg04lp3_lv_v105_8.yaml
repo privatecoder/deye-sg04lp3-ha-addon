@@ -757,8 +757,8 @@ entries:
     de: DSP-Protokollversion
     en: DSP protocol version
   description:
-    de: "Protokollversion der Signalverarbeitung; bestimmt, wie genau Energiezähler aufgelöst werden."
-    en: "Protocol version of the signal processor; decides the resolution of the energy counters."
+    de: "Protokollversion der Signalverarbeitung. Reine Diagnose: sie bestimmt nicht die Auflösung der Energiezähler (Profil-Vorgabe 0,1 kWh oder manuelle Wahl)."
+    en: "Protocol version of the signal processor. Diagnostic only: it does not select the resolution of the energy counters (profile default 0.1 kWh or a manual choice)."
   addr: 65
   not_reported:
   - 0
@@ -779,10 +779,7 @@ entries:
   source: "V105.8 registers.json inverter: R65 (TXT 561-567)"
   confidence: document_only
   default_enabled: false
-  notes: "R65 <= 0x0104 selects 0.1 kWh energy resolution, otherwise 1 kWh (V105.8). Not selected by default: it is pulled\
-    \ in as an internal dependency when an energy entity is selected and energy_resolution is auto (ReadPlan.r65_required_for_energy).\
-    \ It can be selected explicitly as a diagnostic; that never changes an energy_resolution override.\
-    \ 0x0000 and 0xFFFF are not a version: the resolution is then unknown and the user chooses it (0.1 kWh or 1 kWh)."
+  notes: "Diagnostic only (0.5.1): R65 never selects the energy resolution; the automatic resolution is the profile default 0.1 kWh, an override wins. The raw word is read as an internal dependency when an energy entity is selected and energy_resolution is auto (ReadPlan.r65_required_for_energy) and can be selected explicitly. 0x0000 and 0xFFFF are not a version and are shown as not reported. The V105.8 statement 'R65 <= 0x0104 selects 0.1 kWh' is retired and not used."
 - key: parallel_enable
   name:
     de: Parallelbetrieb aktiviert
@@ -5780,7 +5777,7 @@ entries:
   source: "V105.8 registers.json inverter: R514 (TXT 3152-3159)"
   confidence: document_only
   default_enabled: true
-  notes: Single 16-bit daily counter (never paired). Resolution from R65 (0.1/1 kWh) once the device is identified; unsigned
+  notes: Single 16-bit daily counter (never paired). Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only); unsigned
     by profile decision.
 - key: battery_energy_discharge_today
   name:
@@ -5809,7 +5806,7 @@ entries:
   source: "V105.8 registers.json inverter: R515 (TXT 3159-3166)"
   confidence: document_only
   default_enabled: true
-  notes: Single 16-bit daily counter (never paired). Resolution from R65 (0.1/1 kWh) once the device is identified; unsigned
+  notes: Single 16-bit daily counter (never paired). Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only); unsigned
     by profile decision.
 - key: grid_energy_import_today
   name:
@@ -5841,7 +5838,7 @@ entries:
   source: "V105.8 registers.json inverter: R520 (TXT 3194-3201)"
   confidence: document_only
   default_enabled: true
-  notes: Single 16-bit daily counter (never paired). Resolution from R65 (0.1/1 kWh) once the device is identified; unsigned
+  notes: Single 16-bit daily counter (never paired). Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only); unsigned
     by profile decision.
 - key: grid_energy_export_today
   name:
@@ -5873,7 +5870,7 @@ entries:
   source: "V105.8 registers.json inverter: R521 (TXT 3201-3208)"
   confidence: document_only
   default_enabled: true
-  notes: Single 16-bit daily counter (never paired). Resolution from R65 (0.1/1 kWh) once the device is identified; unsigned
+  notes: Single 16-bit daily counter (never paired). Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only); unsigned
     by profile decision.
 - key: load_energy_today
   name:
@@ -5900,7 +5897,7 @@ entries:
   source: "V105.8 registers.json inverter: R526 (TXT 3236-3243)"
   confidence: document_only
   default_enabled: true
-  notes: Single 16-bit daily counter (never paired). Resolution from R65 (0.1/1 kWh) once the device is identified; unsigned
+  notes: Single 16-bit daily counter (never paired). Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only); unsigned
     by profile decision. R526 is not part of the R527/R528 total.
 - key: pv_energy_today
   name:
@@ -5932,7 +5929,7 @@ entries:
   source: "V105.8 registers.json inverter: R529 (TXT 3257-3264)"
   confidence: document_only
   default_enabled: true
-  notes: Single 16-bit daily counter (never paired). Resolution from R65 (0.1/1 kWh) once the device is identified; unsigned
+  notes: Single 16-bit daily counter (never paired). Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only); unsigned
     by profile decision. Total over all MPPT; no per-MPPT daily value is available (R530-533 zero-filled).
 - key: battery_energy_charge_total
   name:
@@ -5962,7 +5959,7 @@ entries:
   source: "V105.8 registers.json inverter: R516 (TXT 3166-3173), R517 (TXT 3173-3180)"
   confidence: document_only
   default_enabled: true
-  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
+  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only).
 - key: battery_energy_discharge_total
   name:
     de: Batterie-Entladung gesamt
@@ -5991,7 +5988,7 @@ entries:
   source: "V105.8 registers.json inverter: R518 (TXT 3180-3187), R519 (TXT 3187-3194)"
   confidence: document_only
   default_enabled: true
-  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
+  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only).
 - key: grid_energy_import_total
   name:
     de: Netzbezug gesamt
@@ -6023,7 +6020,7 @@ entries:
   source: "V105.8 registers.json inverter: R522 (TXT 3208-3215), R523 (TXT 3215-3222)"
   confidence: document_only
   default_enabled: true
-  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
+  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only).
 - key: grid_energy_export_total
   name:
     de: Netzeinspeisung gesamt
@@ -6055,7 +6052,7 @@ entries:
   source: "V105.8 registers.json inverter: R524 (TXT 3222-3229), R525 (TXT 3229-3236)"
   confidence: document_only
   default_enabled: true
-  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
+  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only).
 - key: load_energy_total
   name:
     de: Lastenergie gesamt
@@ -6082,7 +6079,7 @@ entries:
   source: "V105.8 registers.json inverter: R527 (TXT 3243-3250), R528 (TXT 3250-3257)"
   confidence: document_only
   default_enabled: true
-  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
+  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only).
 - key: pv_energy_total
   name:
     de: PV-Energie gesamt
@@ -6114,7 +6111,7 @@ entries:
   source: "V105.8 registers.json inverter: R534 (TXT 3292-3299), R535 (TXT 3299-3306)"
   confidence: document_only
   default_enabled: true
-  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
+  notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution is the profile default 0.1 kWh or the override (R65 is diagnostic only).
 - key: grid_side_energy_today_r501
   name:
     de: Netzseitige Tagesenergie

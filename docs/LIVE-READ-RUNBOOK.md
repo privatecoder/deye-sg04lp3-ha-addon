@@ -96,7 +96,7 @@ Setup is done in the web interface (sidebar **Deye Monitor**): with an empty pla
 6. Within the first minutes check identification, bound SN and fresh status data (section 7: state "Online", entity `…_serial` = `expected_serial`). `ready` in the log only confirms started loops, not successful device contact. On a wrong SN/quarantine ("Quarantined") stop immediately, check the assignment outside the app; **no identity reset** to bypass an error.
 7. Observe for 15 minutes. Expected: recurring successful FC03 cycles without a growing queue, repeated cooldowns or new faults. Power values unchanged for minutes are not a test failure with this selection: no power values are read yet.
 8. With a stable course, additionally enable `battery_voltage`, `battery_soc`, `inverter_frequency`, `pv1_power`, `pv2_power` in the web interface (search, tick the checkbox) and check the preview. Expected: **11 sensors, 19 polling blocks** (additionally battery 1, AC 1, PV 1), still without energy and R65. Save and observe for 15 minutes, preferably in daylight. No diagnostic release for PV3–PV10 or battery 2 (the expert raw values stay deselected).
-9. Select energy only afterwards and separately (energy counters via the web interface search "Energy"), check R65 and its resolution and wait for at least one energy cycle. Do not change the path together with the sensor selection: only one influencing factor per change. Afterwards stop the app and log the last approved state.
+9. Select energy only afterwards and separately (energy counters via the web interface search "Energy"), check the effective resolution (diagnostic R65 raw is information only) and wait for at least one energy cycle. Do not change the path together with the sensor selection: only one influencing factor per change. Afterwards stop the app and log the last approved state.
 
 `mqtt: {}` uses the already configured Supervisor MQTT service; it does not start a broker. Missing HA entities with a working connection are to be investigated separately, without forcing faster device polling. Use `info` at first; only if needed a limited debug window, and before passing on remove IPs/SNs/credentials from logs.
 
@@ -140,8 +140,8 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | `sensor.deye_deyetest1_deye1_diag_serial` | Bound inverter SN = `expected_serial`, unique per device. |
 | `sensor.deye_deyetest1_deye1_diag_firmware_mcu1` | Firmware of the communication/HMI board (MCU1, R17-R18), like the Deye cloud: `1001-C070`. |
 | `sensor.deye_deyetest1_deye1_diag_firmware_mcu2` | Firmware of the control board (MCU2, R14-R15-R11), like the Deye cloud: `2005-1175-1807`. |
-| `sensor.deye_deyetest1_deye1_diag_r65_raw` / `…_r65_status` | Energy resolution raw word and whether the last reading worked. Only present while R65 is read and reported (not with a user-chosen resolution, not on a device that reports `0xFFFF`). |
-| `sensor.deye_deyetest1_deye1_diag_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`R65` or `user choice`), confirmation/lock. |
+| `sensor.deye_deyetest1_deye1_diag_r65_raw` / `…_r65_status` | Energy resolution raw word and whether the last reading worked. Only present while R65 is read and reported (diagnostic only; not on a device that reports `0xFFFF`). |
+| `sensor.deye_deyetest1_deye1_diag_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`profile` default or `override`, the user choice). |
 | `sensor.deye_deyetest1_deye1_diag_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |
 | `sensor.deye_deyetest1_deye1_diag_capability_conflicts` | Number of conflicts with the hardware profile; the list is in the attribute `conflicts`. |
 | `sensor.deye_deyetest1_deye1_diag_bus_utilisation` | Utilisation of the app bus (estimate, 1.0 = full). |
@@ -155,7 +155,7 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | --- | --- |
 | Identity | `expected_serial` = bound inverter SN (`…_serial`). Logger SN separate. Active endpoint (`…_path`), last successful cycle (`…_last_success`) and state visible; no `quarantined`/`blocked`. |
 | R22 / R24 | R22: high byte MPPT count, low byte phase count; the profile expects 2/3, i.e. `0x0203`. This is an expectation, not a value already measured on your devices. R24: 0 or 1 means one battery input according to the document, 2 means two. No pack/BMS counter. Document `…_capability_conflicts` and do not release the affected measurements. |
-| R65 / energy | If energy is selected: record raw value, effective factor and source (`auto`/override). `R65 <= 0x0104`: 0.1 kWh/step; otherwise 1 kWh/step, only for the counters curated for that. Missing is not 0. R65 = `0xFFFF` or `0` is no version: the app derives nothing and publishes no energy until the resolution is chosen (see "Choosing the energy resolution" below). No override merely to "make it fit". |
+| R65 / energy | If energy is selected: record the effective factor and its source (`profile` default 0.1 kWh/step, or `override`) and the R65 raw value, which is shown for information only and never selects the factor. Missing is not 0. No override merely to "make it fit". |
 | Energy series | With unchanged SN and resolution `…_energy_series` stays stable across restart and transport change. A confirmed change of resolution, a different device or a deliberately confirmed loss of history begins a new series (old entity is dropped, its statistics stay in HA, unconnected to the new one). On loss of the energy history the energy is locked (`energy_history_missing`/`…_inconsistent`/`energy_store_corrupt`) and on the explicit reset a random 8-character token begins. Do not delete `/data` yourself. |
 | Load / errors | Number of read blocks per group and total load in the web interface, `…_bus_utilisation`, timeouts, reconnects, cooldown. The plan budget is an estimate; foreign pollers/cloud/cache are not included. "Overloaded", a growing queue or repeated recovery are no reason for faster retries. |
 | Quality in HA | Missing/invalid data appears as `unknown` (single value) or `unavailable` (group falls silent after three intervals or app/inverter offline), never as invented zero values. After a reconnect no old instantaneous values as a fresh measurement. `Online` alone does not prove the freshness of every group. |
@@ -165,14 +165,14 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | PV1/PV2 R672/R673 | Each u16, 1 W. Plausibility-check in daytime against an existing display; mind shading/curtailment. 0 at night is expected and no proof of missing support. Three string inputs mean two MPPT measuring channels (2+1 strings) on your 10 kW model, not PV3. PV3–PV10 stay locked. |
 | Multi-word values | Both words from the same read cycle and path; 32-bit pairing/word order per profile. This does not guarantee an exactly simultaneous internal DSP snapshot. |
 
-### Choosing the energy resolution
+### Checking the energy resolution
 
-If the device reports R65 = `0xFFFF` (or `0`), the overview and the sensor page show "The inverter reports no valid energy resolution (R65)", the energy values are `unknown`, the diagnostics show source `unknown` and status `r65_invalid`.
+The automatic resolution is the profile default of 0.1 kWh per step for every SG04LP3 firmware; the R65 raw word is shown in the diagnostics for information only. If the daily energy does not match the inverter display or the cloud:
 
-1. Record the raw value (the `unreported` entry `dsp_protocol_version` in the inverter diagnostics; there is no `…_r65_raw` entity while R65 is not reported) and the daily energy (PV today) on the inverter display.
-2. In the note **Choose 0.1 kWh** (usual for SG04LP3) or **Choose 1 kWh**, or set it under **Set up plant → Inverter → Energy resolution**. This is the only writing change of the app configuration; nothing is written to the device.
-3. The choice begins a **new energy series** (`…_energy_series` changes); the old series is never continued with a different factor.
-4. Check: daily energy in HA against the display (e.g. 7.0 instead of 70 kWh). If it does not match, choose the other resolution; that again begins a new series.
+1. Record the effective factor and source (sensor page diagnostics) and compare **the same counter** (e.g. PV today) at a known time with the inverter display or the cloud.
+2. If it is off by a factor of ten, set **Set up plant → Inverter → Energy resolution** to 1 kWh (or back to 0.1 kWh). The app's note "Choose 0.1 kWh / Choose 1 kWh" offers the same change only when the PV power, fully integrated over equal fresh windows, points to a factor of ten; it is never applied without a click. This changes the app configuration only; nothing is written to the device.
+3. The change begins a **new energy series** (`…_energy_series` changes); the old series is never continued with a different factor.
+4. Check again against the display; if it still does not match, switch back, which again begins a new series.
 
 ## 8. Abort and return to the baseline
 

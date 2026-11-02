@@ -2,11 +2,14 @@
 
 ## 0.5.1 — 2026-11-02
 Field report: a plant showed energy counters 10× too high (factor 1 instead of 0.1 kWh). A diff of
-0.4.1..0.5.0 found no regression; the cause was the automatic rule (R65 > 0x0104 → 1 kWh), which
-firmware analysis (Codex r65-1) shows is wrong: MCU2 1151, 1175 and 1185 all count 0.1 kWh and none has
-an R65 resolution selector.
+0.4.1..0.5.0 found no regression. The automatic rule (R65 > 0x0104 → 1 kWh) is a possible cause of
+that symptom, not a proven root cause: the plant's actual R65 value and override were not available.
+Firmware analysis (Codex r65-1) found nominal 0.1-kWh scaling in the MCU2 1151 and 1175 producer chains
+and no R65 resolution selector in a bounded search; for 1185 the /1000 exports were checked but its
+timer/integrator chain was not traced. Owner decision: the profile default is 0.1 kWh for every SG04LP3
+firmware.
 
-- **Automatic energy resolution = 0.1 kWh (profile default) on every firmware.** R65 is shown only as
+- **Automatic energy resolution = 0.1 kWh (owner's profile policy) on every firmware.** R65 is shown only as
   a diagnostic, never selects 1 kWh and never holds the energy values back (no more "choose the
   resolution" step for R65 = 0xFFFF). An explicit override still wins. Existing series: the stored
   source "r65" becomes "profile"; a series counted at 1 kWh from the old rule continues as a new series
@@ -16,9 +19,13 @@ an R65 resolution selector.
   ("profile default 0.1 kWh" / "your choice") and the effective factor as an information line per
   inverter.
 - **Plausibility hint:** the daily PV counter is compared with the PV power integrated over the same
-  time (`energy_check.py`, in memory, reset by a counter restart or a new energy series, gaps over 5 min
-  are not bridged). A ratio of about 10× either way shows a hint with a button for the other factor;
-  nothing is ever changed automatically.
+  time (`energy_check.py`, in memory). Only equal, fresh windows count: the counter rise between two
+  readings is compared with the power integral of exactly that window, a window with a power gap over
+  5 min or an unknown value is dropped, and the verdict expires when the counter or the power is
+  stale. It is judged only when every PV source counted by the daily counter is integrated (all
+  active MPPT powers selected and valid, no AC-coupled generator port); otherwise it stays unknown.
+  A ratio of about 10× either way shows a hint with a button for the other factor; nothing is ever
+  changed automatically.
 - DOCS: FAQ "energy values 10× too high or too low"; the energy-resolution section is rewritten.
 
 ## 0.5.0 — 2026-11-02

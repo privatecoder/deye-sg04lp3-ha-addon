@@ -1,6 +1,6 @@
 """Lifecycle and recovery on a third instance: generation persisted before discovery survives a
-crash at that exact point (barrier), a failed R65 confirmation changes nothing (the failing read
-is observed), a damaged energy history needs an explicit reset (new opaque namespace), fallback
+crash at that exact point (barrier), a changed or unreadable R65 changes nothing (R65 is a
+diagnostic only; the failing read is observed), a damaged energy history needs an explicit reset (new opaque namespace), fallback
 with the same and with a different serial number."""
 
 from __future__ import annotations
@@ -112,39 +112,33 @@ async def instance_c(running):
         assert fakes["gen"].wire.reads and fakes["fbq"].wire.reads
 
 
-async def test_failed_r65_confirmation_changes_no_generation(running, instance_c):
+async def test_a_changed_r65_changes_no_generation(running, instance_c):
     app, fakes = instance_c
     fake = fakes["gen"]
-    fake.regs[65] = 0x0105  # a different resolution is reported once ...
+    fake.regs[65] = 0x0105  # R65 is a diagnostic only (0.5.1): it never selects the resolution
     fake.drop_connections()  # (R65 is read again after a reconnect)
 
-    async def pending():
+    async def r65_shown():
         inv = (await app.inverters())["c_gen"]["status"]
-        return (inv.get("energy") or {}).get("pending_change") is not None
+        return inv["state"] == "running" and (inv.get("r65") or {}).get("raw") == 0x0105
 
-    await until(
-        pending, "the changed R65 shows as a pending change, not as a new resolution", 150, 0.5
-    )
-    fake.fail_ranges.append((65, 66))  # ... and the confirming read fails
+    await until(r65_shown, "the changed R65 is read and shown as a diagnostic", 150, 1)
 
-    async def failing_confirmation_observed():
-        return fake.hits.get(65, 0) >= 1  # the fake answered a read of R65 with an exception
+    async def factor_unchanged():
+        energy = (await app.inverters())["c_gen"]["status"]["energy"]
+        return energy["effective_resolution"] == 0.1 and energy["source"] == "profile"
 
-    await until(
-        failing_confirmation_observed,
-        "the confirming read of R65 was attempted and failed",
-        150,
-        0.5,
-    )
-    fake.fail_ranges.clear()
-    fake.regs[65] = 0x0104  # the device was fine all along
+    assert await factor_unchanged()
+    fake.fail_ranges.append((65, 66))  # the diagnostic read of R65 fails as well ...
     fake.drop_connections()
 
-    async def settled():
-        inv = (await app.inverters())["c_gen"]["status"]
-        return inv["state"] == "running" and (inv.get("energy") or {}).get("pending_change") is None
+    async def failing_read_observed():
+        return fake.hits.get(65, 0) >= 1  # the fake answered a read of R65 with an exception
 
-    await until(settled, "the pending change is gone and the inverter runs again", 150, 1)
+    await until(failing_read_observed, "the read of R65 was attempted and failed", 150, 0.5)
+    assert await factor_unchanged()  # ... which neither changes the factor nor holds energy back
+    fake.fail_ranges.clear()
+    fake.regs[65] = 0x0104  # restore the fake for the following tests
     assert energy_file(app)["c_gen"]["generation"] == 0
     assert await series(running.ha) == {"g0"}
 
@@ -153,7 +147,7 @@ async def test_failed_r65_confirmation_changes_no_generation(running, instance_c
             "battery_energy_charge_total_g0"
         ) not in (None, "unknown", "unavailable")
 
-    await until(valid, "the energy entity is valid again under the unchanged generation", 120, 2)
+    await until(valid, "the energy entity is valid under the unchanged generation", 120, 2)
 
 
 async def test_a_crash_right_after_the_generation_was_persisted_continues_the_same_generation(

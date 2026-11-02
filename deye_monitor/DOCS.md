@@ -308,9 +308,11 @@ override.
 
 ### Choosing the energy resolution
 
-The SG04LP3 energy counters (R514 and up) count **0.1 kWh** per step on every firmware checked
-(MCU2 1151, 1175, 1185); none of them has an R65 resolution selector (R65 reads 0xFFFF or an
-unrelated number). `energy_resolution: auto` therefore means the profile default, 0.1 kWh, and R65 is
+The SG04LP3 energy counters (R514 and up) are counted in **0.1 kWh** steps. Firmware analysis
+supports this for MCU2 1151 and 1175 (producer chain) and found no R65 resolution selector in a
+bounded search; for 1185 only the exports were checked. R65 itself reads 0xFFFF or an unrelated
+number. `energy_resolution: auto` is the owner's profile policy: the profile default, 0.1 kWh, on
+every firmware, and R65 is
 shown only as a diagnostic ("Energy resolution raw word"); it never selects 1 kWh and never holds the
 energy values back. Set "Energy resolution" in the inverter's connection settings to **1 kWh** only if a
 counter really counts in whole kWh (compare the daily energy with the inverter display); an explicit
@@ -330,11 +332,14 @@ kWh per step). A wrong factor shows as exactly 10× too high (1 chosen, counters
    default 0.1 kWh" (automatic) or "your choice (override)".
 2. **Automatic is 0.1 kWh.** R65 does not choose the factor. If the values are 10× too high, the
    override is probably set to 1 kWh: set "Energy resolution" back to automatic or 0.1 kWh.
-3. **Compare** "PV energy today" with the inverter display or the Deye cloud. A daily PV value of
-   70 kWh in October on a 10 kW plant is wrong.
-4. **The plausibility hint:** the app adds up the PV power since it started and compares it with the
-   rise of the daily PV counter. When the two differ by about 10× the overview shows a hint (after
-   roughly 2 kWh of PV energy). It only advises: nothing is changed automatically.
+3. **Compare** the same counter ("PV energy today") with the inverter display or the Deye cloud at a
+   known time. The rating of the plant and the month alone do not tell whether a daily value is
+   wrong (array size, location and AC-coupled PV change it).
+4. **The plausibility hint:** the app adds up the PV power and compares it with the rise of the daily
+   PV counter over the same time windows. It judges only when all active MPPT powers are selected
+   (PV1/PV2 power) and no generator port is AC-coupled; otherwise it says nothing. When the two
+   differ by about 10× the overview shows a hint (after roughly 2 kWh of PV energy). It only
+   advises: nothing is changed automatically.
 5. **Change it** under "Energy resolution" in the inverter's connection settings (or with the button
    in the hint). The change starts a new statistics series. If the values are still off, open an
    issue with the R65 raw value from step 1 and the MCU2 firmware.

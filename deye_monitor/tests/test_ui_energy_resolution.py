@@ -41,7 +41,7 @@ def judge(
     assert rig.app.runtime is not None
     plausibility = rig.app.runtime.inverters["deye1"].plausibility
     verdict = {"state": state, "ratio": ratio, "integrated_kwh": 5.0, "counter_kwh": 50.0}
-    monkeypatch.setattr(plausibility, "view", lambda: verdict)
+    monkeypatch.setattr(plausibility, "view", lambda now=None: verdict)
 
 
 def override_of(rig: PlantRig) -> str:

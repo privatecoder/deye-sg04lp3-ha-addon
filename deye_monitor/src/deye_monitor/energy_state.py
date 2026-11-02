@@ -1,8 +1,8 @@
 """Energy resolution state and statistics series (SPEC §5, DR2-02, N2-01).
 
-The effective resolution (kWh per count) comes from R65 (``auto``) or the override and is only
-confirmed for an *identified* device. A missing R65 never defaults; a change needs two
-*consecutive* identical valid readings (a missing or invalid reading resets the confirmation).
+The effective resolution (kWh per count) is the profile default (``auto``) or the override
+(``profiles.energy.effective_resolution``). R65 is a diagnostic only and never selects it; records
+written before 0.5.1 may still carry ``source="r65"``.
 
 A statistics series ends when the effective factor changes or when another physical inverter
 (serial number) is bound; a simultaneous change migrates once. Reconnects, path changes and
