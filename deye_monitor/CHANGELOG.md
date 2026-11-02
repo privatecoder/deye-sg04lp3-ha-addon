@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1 — 2026-11-02
+Field report: a plant showed energy counters 10× too high (factor 1 instead of 0.1 kWh). A diff of 0.4.1..0.5.0
+found no regression (energy tracker, config, decode and discovery are unchanged for energy values); the
+automatic rule (R65 ≤ 0x0104 → 0.1 kWh, otherwise 1 kWh) is unchanged, kept in `profiles/energy.py:resolution_from_r65`
+so it can be swapped once MCU2 1151 is analysed.
+
+- **Diagnosable without remote access:** the web status now carries R65 raw, the resolution source
+  (automatic from R65 / your choice) and the effective factor, shown as an information line per inverter.
+- **Plausibility hint:** the daily PV counter is compared with the PV power integrated over the same time
+  (`energy_check.py`, in memory, reset by a counter restart or a new energy series, gaps over 5 min are not
+  bridged). A ratio of about 10× either way shows a hint with a button for the other factor; nothing is ever changed
+  automatically.
+- DOCS: FAQ "energy values 10× too high or too low".
+
 ## 0.5.0 — 2026-11-02
 Scope: the app aims to serve every SUN-5...12K-SG04LP3 installation (grid-tied/export, zero-export, off-grid,
 parallel, GEN as generator / Smart Load / AC-coupled PV, external contactors, CT/meter). What is

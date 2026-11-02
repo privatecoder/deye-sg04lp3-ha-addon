@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher and an opt-in write layer (0.5.0).**
+> **Status: device loop with MQTT publisher and an opt-in write layer (0.5.1).**
 > The app validates its configuration, then connects to the configured endpoints (read-only
 > by default: Modbus function code 03 only; the 41 settings under “Writing settings” can be
 > released per inverter and are written from the web interface or from Home Assistant entities), identifies each inverter, binds and checks its serial number, polls the selected
@@ -11,7 +11,7 @@
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.5.0 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.5.1 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -315,6 +315,29 @@ for the SG04LP3; compare the daily energy with the inverter display) or **1 kWh*
 there, or set "Energy resolution" in the inverter's connection settings. The choice starts a new
 statistics series (the old one is never continued with another factor). Check afterwards that
 the daily PV energy matches the display.
+
+### FAQ: energy values 10× too high or too low
+
+The energy counters (R514 and up) are whole numbers; the app multiplies them by the energy resolution
+(0.1 or 1 kWh per step). A wrong factor shows as exactly 10× too high (1 chosen, counters really in
+0.1 kWh) or 10× too low. What to check:
+
+1. **Which factor is in use?** The overview and the sensor page of the inverter show "Energy
+   resolution: … kWh per step, source: …, R65 raw: …" (also the diagnostic entities "Energy
+   resolution", "Energy resolution source" and "Energy resolution raw word"). *Source* is "automatic
+   from R65" or "your choice (override)".
+2. **Automatic:** the app takes 0.1 kWh for R65 ≤ 0x0104 and 1 kWh above it. Some firmware reports
+   0xFFFF or 0 (no resolution is derived, see above); on other builds R65 may not be a resolution
+   selector at all. If the source is automatic and the values are off by 10×, set the override.
+3. **Compare** "PV energy today" with the inverter display or the Deye cloud. Counters of the
+   SG04LP3 usually match 0.1 kWh (a daily PV value of 70 kWh in October on a 10 kW plant is wrong).
+4. **The plausibility hint:** the app adds up the PV power since it started and compares it with the
+   rise of the daily PV counter. When the two differ by about 10× the overview shows a hint (after
+   roughly 2 kWh of PV energy). It only advises: nothing is changed automatically.
+5. **Change it** under "Energy resolution" in the inverter's connection settings (or with the button
+   in the hint). The change starts a new statistics series; the old one is not continued with
+   another factor. Open an issue with the R65 raw value shown in step 1 so the automatic rule can be
+   checked for your firmware.
 
 ## Installation description and what it selects
 

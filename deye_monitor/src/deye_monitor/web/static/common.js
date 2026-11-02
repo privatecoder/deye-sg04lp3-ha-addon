@@ -146,6 +146,22 @@ export function hintsOf(inv) {
   if (s.energy && s.energy.needs_choice) {
     out.push({ kind: 'energy', text: t('hint.energy.r65_invalid'), actions: energyChoice(inv) });
   }
+  const energyNow = s.energy || {};
+  if (energyNow.effective_resolution != null || energyNow.needs_choice) {
+    const r65 = s.r65 && s.r65.raw != null ? `0x${Number(s.r65.raw).toString(16).toUpperCase().padStart(4, '0')}` : t('hint.energy.r65_none');
+    const source = t(`hint.energy.source.${{ r65: 'auto', override: 'override' }[energyNow.source] || 'unknown'}`);
+    out.push({ kind: 'info', text: t('hint.energy.diag', { factor: energyNow.effective_resolution ?? '?', source, r65 }) });
+  }
+  const check = energyNow.plausibility || {};
+  if (check.state === 'counter_too_high' || check.state === 'counter_too_low') {
+    const high = check.state === 'counter_too_high';
+    const actions = energyChoice(inv).filter((a, i) => (high ? energyNow.effective_resolution === 1 && i === 0 : energyNow.effective_resolution === 0.1 && i === 1));
+    out.push({
+      kind: 'energy',
+      text: t(high ? 'hint.energy.too_high' : 'hint.energy.too_low', { ratio: check.ratio, counter: check.counter_kwh, integrated: check.integrated_kwh }),
+      actions,
+    });
+  }
   for (const hint of s.hints || []) {
     // a plant total needs this value: "only 0" is legitimate (the master may supply no load)
     if (hint.state === 'zero_only_inconclusive' && plantInputsOf(inv, profileOf(inv)?.byKey.get(hint.key)).length) continue;

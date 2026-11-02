@@ -325,6 +325,7 @@ def status_view(inv: InverterRuntime, bus_load: float | None) -> dict[str, Any]:
         "unreported": d["unreported"],
         "inactive": d["inactive"],
         "energy": d["energy"],
+        "r65": d["r65"],
         "hints": hints,
         "error_counters": {
             "consecutive_failed_cycles": d["consecutive_failed_cycles"],

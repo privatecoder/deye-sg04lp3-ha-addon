@@ -40,6 +40,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from deye_monitor.config import EnergyResolution, InverterConfig
+from deye_monitor.energy_check import EnergyPlausibility
 from deye_monitor.energy_state import EnergyTracker
 from deye_monitor.identity import (
     PROBLEM_UNWRITABLE,
@@ -274,6 +275,7 @@ class InverterRuntime:
         self.bus_utilisation: Callable[[], float] | None = None
         self.daylight = daylight
         self.energy = energy
+        self.plausibility = EnergyPlausibility()
         self.state = InverterState.STARTING
         self.reason = "starting"
         self.active = 0
@@ -327,7 +329,7 @@ class InverterRuntime:
             "capability_conflicts": list(self.capability_conflicts),
             "unreported": self._unreported_view(),
             "inactive": {k: {"reason": r} for k, r in sorted(self.inactive.items())},
-            "energy": self.energy.snapshot(),
+            "energy": {**self.energy.snapshot(), "plausibility": self.plausibility.view()},
             "coalesced_ticks": self.coalesced_ticks,
             "internal_errors": self.internal_errors,
             "last_internal_error": self.last_internal_error,
@@ -994,6 +996,8 @@ class InverterRuntime:
             obs.record(
                 value, daylight=entry.point in _PV_POINTS and self.daylight(snapshot.wall_ts)
             )
+        if not failed:
+            self.plausibility.feed(values, snapshot.wall_ts, self.energy.generation)
         if values:  # an empty selection (or a group without selected keys) creates no entities
             self.sink.on_state(self.id, snapshot, values)
 
