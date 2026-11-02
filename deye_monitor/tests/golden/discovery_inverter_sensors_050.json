@@ -1,0 +1,264 @@
+{
+ "availability": [
+  {
+   "topic": "deye/ab12cd34/status"
+  },
+  {
+   "topic": "deye/ab12cd34/deye1/availability"
+  }
+ ],
+ "availability_mode": "all",
+ "components": {
+  "battery_power_derived": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_battery_power_derived",
+   "device_class": "power",
+   "expire_after": 30,
+   "name": "Battery power (V × I)",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/battery",
+   "unique_id": "deye_ab12cd34_deye1_battery_power_derived",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('battery_power_derived') if value_json is mapping else none }}"
+  },
+  "bms_alarm_word": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_bms_alarm_word",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('bms_alarm_word_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "BMS alarm word",
+   "options": [
+    "No alarm reported",
+    "Alarm reported"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_bms_alarm_word",
+   "value_template": "{{ value_json.get('bms_alarm_word') if value_json is mapping else none }}"
+  },
+  "bms_force_charge": {
+   "default_entity_id": "binary_sensor.deye_ab12cd34_deye1_bms_force_charge",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('bms_force_charge_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "BMS force-charge flag",
+   "payload_off": "OFF",
+   "payload_on": "ON",
+   "platform": "binary_sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_bms_force_charge",
+   "value_template": "{% set v = value_json.get('bms_force_charge') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "bms_power_derived": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_bms_power_derived",
+   "device_class": "power",
+   "expire_after": 900,
+   "name": "BMS battery power (V × I)",
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_bms_power_derived",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('bms_power_derived') if value_json is mapping else none }}"
+  },
+  "ct_a_selfcheck_success": {
+   "default_entity_id": "binary_sensor.deye_ab12cd34_deye1_ct_a_selfcheck_success",
+   "entity_category": "diagnostic",
+   "expire_after": 30,
+   "json_attributes_template": "{{ value_json.get('ct_a_selfcheck_success_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/status",
+   "name": "CT A self-check success",
+   "payload_off": "OFF",
+   "payload_on": "ON",
+   "platform": "binary_sensor",
+   "state_topic": "deye/ab12cd34/deye1/status",
+   "unique_id": "deye_ab12cd34_deye1_ct_a_selfcheck_success",
+   "value_template": "{% set v = value_json.get('ct_a_selfcheck_success') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "ct_phase_sequence_result": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_ct_phase_sequence_result",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 30,
+   "json_attributes_template": "{{ value_json.get('ct_phase_sequence_result_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/status",
+   "name": "CT phase sequence result",
+   "options": [
+    "Unconfirmed"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/status",
+   "unique_id": "deye_ab12cd34_deye1_ct_phase_sequence_result",
+   "value_template": "{{ value_json.get('ct_phase_sequence_result') if value_json is mapping else none }}"
+  },
+  "dc_input_power_total": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_dc_input_power_total",
+   "device_class": "power",
+   "expire_after": 30,
+   "name": "DC input power total",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/pv",
+   "unique_id": "deye_ab12cd34_deye1_dc_input_power_total",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('dc_input_power_total') if value_json is mapping else none }}"
+  },
+  "drm3_reported": {
+   "default_entity_id": "binary_sensor.deye_ab12cd34_deye1_drm3_reported",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('drm3_reported_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "DRM3 input reported",
+   "payload_off": "OFF",
+   "payload_on": "ON",
+   "platform": "binary_sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_drm3_reported",
+   "value_template": "{% set v = value_json.get('drm3_reported') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "external_signal_reported": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_external_signal_reported",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('external_signal_reported_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "Grid/Gen Signal (setting)",
+   "options": [
+    "Off",
+    "Grid Signal",
+    "Gen Signal",
+    "Both requests",
+    "Unknown"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_external_signal_reported",
+   "value_template": "{{ value_json.get('external_signal_reported') if value_json is mapping else none }}"
+  },
+  "force_off_grid_reported": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_force_off_grid_reported",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('force_off_grid_reported_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "Force Off-Grid (request)",
+   "options": [
+    "Auto",
+    "On",
+    "Unknown"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_force_off_grid_reported",
+   "value_template": "{{ value_json.get('force_off_grid_reported') if value_json is mapping else none }}"
+  },
+  "gen_energy_today_r536": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_gen_energy_today_r536",
+   "device_class": "energy",
+   "expire_after": 180,
+   "name": "Generator energy today",
+   "platform": "sensor",
+   "state_class": "total_increasing",
+   "state_topic": "deye/ab12cd34/deye1/energy",
+   "suggested_display_precision": 1,
+   "unique_id": "deye_ab12cd34_deye1_gen_energy_today_r536",
+   "unit_of_measurement": "kWh",
+   "value_template": "{{ value_json.get('gen_energy_today_r536') if value_json is mapping else none }}"
+  },
+  "gen_power_raw_total": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_gen_power_raw_total",
+   "device_class": "power",
+   "expire_after": 30,
+   "name": "GEN port power total",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/deye1/ac",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_deye1_gen_power_raw_total",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('gen_power_raw_total') if value_json is mapping else none }}"
+  },
+  "grid_monitoring_source": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_grid_monitoring_source",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('grid_monitoring_source_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "CT/Meter / Grid Tie Meter2 (setting)",
+   "options": [
+    "CT",
+    "Meter"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_grid_monitoring_source",
+   "value_template": "{{ value_json.get('grid_monitoring_source') if value_json is mapping else none }}"
+  },
+  "mppt_scanning_reported": {
+   "default_entity_id": "binary_sensor.deye_ab12cd34_deye1_mppt_scanning_reported",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('mppt_scanning_reported_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "MPPT Scan (setting)",
+   "payload_off": "OFF",
+   "payload_on": "ON",
+   "platform": "binary_sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_mppt_scanning_reported",
+   "value_template": "{% set v = value_json.get('mppt_scanning_reported') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "relay_grid": {
+   "default_entity_id": "binary_sensor.deye_ab12cd34_deye1_relay_grid",
+   "entity_category": "diagnostic",
+   "expire_after": 30,
+   "json_attributes_template": "{{ value_json.get('relay_grid_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/status",
+   "name": "Grid relay",
+   "payload_off": "OFF",
+   "payload_on": "ON",
+   "platform": "binary_sensor",
+   "state_topic": "deye/ab12cd34/deye1/status",
+   "unique_id": "deye_ab12cd34_deye1_relay_grid",
+   "value_template": "{% set v = value_json.get('relay_grid') if value_json is mapping else none %}{{ 'ON' if v is sameas true else 'OFF' if v is sameas false else 'None' }}"
+  },
+  "signal_island_mode_reported": {
+   "default_entity_id": "sensor.deye_ab12cd34_deye1_signal_island_mode_reported",
+   "device_class": "enum",
+   "entity_category": "diagnostic",
+   "expire_after": 900,
+   "json_attributes_template": "{{ value_json.get('signal_island_mode_reported_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/settings",
+   "name": "Signal Island Mode",
+   "options": [
+    "Off",
+    "On",
+    "Unknown"
+   ],
+   "platform": "sensor",
+   "state_topic": "deye/ab12cd34/deye1/settings",
+   "unique_id": "deye_ab12cd34_deye1_signal_island_mode_reported",
+   "value_template": "{{ value_json.get('signal_island_mode_reported') if value_json is mapping else none }}"
+  }
+ },
+ "device": {
+  "identifiers": [
+   "deye_ab12cd34_deye1"
+  ],
+  "manufacturer": "Deye",
+  "model": "Deye SG04LP3 three-phase low-voltage hybrid inverter",
+  "name": "Deye 1",
+  "serial_number": "2401234567",
+  "via_device": "deye_ab12cd34_app"
+ },
+ "origin": {
+  "name": "Deye SG04LP3 Monitor",
+  "sw_version": "0.5.0"
+ }
+}

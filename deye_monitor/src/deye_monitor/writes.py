@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import json
 import logging
 import os
@@ -45,6 +46,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -63,6 +65,8 @@ from deye_monitor.transport.base import (
     WriteTransport,
 )
 from deye_monitor.write_ops import (
+    AFCI_FAULT_BIT,
+    BOUND_CHILDREN,
     BY_KEY,
     DESCRIPTORS,
     HARDWARE,
@@ -73,6 +77,10 @@ from deye_monitor.write_ops import (
     R28,
     R111_SOC,
     R146_SPAIN_BIT,
+    R558,
+    SENTINEL,
+    TOU_SLOTS,
+    Option,
     Refused,
     WriteDescriptor,
     check_range,
@@ -109,6 +117,9 @@ IDENTITY_SPAN = (3, 21)
 R111 = 111  # battery control mode (0 voltage, 1 SOC)
 R133 = 133  # GEN port usage
 R146 = 146  # ToU control word
+R189 = 189  # generator input selector (0 = GEN port, 1 = GRID terminal)
+R553 = 553  # warning word 1; bit 3 = meter communication failure (W4)
+W4_METER_COMM = 0x0008
 CLOCK_ADDRESSES = (62, 63, 64)  # inverter clock (YY<<8|MM, DD<<8|hh, mm<<8|ss)
 R336 = 336  # parallel role
 GEN_SMART_LOAD = 1
@@ -278,6 +289,7 @@ class SettingState:
     field: int
     value: int | float | str | None
     cap: int | None
+    floor: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -596,15 +608,45 @@ class WriteService:
     @staticmethod
     def _addresses(desc: WriteDescriptor) -> set[int]:
         out = {desc.register, R336}
+        if desc.fault_probe is not None:
+            out.add(desc.fault_probe[0])
         if desc.needs_smart_load:
             out.add(R133)
         if desc.requires_r111 is not None:
             out.add(R111)
         if desc.tou:
             out.add(R146)
-        out.update(BY_KEY[key].register for key in desc.related)
+        out.update(WriteService._dependency_addresses(desc))
+        out.update(desc.mode_registers)
+        out.update(desc.context_registers)
+        out.update(desc.report_registers)
+        out.update(g.register for g in desc.gates)
+        if desc.branch is not None:
+            out.add(desc.branch.register)
+        out.update(o.gate.register for o in desc.options if o.gate is not None)
         if desc.firmware_clamp == "charge":
             out.add(R28)  # selector of the 10/12 kW charge ceiling (R14 is in the identity block)
+        return out
+
+    @staticmethod
+    def _dependency_addresses(desc: WriteDescriptor) -> set[int]:
+        """Registers needed to validate the relationships of ``desc`` from either side: every
+        companion with the inputs of ITS numeric validation (the R28 selector of an R108 ceiling),
+        and every descriptor whose dynamic bound refers to ``desc``. One visited set, so
+        reciprocal bounds cannot loop; the same set serves preview, send, current and snapshot."""
+        out: set[int] = set()
+        seen = {desc.key}
+        todo = [BY_KEY[k] for k in desc.related] + [
+            c for c, _, _ in BOUND_CHILDREN.get(desc.key, ())
+        ]
+        while todo:
+            other = todo.pop()
+            if other.key in seen:
+                continue
+            seen.add(other.key)
+            out.add(other.register)
+            if other.firmware_clamp == "charge":
+                out.add(R28)
         return out
 
     @staticmethod
@@ -617,15 +659,19 @@ class WriteService:
         }
 
     @staticmethod
-    def _slave_locked(role: Mapping[str, Any]) -> bool:
+    def _slave_locked(role: Mapping[str, Any], synchronized: bool = True) -> bool:
         """The master distributes the settings block to every slave (a slave's own value would be
         overwritten): only a unit that is known to be a master, or known not to be in a parallel
         system at all, may be written. An unreadable role in an unknown system also locks."""
         parallel = role.get("parallel")
+        if not synchronized:  # a register the master does not copy: every unit, addressed only
+            return parallel is None
         return parallel is None or (parallel is True and role.get("master") is not True)
 
-    def _check_role(self, inv: InverterRuntime, words: Mapping[int, int]) -> None:
-        if self._slave_locked(self._role(inv, words)):
+    def _check_role(
+        self, inv: InverterRuntime, words: Mapping[int, int], desc: WriteDescriptor | None = None
+    ) -> None:
+        if self._slave_locked(self._role(inv, words), desc.synchronized if desc else True):
             raise Refused(PARALLEL_SLAVE, 409)
 
     @staticmethod
@@ -659,7 +705,9 @@ class WriteService:
         if firmware is None or inv.seen_serial is None:
             raise Refused("inverter_not_ready", 409, reason="identifying")
         role = self._identified_role(inv)
-        if role is not None and self._slave_locked({"parallel": role[0], "master": role[1]}):
+        if role is not None and self._slave_locked(
+            {"parallel": role[0], "master": role[1]}, BY_KEY[key].synchronized
+        ):
             raise Refused(PARALLEL_SLAVE, 409)
         route = inv.routes[0]
         return Binding(
@@ -767,15 +815,57 @@ class WriteService:
             words = await self._context(inv, addresses)
             self._identity(inv, words)
             self._check_release(inv, words)
-            self._check_role(inv, words)
         except Refused as exc:
             return {"operations": [self._locked(d, exc.key) for d in descs], "info": {}}
+        role = self._role(inv, words)
         out = []
         for d in descs:
-            row = self._row(d, words, limit_from_words(d, words))
+            if self._slave_locked(role, d.synchronized):  # per descriptor: R35 ... stay writable
+                out.append(self._locked(d, PARALLEL_SLAVE))
+                continue
+            row = self._row(d, words, self._effective_cap(inv, d, words), inv)
             self._check_drift(inverter_id, d, words[d.register])
             out.append(row)
-        return {"operations": out, "info": {"tou": self._tou_info(words)} if with_tou else {}}
+        if all(d.synchronized for d in descs) and all(
+            r.get("reason") == PARALLEL_SLAVE for r in out
+        ):
+            return {"operations": out, "info": {}}
+        info: dict[str, Any] = {"tou": self._tou_info(words)} if with_tou else {}
+        if any(d.fault_probe is not None for d in descs):  # AFCI: module version + fault bit
+            info["afci"] = {
+                "module_version": words.get(12),
+                "fault_word": words.get(R558),
+                "fault": None
+                if R558 not in words
+                else "still_reported"
+                if words[R558] & AFCI_FAULT_BIT
+                else "not_reported",
+            }
+        hints = {d.key: await self._equal_hint(inv, d, words) for d in descs if d.equal_hint}
+        if hints:
+            info["equal"] = hints
+        return {"operations": out, "info": info}
+
+    async def _equal_hint(
+        self, inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> dict[str, Any]:
+        """The configured value of a per-unit setting on every unit of the plant (the addressed
+        unit from the fresh ``words``, the others by one guarded read each). ``equal`` is ``None``
+        while any unit is unknown or holds a word outside the setting's domain."""
+        values: dict[str, Any] = {}
+        for unit_id, other in self.runtime.inverters.items():
+            word = (
+                words[desc.register]
+                if unit_id == inv.id
+                else await self._guarded_word(other, desc.register)
+            )
+            valid = word is not None and desc.incumbent_valid(desc.field_of(word))
+            values[unit_id] = (
+                desc.display(desc.field_of(word)) if valid and word is not None else None
+            )
+        known = list(values.values())
+        equal = None if None in known else len(set(known)) == 1
+        return {"values": values, "equal": equal}
 
     async def snapshot(self, inverter_id: str) -> SettingsSnapshot:
         """Fresh state of every released setting for a transport that shows values (MQTT
@@ -801,13 +891,17 @@ class WriteService:
             words = await self._context(inv, addresses)
             self._identity(inv, words)
             self._check_release(inv, words)
-            self._check_role(inv, words)
         except Refused as exc:
             status = "withdrawn" if exc.key in WITHDRAWN_REASONS else "unavailable"
             return SettingsSnapshot(status, exc.key, {})
+        role = self._role(inv, words)
+        if all(self._slave_locked(role, d.synchronized) for d in descs):
+            return SettingsSnapshot("withdrawn", PARALLEL_SLAVE, {})  # nothing left to write here
         out: dict[str, SettingState] = {}
         for d in descs:
-            row = self._row(d, words, limit_from_words(d, words))
+            if self._slave_locked(role, d.synchronized):
+                continue  # not exposed here (the master's copy is the setting), like a withdrawal
+            row = self._row(d, words, self._effective_cap(inv, d, words), inv)
             self._check_drift(inverter_id, d, words[d.register])
             hidden = row.get("reason") == "unexpected_bits"  # the bit is not the setting's value
             out[d.key] = SettingState(
@@ -818,6 +912,7 @@ class WriteService:
                 field=row["field"],
                 value=None if hidden else row["value"],
                 cap=row["cap"],
+                floor=row.get("floor"),
             )
         return SettingsSnapshot("ok", None, out)
 
@@ -828,7 +923,11 @@ class WriteService:
         r62, r63, r64 = (words[a] for a in CLOCK_ADDRESSES)
         year, month, day = 2000 + (r62 >> 8), r62 & 0xFF, r63 >> 8
         hour, minute, second = r63 & 0xFF, r64 >> 8, r64 & 0xFF
-        valid = 1 <= month <= 12 and 1 <= day <= 31 and hour < 24 and minute < 60 and second < 60
+        try:  # a real Gregorian date of the supported years (month lengths, leap years)
+            datetime.date(year, month, day)
+            valid = year <= 2099 and hour < 24 and minute < 60 and second < 60
+        except ValueError:
+            valid = False
         return {
             "word": word,
             "enabled": bool(word & 1),
@@ -848,7 +947,11 @@ class WriteService:
         return {"key": desc.key, "state": "locked", "reason": reason}
 
     def _row(
-        self, desc: WriteDescriptor, words: Mapping[int, int], cap: int | None
+        self,
+        desc: WriteDescriptor,
+        words: Mapping[int, int],
+        cap: int | None,
+        inv: InverterRuntime,
     ) -> dict[str, Any]:
         field_now = desc.field_of(words[desc.register])
         row: dict[str, Any] = {
@@ -859,31 +962,135 @@ class WriteService:
             "value": desc.display(field_now),
             "cap": cap if desc.model_limited else None,
         }
-        reason = self._precondition(desc, words, cap)
+        if desc.floor_feature is not None:  # the lowest value accepted now (a commissioned reserve)
+            row["floor"] = self._effective_floor(inv, desc, words)
+        reason = self._feature_lock(inv, desc) or self._precondition(desc, words, cap, inv)
         if reason is not None:
             row["state"], row["reason"] = "locked", reason
+        if desc.report_registers:  # context only: shown, never validated or written
+            row["companions"] = self._companion_view(desc, words)
+        if desc.branch or desc.upper or desc.lower:
+            row["range"] = self._dynamic_range(desc, words, cap)
+        if desc.options:  # an option that cannot be chosen now is shown with its reason
+            row["options"] = {o.slug: self._option_lock(o, words, inv) for o in desc.options}
         return row
 
+    @staticmethod
+    def _dynamic_range(
+        desc: WriteDescriptor, words: Mapping[int, int], cap: int | None
+    ) -> list[Any] | None:
+        """[min, max] in engineering units as the fresh companions allow it now (``None``: the
+        range is empty or a companion is not a legal word)."""
+        try:
+            low, high = desc.limits(cap)
+        except Refused:
+            return None
+        if desc.branch is not None:
+            span = desc.branch.limits(words)
+            if span is None:
+                return None
+            low, high = max(low, span[0]), min(high, span[1])
+        for bound in desc.upper + desc.lower:
+            other = BY_KEY[bound.key]
+            value = other.field_of(words[other.register])
+            other_cap = limit_from_words(other, words) if other.model_limited else None
+            if not other.incumbent_valid(value, other_cap):
+                return None
+            if bound in desc.upper:
+                high = min(high, value + bound.offset)
+            else:
+                low = max(low, value + bound.offset)
+        if low > high:
+            return None
+        ends = (low, high) if desc.scale > 0 else (high, low)
+        return [desc.display(ends[0]), desc.display(ends[1])]
+
+    @staticmethod
+    def _feature_lock(inv: InverterRuntime, desc: WriteDescriptor) -> str | None:
+        """The installation description marks the setting as not applicable (shown, locked)."""
+        for gate in desc.feature_gates:
+            if getattr(inv.features, gate.feature) in gate.blocked:
+                return gate.reason
+        return None
+
+    def _option_lock(
+        self, option: Option, words: Mapping[int, int], inv: InverterRuntime
+    ) -> str | None:
+        """Why one option of a select cannot be chosen right now (``None`` = it can)."""
+        if not option.writable:
+            return "option_not_writable"
+        if option.feature is not None:
+            name, wanted, reason = option.feature
+            if getattr(inv.features, name) != wanted:
+                return reason
+        if option.gate is not None and not option.gate.open(words):
+            return option.gate.reason
+        if option.guard is not None:
+            closed: str | None = getattr(self, f"_option_guard_{option.guard}")(inv, option, words)
+            return closed
+        return None
+
+    @staticmethod
+    def _effective_cap(
+        inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> int | None:
+        """The maximum accepted now: the model limit (A / W) intersected with the per-installation
+        limit of the installation description (``desc.envelope``) and the documented maximum,
+        aligned down to the step. ``None`` while a required input is missing (model unknown, or
+        the installation limit not entered: ``_precondition`` names which)."""
+        model = limit_from_words(desc, words)
+        if desc.envelope is None:
+            return model
+        entered = getattr(inv.features, desc.envelope)
+        if entered is None or (desc.power_cap and model is None):
+            return None
+        top: int = min(entered, desc.max_raw, *(() if model is None else (model,)))
+        return top - (top - desc.min_raw) % desc.step_raw if top >= desc.min_raw else top
+
+    @staticmethod
+    def _incumbent_cap(desc: WriteDescriptor, words: Mapping[int, int]) -> int | None:
+        """The cap an EXISTING word is validated against: the model limit only, so a stored value
+        above the installation limit stays readable (and can be lowered)."""
+        model = limit_from_words(desc, words)
+        if desc.envelope is None:
+            return model
+        return desc.max_raw if model is None else min(model, desc.max_raw)
+
     def _precondition(
-        self, desc: WriteDescriptor, words: Mapping[int, int], cap: int | None
+        self,
+        desc: WriteDescriptor,
+        words: Mapping[int, int],
+        cap: int | None,
+        inv: InverterRuntime,
     ) -> str | None:
         """First reason this operation is locked right now (``None`` = open)."""
+        if desc.envelope is not None and getattr(inv.features, desc.envelope) is None:
+            return "envelope_missing"
         if desc.model_limited and cap is None:
             return "model_unknown"
+        if desc.envelope is not None and cap is not None and cap < desc.min_raw:
+            return "envelope_too_low"
         if desc.needs_smart_load and words.get(R133) != GEN_SMART_LOAD:
             return "gen_not_smart_load"
+        if desc.tou and words.get(R146, 0) & R146_SPAIN_BIT:
+            return "spain_mode"
+        for gate in desc.gates:
+            if not gate.open(words):
+                return gate.reason
         if desc.requires_r111 is not None and words.get(R111) != desc.requires_r111:
             return (
                 "soc_mode_required" if desc.requires_r111 == R111_SOC else "voltage_mode_required"
             )
-        if desc.tou and words.get(R146, 0) & R146_SPAIN_BIT:
-            return "spain_mode"
+        if desc.branch is not None and desc.branch.limits(words) is None:
+            return desc.branch.reason
         word = words[desc.register]
         if desc.whole_word_bool and word not in (0, 1):
             return "unexpected_bits"
-        if not desc.incumbent_valid(desc.field_of(word), cap):
+        if desc.reject_sentinel and word == SENTINEL:
+            return "unexpected_bits"
+        if not desc.incumbent_valid(desc.field_of(word), self._incumbent_cap(desc, words)):
             return "existing_value_outside_range"
-        return None
+        return self._guard_lock(inv, desc, words)
 
     def _evaluate(
         self,
@@ -897,18 +1104,516 @@ class WriteService:
         order against the companions, encoding. Returns the model limit, old word and new word."""
         if desc.needs_battery and not inv.features.battery:
             raise Refused("no_battery", 409)
-        cap = limit_from_words(desc, words)
-        locked = self._precondition(desc, words, cap)
+        cap = self._effective_cap(inv, desc, words)
+        locked = self._feature_lock(inv, desc) or self._precondition(desc, words, cap, inv)
         if locked is not None:
             raise Refused("operation_locked", 409, reason=locked)
         check_range(desc, field_new, cap)
+        if desc.branch is not None and (span := desc.branch.limits(words)) is not None:
+            low, high = span
+            if not low <= field_new <= high:
+                raise Refused("value_out_of_range", low=desc.display(low), high=desc.display(high))
+        chosen = desc.option_of(field_new)
+        if (
+            chosen is not None
+            and (option_lock := self._option_lock(chosen, words, inv)) is not None
+        ):
+            raise Refused("operation_locked", 409, reason=option_lock)
         if desc.chain:
             self._check_group(desc, field_new, words, cap)
+        self._check_bounds(desc, field_new, words)
+        self._check_children(desc, field_new, words)
+        self._check_mode_order(desc, field_new, words)
+        self._check_gen_transition(desc, field_new, words)
+        self._check_transition(inv, desc, field_new, words)
         old_word = words[desc.register]
         new_word = desc.encode(old_word, field_new)
         if new_word == old_word:
             raise Refused("no_change", 409)
         return cap, old_word, new_word
+
+    @staticmethod
+    def _check_bounds(desc: WriteDescriptor, field_new: int, words: Mapping[int, int]) -> None:
+        """Dynamic limits from fresh companions (R128 <= R108, a float voltage 2 V above the
+        start threshold ...). A companion that is not a legal word of its own setting refuses."""
+        for bound, upper in [(b, True) for b in desc.upper] + [(b, False) for b in desc.lower]:
+            other = BY_KEY[bound.key]
+            value = other.field_of(words[other.register])
+            other_cap = limit_from_words(other, words) if other.model_limited else None
+            if not other.incumbent_valid(value, other_cap):
+                raise Refused(
+                    "companion_invalid",
+                    409,
+                    companion=other.key,
+                    companion_value=other.display(value),
+                )
+            limit = value + bound.offset
+            if (upper and field_new > limit) or (not upper and field_new < limit):
+                raise Refused(
+                    "bound_max" if upper else "bound_min",
+                    422,
+                    companion=other.key,
+                    companion_value=other.display(value),
+                    limit=desc.display(limit),
+                )
+
+    @staticmethod
+    def _check_children(desc: WriteDescriptor, field_new: int, words: Mapping[int, int]) -> None:
+        """The other side of ``_check_bounds``: a parent (R108, R101, R120 ...) may not move so
+        that a legal child (R128, R123 / R126, a ToU voltage ...) is left outside its bound. The
+        child is rejected, never reduced. A child that is not a legal word is locked on its own."""
+        for child, bound, upper in BOUND_CHILDREN.get(desc.key, ()):
+            value = child.field_of(words[child.register])
+            try:
+                cap = limit_from_words(child, words) if child.model_limited else None
+                if not child.incumbent_valid(value, cap):
+                    continue
+            except Refused:
+                continue
+            limit = field_new + bound.offset
+            if (upper and value > limit) or (not upper and value < limit):
+                raise Refused(
+                    "bound_child",
+                    422,
+                    child=child.key,
+                    child_value=child.display(value),
+                    limit=child.display(limit),
+                )
+
+    # -- contextual guards (descriptor ``guards`` / ``transition`` / option ``guard``) -------------
+
+    def _guard_lock(
+        self, inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> str | None:
+        """First reason a named contextual guard of ``desc`` closes it right now."""
+        for name in desc.guards:
+            reason: str | None = getattr(self, f"_guard_{name}")(inv, desc, words)
+            if reason is not None:
+                return reason
+        return None
+
+    @staticmethod
+    def _guard_gen_source(
+        inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> str | None:
+        """R190: a positively mapped generator source. Mapped: a generator described on the GEN
+        port with fresh R133 = 0 and the generator input selector R189 = 0 (GEN port). R189 = 1
+        selects the generator on the GRID terminal and an unknown word is no selection at all:
+        both are unavailable. A generator described on the GRID terminal is not mapped (the
+        operating branch of R190 with the generator on GRID is not proved): unavailable."""
+        features = inv.features
+        if features.gen_port_mode != "generator":
+            return (
+                "gen_source_unresolved"
+                if features.grid_port_use == "generator"
+                else "gen_source_not_described"
+            )
+        if words.get(R133) != 0:
+            return "gen_port_not_generator"
+        selector = words.get(R189, SENTINEL)
+        if selector == 1:
+            return "gen_source_on_grid"
+        if selector != 0:
+            return "gen_source_selector_unknown"
+        return None
+
+    @staticmethod
+    def _guard_ev_charger(
+        inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> str | None:
+        if inv.features.ev_charger not in ("grid_port", "load_port"):
+            return "ev_charger_not_described"
+        return None
+
+    @classmethod
+    def _guard_ev_context(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> str | None:
+        """An EV setting needs a described charger whose port matches the configured location."""
+        reason = cls._guard_ev_charger(inv, desc, words)
+        if reason is not None:
+            return reason
+        wanted = 1 if inv.features.ev_charger == "grid_port" else 2
+        return None if (words[259] & 0x0030) >> 4 == wanted else "ev_location_mismatch"
+
+    @classmethod
+    def _tou_problem(cls, words: Mapping[int, int]) -> str | None:
+        """Is the ToU context valid: a plausible device clock, a known battery basis and a
+        schedule of valid, strictly ascending start times?"""
+        if cls._tou_info(words)["clock"] is None:
+            return "tou_clock_invalid"
+        if words.get(R111) not in (0, 1):
+            return "tou_basis_invalid"
+        starts = []
+        for n in range(1, TOU_SLOTS + 1):
+            slot = BY_KEY[f"tou_slot{n}_start"]
+            value = slot.field_of(words[slot.register])
+            if not slot.incumbent_valid(value):
+                return "tou_schedule_invalid"
+            starts.append(value)
+        if any(a >= b for a, b in pairwise(starts)):  # strictly ascending
+            return "tou_schedule_invalid"
+        return None
+
+    @classmethod
+    def _guard_tou_context(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> str | None:
+        return cls._tou_problem(words)
+
+    def _check_transition(
+        self, inv: InverterRuntime, desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """Target-dependent prerequisites, evaluated at the preview and at the send point."""
+        if desc.transition is not None:
+            getattr(self, f"_transition_{desc.transition}")(inv, desc, field_new, words)
+
+    @classmethod
+    def _transition_spain_on(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """Spain mode ON activates a different branch: valid clock, basis and schedule. OFF is
+        always possible."""
+        if field_new == 1 and (problem := cls._tou_problem(words)) is not None:
+            raise Refused("operation_locked", 409, reason=problem)
+
+    @staticmethod
+    def _legal_word(key: str, words: Mapping[int, int]) -> int | None:
+        """The field of a companion setting if it is a legal word of that setting (model limit
+        only), else ``None``."""
+        other = BY_KEY[key]
+        value = other.field_of(words[other.register])
+        try:
+            return (
+                value
+                if other.incumbent_valid(value, WriteService._incumbent_cap(other, words))
+                else None
+            )
+        except Refused:
+            return None
+
+    @classmethod
+    def _transition_solar_sell(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """Solar Sell ON needs the commissioned export allowance (installation description), a
+        valid export limit R143 within it and a valid PV sale power R340 within its envelope."""
+        if field_new == 1 and (problem := cls._sale_problem(inv, words)) is not None:
+            raise Refused("operation_locked", 409, reason=problem[0], **problem[1])
+
+    @classmethod
+    def _sale_problem(
+        cls, inv: InverterRuntime, words: Mapping[int, int]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """What active sales arm: the export limit R143 and the PV sale power R340."""
+        return cls._export_limit_problem(inv, words) or cls._activation_problem(
+            inv, "pv_sale_max_power", words
+        )
+
+    @classmethod
+    def _transition_ev_free_work(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """EV free work ON arms the stored charger limit R260 and the stored off-grid SOC: the
+        power must be within its envelope, the SOC at or above the commissioned reserve and the
+        battery low SOC R117 (never repaired). OFF is always possible."""
+        if field_new != desc.on_field:
+            return
+        problem = cls._activation_problem(inv, "ev_max_power", words)
+        if problem is None:
+            problem = cls._ev_reserve_problem(inv, words)
+        if problem is not None:
+            raise Refused("operation_locked", 409, reason=problem[0], **problem[1])
+
+    @classmethod
+    def _transition_ev_location(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """With free work already ON, a new port redirects an active setting: the same activation
+        checks as for free work ON, against the prospective word. OFF stays untouched."""
+        if (words[259] & 0x0003) != BY_KEY["ev_free_work"].on_field:
+            return
+        prospective = {**words, 259: desc.encode(words[259], field_new)}
+        cls._transition_ev_free_work(inv, BY_KEY["ev_free_work"], 2, prospective)
+
+    @classmethod
+    def _ev_reserve_problem(
+        cls, inv: InverterRuntime, words: Mapping[int, int]
+    ) -> tuple[str, dict[str, Any]] | None:
+        soc = BY_KEY["ev_offgrid_soc"]
+        reserve: int | None = getattr(inv.features, soc.floor_feature or "")
+        if reserve is None:
+            return "ev_reserve_missing", {}
+        battery = cls._legal_word("battery_low_soc", words)
+        if battery is None:  # an invalid additional bound is never dropped or guessed
+            return "companion_invalid", {"companion": "battery_low_soc"}
+        floor = max(reserve, battery)
+        value = cls._legal_word("ev_offgrid_soc", words)
+        if value is None:
+            return "companion_invalid", {"companion": "ev_offgrid_soc"}
+        if value < floor:
+            return "ev_soc_below_reserve", {
+                "companion": "ev_offgrid_soc",
+                "companion_value": value,
+                "limit": floor,
+            }
+        return None
+
+    @classmethod
+    def _export_limit_problem(
+        cls, inv: InverterRuntime, words: Mapping[int, int]
+    ) -> tuple[str, dict[str, Any]] | None:
+        allowance = inv.features.export_limit_w
+        if allowance is None:
+            return "envelope_missing", {}
+        if allowance == 0:  # an explicit "no export": never arms selling
+            return "export_allowance_zero", {}
+        limit = cls._legal_word("export_max_power", words)
+        if limit is None:
+            return "export_limit_invalid", {"companion": "export_max_power"}
+        if limit > allowance:
+            return "export_limit_exceeded", {"companion": "export_max_power", "limit": allowance}
+        return None
+
+    @classmethod
+    def _peak_context_problem(
+        cls, inv: InverterRuntime, words: Mapping[int, int]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Mode changes arm the peak-shaving powers that R178 has enabled: a pair is OFF (2), ON
+        (3) or unknown (00 / 01 / FFFF, never "off"); an enabled power must pass its activation
+        check."""
+        r178 = words.get(178, SENTINEL)
+        if r178 == SENTINEL:
+            return "peak_context_unknown", {"companion": "peak_shaving"}
+        for shift, key in ((2, "generator_peak_shaving_power"), (4, "grid_peak_shaving_power")):
+            pair = (r178 >> shift) & 3
+            if pair not in (2, 3):
+                return "peak_context_unknown", {"companion": "peak_shaving"}
+            if pair == 3 and (problem := cls._activation_problem(inv, key, words)):
+                return problem
+        return None
+
+    @classmethod
+    def _activation_problem(
+        cls, inv: InverterRuntime, key: str, words: Mapping[int, int]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """What an enable arms: the parameter ``key`` must be a legal word within its EFFECTIVE
+        installation envelope (fresh words and the saved limit), and its source conditions must
+        hold. A stored over-limit value stays readable and lowerable, but is not newly armed."""
+        desc = BY_KEY[key]
+        if (reason := cls._feature_lock(inv, desc)) is not None:
+            return reason, {"companion": key}
+        if desc.envelope is not None and getattr(inv.features, desc.envelope) is None:
+            return "envelope_missing", {"companion": key}
+        for name in desc.guards:
+            if (reason := getattr(cls, f"_guard_{name}")(inv, desc, words)) is not None:
+                return reason, {"companion": key}
+        value = cls._legal_word(key, words)
+        if value is None:
+            return "companion_invalid", {"companion": key}
+        cap = cls._effective_cap(inv, desc, words)
+        if cap is None or cap < desc.min_raw:
+            return "envelope_too_low", {"companion": key}
+        if value > cap:
+            return "peak_power_exceeds_envelope", {
+                "companion": key,
+                "companion_value": desc.display(value),
+                "limit": desc.display(cap),
+            }
+        return None
+
+    @classmethod
+    def _transition_peak_shaving_on(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """Enabling a peak-shaving pair arms its power R190 / R191: validated like a direct write
+        of that power. OFF (and the pair's other value) is always possible."""
+        if field_new != desc.on_field:
+            return
+        key = f"{desc.key}_power"
+        if (problem := cls._activation_problem(inv, key, words)) is not None:
+            raise Refused("operation_locked", 409, reason=problem[0], **problem[1])
+
+    @classmethod
+    def _option_guard_export_target(
+        cls, inv: InverterRuntime, option: Option, words: Mapping[int, int]
+    ) -> str | None:
+        """R142: what the target mode makes active must be valid NOW (never repaired): R145 as a
+        legal whole word, the export limit R143 where sales are or become active, an enabled
+        peak-shaving power, and for external zero-export a described, matching measurement path."""
+        problem = cls._export_target_problem(inv, option.field, words)
+        return None if problem is None else problem[0]
+
+    @classmethod
+    def _export_target_problem(
+        cls, inv: InverterRuntime, target: int, words: Mapping[int, int]
+    ) -> tuple[str, dict[str, Any]] | None:
+        if words[145] not in (0, 1):
+            return "companion_invalid", {"companion": "pv_sale_enable"}
+        problem = cls._peak_context_problem(inv, words)
+        if problem is not None:
+            return problem
+        if target == 0 or words[145] == 1:  # sales are or become active: R143 within the allowance
+            problem = cls._sale_problem(inv, words)
+            if problem is not None:
+                return problem
+        if target == 2:
+            return cls._measurement_problem(inv, words)
+        return None
+
+    @staticmethod
+    def _measurement_problem(
+        inv: InverterRuntime, words: Mapping[int, int]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """External zero-export (a product policy, not a proof of function): the described path
+        (CT / meter, second meter) must equal the configured R344 in the layout established for
+        this build (bit 0 meter, bit 1 second meter; any other bit is a layout that is not
+        established and is no substitute), and the meter communication warning W4 (R553 bit 3)
+        must not be active, read fresh. That the measurement actually works beyond this is not
+        verified."""
+        described = inv.features.external_measurement
+        if described in ("none", "unknown"):
+            return "measurement_not_described", {}
+        word = words[344]
+        if word == SENTINEL:
+            return "measurement_path_unreadable", {}
+        if word & ~3:
+            return "measurement_path_unsupported", {}
+        if bool(word & 1) != described.startswith("meter") or bool(word & 2) != described.endswith(
+            "second_meter"
+        ):
+            return "measurement_path_mismatch", {}
+        status = words.get(R553, SENTINEL)
+        if status == SENTINEL:
+            return "measurement_status_unreadable", {}
+        if status & W4_METER_COMM:
+            return "measurement_fault_active", {}
+        return None
+
+    @staticmethod
+    def _guard_ev_reserve(
+        inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> str | None:
+        """The EV off-grid SOC needs the commissioned reserve of the installation description."""
+        return "ev_reserve_missing" if inv.features.ev_offgrid_reserve_soc is None else None
+
+    @classmethod
+    def _effective_floor(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, words: Mapping[int, int]
+    ) -> int | None:
+        """The lowest EV off-grid SOC accepted now: the commissioned reserve, and as an additional,
+        explicit bound the battery low SOC R117 (read fresh, a legal word). ``None`` while the
+        reserve is not entered."""
+        if desc.floor_feature is None:
+            return None
+        reserve: int | None = getattr(inv.features, desc.floor_feature)
+        if reserve is None:
+            return None
+        battery = cls._legal_word("battery_low_soc", words)
+        return reserve if battery is None else max(reserve, battery)
+
+    @classmethod
+    def _transition_ev_soc(
+        cls, inv: InverterRuntime, desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """The EV off-grid SOC may not go below the commissioned EV reserve of the installation
+        description, nor below the battery low SOC R117 (an additional, stated bound; read fresh
+        and valid). Never silently raised."""
+        reserve = inv.features.ev_offgrid_reserve_soc
+        if reserve is None:
+            raise Refused("operation_locked", 409, reason="ev_reserve_missing")
+        battery = cls._legal_word("battery_low_soc", words)
+        if battery is None:
+            raise Refused(
+                "companion_invalid", 409, companion="battery_low_soc", companion_value=None
+            )
+        if field_new < max(reserve, battery):
+            raise Refused(
+                "ev_soc_below_reserve",
+                422,
+                floor=max(reserve, battery),
+                reserve=reserve,
+                battery_low=battery,
+                companion="battery_low_soc",
+            )
+
+    @staticmethod
+    def _check_gen_transition(
+        desc: WriteDescriptor, field_new: int, words: Mapping[int, int]
+    ) -> None:
+        """R133: before the GEN port takes the role Smart Load (1) or AC coupling (2), the
+        thresholds of the newly active mode are read fresh and must already satisfy that mode's
+        order for the battery basis R111 (Smart Load: ON >= OFF + margin, AC coupling reversed).
+        Nothing is repaired and no other register is written; the LCD repairs do not run."""
+        if desc.mode_check != "gen_port" or field_new == 0:
+            return
+        basis = words.get(R111)
+        if basis not in (0, 1):
+            raise Refused("mode_companions_invalid", 409, reason="basis_unknown")
+        keys = (
+            ("smart_load_off_voltage", "smart_load_on_voltage")
+            if basis == 0
+            else ("smart_load_off_soc", "smart_load_on_soc")
+        )
+        off, on = BY_KEY[keys[0]], BY_KEY[keys[1]]
+        values = []
+        for member in (off, on):
+            value = member.field_of(words[member.register])
+            if not member.incumbent_valid(value):
+                raise Refused(
+                    "mode_companions_invalid",
+                    409,
+                    reason="companion_invalid",
+                    companion=member.key,
+                    companion_value=member.display(value),
+                )
+            values.append(value)
+        margin = on.mode_order.margin if on.mode_order else 0
+        ok = (
+            values[1] >= values[0] + margin
+            if field_new == GEN_SMART_LOAD
+            else values[0] >= values[1] + margin
+        )
+        if not ok:
+            raise Refused(
+                "mode_threshold_order",
+                422,
+                mode="smart_load" if field_new == GEN_SMART_LOAD else "ac_coupled",
+                off=off.display(values[0]),
+                on=on.display(values[1]),
+            )
+
+    @staticmethod
+    def _check_mode_order(desc: WriteDescriptor, field_new: int, words: Mapping[int, int]) -> None:
+        """An ON/OFF pair whose order follows the fresh GEN port usage (R133 = 1 Smart Load: ON >=
+        OFF + margin; R133 = 2 AC coupling: reversed). The other member is read fresh and must be
+        a legal word of its own setting; it is never repaired."""
+        order = desc.mode_order
+        if order is None:
+            return
+        other = BY_KEY[order.companion]
+        value = other.field_of(words[other.register])
+        if not other.incumbent_valid(value):
+            raise Refused(
+                "companion_invalid",
+                409,
+                companion=other.key,
+                companion_value=other.display(value),
+            )
+        upper_me = order.on_member == (words.get(R133) == GEN_SMART_LOAD)
+        if upper_me:
+            ok, relation = field_new >= value + order.margin, "above"
+        else:
+            ok, relation = value >= field_new + order.margin, "below"
+        if not ok:
+            raise Refused(
+                "threshold_order",
+                422,
+                companion=other.key,
+                companion_value=other.display(value),
+                ordering=relation,
+                margin=desc.display(order.margin) if desc.scale == 1 else order.margin / desc.scale,
+            )
 
     @staticmethod
     def _check_group(
@@ -938,7 +1643,7 @@ class WriteService:
         # the pairs next to the edited member first: they explain the refusal best
         pairs.sort(key=lambda p: me not in p)
         for i, j in pairs:
-            if fields[i] >= fields[j]:
+            if fields[i] > fields[j] or (desc.chain_strict and fields[i] == fields[j]):
                 if me in (i, j):
                     near = j if i == me else i
                     relation = "below" if near > me else "above"
@@ -1020,7 +1725,7 @@ class WriteService:
         words = await self._context(inv, self._addresses(desc))
         serial, firmware = self._identity(inv, words)
         self._check_release(inv, words)
-        self._check_role(inv, words)
+        self._check_role(inv, words, desc)
         peers = await self._peer_baselines(inverter_id, desc)
         missing = [p["id"] for p in peers.values() if p["baseline_word"] is None]
         if missing:
@@ -1031,7 +1736,7 @@ class WriteService:
         except Refused as refusal:
             if not (direct and refusal.key == "no_change"):
                 raise
-            cap = limit_from_words(desc, words)
+            cap = self._effective_cap(inv, desc, words)
             old_word = new_word = words[desc.register]
             noop = True
         route = inv.routes[0]
@@ -1101,8 +1806,34 @@ class WriteService:
             "new_word_hex": _hex(permit.new_word),
             "mask_hex": _hex(desc.mask),
             "peers": [self._peer_view(p, desc) for p in permit.peers.values()],
+            "companions": self._companion_view(desc, permit.context),
             "plant_revision": permit.plant_revision,
         }
+
+    @staticmethod
+    def _companion_view(
+        desc: WriteDescriptor, context: Mapping[int, int] | None
+    ) -> list[dict[str, Any]]:
+        """The companions a role change affects, as the preview read them (shown, never changed)."""
+        registers = desc.mode_registers + desc.report_registers
+        if not registers or context is None:
+            return []
+        by_register = {d.register: d for d in DESCRIPTORS if d.mask == 0xFFFF}
+        out = []
+        for register in registers:
+            word = context.get(register)
+            other = by_register.get(register)
+            out.append(
+                {
+                    "register": register,
+                    "word": word,
+                    "key": None if other is None else other.key,
+                    "value": None
+                    if other is None or word is None
+                    else other.display(other.field_of(word)),
+                }
+            )
+        return out
 
     @staticmethod
     def _peer_view(peer: Mapping[str, Any], desc: WriteDescriptor) -> dict[str, Any]:
@@ -1350,7 +2081,7 @@ class WriteService:
         except READ_ERRORS as exc:
             raise Refused("read_failed", 409, error=type(exc).__name__) from None
         self._check_release(inv, words)
-        self._check_role(inv, words)  # before the comparison: a role change is its own reason
+        self._check_role(inv, words, desc)  # before the comparison: a role change is its own reason
         serial, _ = self._identity(inv, words)
         if serial != permit.serial:
             raise Refused("binding_changed", 409)
@@ -1369,9 +2100,19 @@ class WriteService:
             raise Refused("conflict", 409)
         if permit.context is None:  # no preview: the words are those of this critical section
             self._bind_words(permit, op, desc, fresh, new)
+        if desc.fault_probe is not None:  # the fault word as it stood before the command
+            op["fault_before"] = {
+                "register": desc.fault_probe[0],
+                "word": words.get(desc.fault_probe[0]),
+            }
         self._authorise(permit)
         grant = WriteGrant(
-            unit=route.unit, register=desc.register, mask=desc.mask, old_word=fresh, new_word=new
+            unit=route.unit,
+            register=desc.register,
+            mask=desc.mask,
+            old_word=fresh,
+            new_word=new,
+            command_word=desc.command_word,
         )
         op["status"] = SENT
         if not self._record("intent", op):
@@ -1425,12 +2166,34 @@ class WriteService:
             "word_hex": _hex(word),
             "field": field_seen,
             "value": None if field_seen is None else desc.display(field_seen),
-            "matches_request": None if word is None else word == permit.new_word,
+            "matches_request": self._matches_request(desc, word, permit),
         }
+        if desc.accepted_after:  # a command: acknowledged / stored request / consumption unknown
+            op["target"]["command_state"] = self._command_state(desc, word, permit)
+        if desc.fault_probe is not None:  # reported next to, never instead of, the acceptance
+            reg, mask = desc.fault_probe
+            fault = await self._observed_word(inv, reg)
+            before = (op.get("fault_before") or {}).get("word")
+            op["fault"] = {
+                "register": reg,
+                "mask": mask,
+                "word_before": before,
+                "word": fault,
+                "state": self._fault_verdict(before, fault, mask),
+            }
         if op["status"] == SENT:  # a valid acknowledgement arrived
-            matched = word is not None and word == permit.new_word
+            matched = word is not None and self._accepted(desc, word, permit)
             op["status"] = CONFIRMED if matched else UNKNOWN
-            op["reason"] = None if matched else "readback_missing_or_mismatch"
+            op["reason"] = (
+                None
+                if matched
+                else (
+                    "consumption_not_established"
+                    if desc.accepted_after
+                    and self._command_state(desc, word, permit) == "consumption_unknown"
+                    else "readback_missing_or_mismatch"
+                )
+            )
         elif op["status"] == UNKNOWN:
             # a later matching value is recorded but does not show that this command caused it
             op["attribution"] = "not_established"
@@ -1456,6 +2219,46 @@ class WriteService:
                 }
             )
         op["peers"] = peers
+
+    @staticmethod
+    def _accepted(desc: WriteDescriptor, word: int, permit: Permit) -> bool:
+        """Does the read-back word equal the request? Only then is a stored request observed. A
+        command (R181 clear) that the firmware already normalised (2 to 1) shows nothing: the
+        unchanged 1 is also what an ignored command leaves behind."""
+        return word == permit.new_word
+
+    @classmethod
+    def _matches_request(
+        cls, desc: WriteDescriptor, word: int | None, permit: Permit
+    ) -> bool | None:
+        if word is None:
+            return None
+        if cls._accepted(desc, word, permit):
+            return True
+        return None if cls._command_state(desc, word, permit) == "consumption_unknown" else False
+
+    @staticmethod
+    def _command_state(desc: WriteDescriptor, word: int | None, permit: Permit) -> str | None:
+        """Transport acknowledgement, observed stored request and unknown consumption are separate
+        facts: a read-back equal to the request is a stored request; the normalised word cannot tell
+        a consumed command from an ignored one."""
+        if word is None:
+            return "readback_missing"
+        if word == permit.new_word:
+            return "request_stored"
+        return "consumption_unknown" if desc.field_of(word) in desc.accepted_after else "mismatch"
+
+    @staticmethod
+    def _fault_verdict(before: int | None, after: int | None, mask: int) -> str:
+        """The reported fault bit around a command: only a 1 to 0 change is "no longer reported"
+        (0 to 0 is "not reported"); a missing read before or after leaves it unknown."""
+        if after is None:
+            return "unknown"
+        if after & mask:
+            return "still_reported"
+        if before is None:
+            return "unknown"
+        return "no_longer_reported" if before & mask else "not_reported"
 
     async def _peer_read(
         self, peer_id: str, expected: str | None, desc: WriteDescriptor, field_requested: int

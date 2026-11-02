@@ -82,6 +82,12 @@ BOOTSTRAP_KEYS = frozenset(
         "gen_port_usage",
         "gen_on_grid_input",
         "parallel_enable",
+        # 0.5.0: the settings behind the installation questions export policy, external
+        # measurement, signal use, battery control basis and ToU (consistency hints only)
+        "export_mode_setting",
+        "grid_monitoring_source",
+        "external_signal_reported",
+        "tou_enable",
     }
 )
 SLAVE_TEMPERATURE_KEY = "battery_temperature"  # R586: valid on the parallel master only
@@ -978,6 +984,7 @@ class InverterRuntime:
                         snapshot.words,
                         energy_resolution=resolution,
                         main_firmware=self._main_firmware(),
+                        features=self.features,
                     )
                 )
             if entry.fw_offsets is not None and not failed:
@@ -1054,8 +1061,56 @@ class InverterRuntime:
         if enable is not None:
             self.suggested_features["parallel"] = bool(enable)
             basis["parallel"] = "R336 bit0"
+        self._suggest_policy_features(read, battery_basis, basis)
         if basis:
             self.suggested_features.setdefault("_basis", {}).update(basis)
+
+    def _suggest_policy_features(
+        self, read: Callable[[str], Value], battery_basis: Value, basis: dict[str, Any]
+    ) -> None:
+        """Suggestions for the 0.5.0 installation questions. Every one is only a comparison of the
+        configured setting with the user's intent (the user confirms, T10); none chooses an answer
+        and none proves wiring, a meter, a contactor or permission to export."""
+        export = read("export_mode_setting")  # R142
+        if isinstance(export, str):
+            self.suggested_features["export_policy"] = {
+                "sales_enabled": "export_allowed",
+                "internal_zero_export": "zero_export_load",
+                "external_zero_export": "zero_export_external",
+            }.get(export, "unknown")
+            basis["export_policy"] = "R142 setting (no proof of permission to export)"
+        source = read("grid_monitoring_source")  # R344: bit 0 meter (else CT), bits 1/2 extra meter
+        if isinstance(source, int) and not isinstance(source, bool):
+            second = bool(source & 0x6)
+            kind = "meter" if source & 1 else "ct"
+            self.suggested_features["external_measurement"] = (
+                f"{kind}_and_second_meter" if second else kind
+            )
+            basis["external_measurement"] = "R344 setting (no proof of wiring or a fresh meter)"
+        signal = read("external_signal_reported")  # R140 bits 0-1: off / grid / gen / both
+        if signal in ("off", "grid", "gen", "both"):
+            self.suggested_features["external_signal_use"] = {
+                "both": "shared_grid_and_generator_logic",
+                "grid": "grid_contactor",
+                "gen": "generator_start",
+                "off": "none",
+            }[signal]
+            basis["external_signal_use"] = (
+                "R140 bits 0-1 (a request, no proof of a connected contact)"
+            )
+        if (
+            isinstance(battery_basis, int)
+            and not isinstance(battery_basis, bool)
+            and 0 <= battery_basis <= 2
+        ):  # R111: 0 voltage, 1 SOC, 2 no battery
+            self.suggested_features["battery_control_basis"] = ("voltage", "soc", "none")[
+                battery_basis
+            ]
+            basis["battery_control_basis"] = "R111 setting"
+        tou = read("tou_enable")  # R146 bit 0
+        if isinstance(tou, bool):
+            self.suggested_features["tou_used"] = tou
+            basis["tou_used"] = "R146 bit0 (a configuration state, not an answer)"
 
     def _schedule_next(self, group: str, now: float) -> None:
         interval = self._interval(group)

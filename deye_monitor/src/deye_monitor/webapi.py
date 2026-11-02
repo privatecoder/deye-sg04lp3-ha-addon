@@ -40,12 +40,15 @@ from deye_monitor.config import (
     plant_problems,
 )
 from deye_monitor.device import CONFLICT_POINTS, InverterRuntime
+from deye_monitor.help_texts import sensor_help
 from deye_monitor.mqtt import MqttPublisher
 from deye_monitor.mqtt_settings import SettingsPlane
 from deye_monitor.observation import ObservationState
 from deye_monitor.plant import MAX_ENDPOINTS, MAX_INVERTERS, PlantService
 from deye_monitor.profiles.plan import ReadPlan
 from deye_monitor.profiles.schema import Entry, Profile
+from deye_monitor.profiles.setting_presets import suggested_operations
+from deye_monitor.profiles.states import STATES
 from deye_monitor.runtime import Runtime
 from deye_monitor.selection import (
     ChangeError,
@@ -220,6 +223,9 @@ def entry_view(e: Entry) -> dict[str, Any]:
         "description": (
             {"de": e.description.de, "en": e.description.en} if e.description else None
         ),
+        "help": sensor_help(e.key),
+        "registers": list(e.addresses),
+        "has_state": e.key in STATES,
         # Text key for the UI: a decoded value whose meaning depends on the build, or a raw word.
         "hint": e.release if e.release in ("profile_dependent", "unresolved") else None,
         "notice": e.picker_notice,
@@ -1039,6 +1045,12 @@ class WebApi:
                     i.id: {
                         "allow_writes": i.allow_writes,
                         "operations": list(i.enabled_write_operations),
+                        "suggested_operations": list(
+                            suggested_operations(
+                                self.manager.selection(i.id).features,
+                                self.manager.selection(i.id).confirmed,
+                            )
+                        ),
                     }
                     for i in plant.inverters
                 },

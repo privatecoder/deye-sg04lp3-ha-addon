@@ -5,11 +5,12 @@
 
 import { ApiError, api } from './api.js';
 import { t, errorText, localText } from './i18n.js';
+import { helpButton } from './common.js';
 import { h, modal, toast, busy } from './ui.js';
 import { state, canEdit, loadPlant, mutate, reloadAfterPlantChange } from './state.js';
 
-const GROUPS = ['battery', 'grid_charge', 'smart_load', 'tou'];
-const SLOT_RE = /^tou_slot(\d)_(start|power|soc|grid_charge)$/;
+const GROUPS = ['battery', 'battery_curve', 'battery_setup', 'grid_charge', 'gen', 'smart_load', 'tou', 'island', 'signal', 'pv', 'export', 'peak_shaving', 'grid', 'engineering', 'ev'];
+const SLOT_RE = /^tou_slot(\d)_(start|power|soc|voltage|grid_charge|gen_charge|spain_gm|spain_bu|spain_ch)$/;
 
 export const writeConfig = (id) => {
   const writes = state.plant && state.plant.writes;
@@ -56,11 +57,27 @@ function entityLine(id) {
 
 function rangeText(op) {
   if (op.whole_word_bool) return t('writes.range.word01');
+  if (op.kind === 'bit' && op.mask !== 1) return t('writes.range.field', { mask: hex(op.mask) });
   if (op.kind === 'bit') return t('writes.range.bit');
   if (op.kind === 'time') return t('writes.range.time');
+  if (op.kind === 'select') return t('writes.range.select');
   if (op.current_cap) return t('writes.range.cap', { caps: capsText() });
   if (op.power_cap) return t('writes.range.power');
   return t('writes.range.unit', { min: fmtNumber(op, op.min), max: fmtNumber(op, op.max), unit: op.unit });
+}
+
+// The range accepted now: the fresh effective bounds of the row (a zero cap is a cap, not absent;
+// the commissioned floor is aligned up to the first accepted step).
+function rowRange(op, row) {
+  const hasCap = row.cap !== null && row.cap !== undefined;
+  const hasFloor = row.floor !== null && row.floor !== undefined;
+  if (!hasCap && !hasFloor) return rangeText(op);
+  let low = op.min;
+  if (hasFloor && row.floor > low) low += Math.ceil((row.floor - low) / op.step) * op.step;
+  const unit = op.unit;
+  if (hasCap && row.cap < low) return t('writes.range.empty', { cap: row.cap, min: low, unit });
+  if (hasCap) return t(op.power_cap ? 'writes.range.limit_power' : 'writes.range.limit', { min: low, max: row.cap, unit });
+  return t('writes.range.floor', { min: low, max: fmtNumber(op, op.max), unit });
 }
 
 // A short sentence on the gates a setting depends on (fresh reads decide at the moment of writing).
@@ -82,10 +99,17 @@ function fmtNumber(op, value) {
   return op.unit === 'V' ? Number(value).toFixed(2) : String(value);
 }
 
+// The shown name of one option of a select (the slug itself for a value the setting does not name).
+function optionLabel(op, slug) {
+  const option = (op.options || []).find((o) => o.slug === slug);
+  return option ? localText(option.label) : String(slug);
+}
+
 function fmtValue(op, value) {
   if (value === null || value === undefined) return '–';
   if (op.kind === 'bit') return t(`writes.bit.${value ? 1 : 0}`);
   if (op.kind === 'time') return String(value);
+  if (op.kind === 'select') return optionLabel(op, value);
   return `${fmtNumber(op, value)} ${op.unit}`;
 }
 
@@ -101,11 +125,11 @@ export function writesSection(inv, { onChanged }) {
   const master = h('input', { type: 'checkbox', id: `writes-allow-${inv.id}`, checked: cfg.allow_writes, disabled: !canEdit() });
   const slave = parallelRole(inv.id) === 'slave';
   const boxes = ops.map((op) => {
-    const box = h('input', { type: 'checkbox', value: op.key, checked: enabled.has(op.key), disabled: !canEdit() || slave, 'data-operation': op.key });
+    const box = h('input', { type: 'checkbox', value: op.key, checked: enabled.has(op.key), disabled: !canEdit() || (slave && op.synchronized), 'data-operation': op.key });
     return h('label', { class: 'option write-op' },
       box,
       h('span', { class: 'opt-text' },
-        h('span', { class: 'opt-title' }, localText(op.name)),
+        h('span', { class: 'opt-title' }, localText(op.name), helpButton(op.help, localText(op.name))),
         h('span', { class: 'opt-help' }, t('writes.op_line', { register: op.register, range: rangeText(op) })),
         h('span', { class: 'opt-help risk' }, localText(op.risk)),
         gateText(op) ? h('span', { class: 'opt-help' }, gateText(op)) : null));
@@ -115,6 +139,19 @@ export function writesSection(inv, { onChanged }) {
     h('h4', {}, t(`writes.group.${g.group}`)),
     g.ops.map((op) => byKey.get(op.key))));
   const message = h('div', { class: 'messages' });
+  // Suggestion from the plant description: it only ticks boxes; nothing is saved or released here.
+  const suggested = (cfg.suggested_operations || []).filter((key) => byKey.has(key));
+  const suggestion = suggested.length
+    ? h('div', { class: 'write-suggestion', 'data-suggestion': inv.id },
+      h('p', { class: 'help' }, t('writes.suggest_intro', { n: suggested.length })),
+      h('button', { class: 'btn small', type: 'button', 'data-action': 'apply-suggestion', disabled: !canEdit(), onClick: () => {
+        for (const [key, label] of byKey) {
+          const input = label.querySelector('input');
+          if (!input.disabled) input.checked = suggested.includes(key);
+        }
+        message.replaceChildren(h('p', { class: 'banner info', role: 'status' }, t('writes.suggest_applied')));
+      } }, t('writes.suggest_apply')))
+    : h('p', { class: 'help write-suggestion', 'data-suggestion': inv.id }, t('writes.suggest_none'));
   const save = h('button', { class: 'btn small primary', type: 'button', disabled: !canEdit() }, t('writes.save'));
   save.addEventListener('click', async () => {
     const chosen = boxes.map((b) => b.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
@@ -139,6 +176,7 @@ export function writesSection(inv, { onChanged }) {
     h('p', { class: 'help' }, t('writes.intro')),
     entityLine(inv.id),
     slave ? slaveNotice() : null,
+    suggestion,
     h('label', { class: 'option writes-master', for: `writes-allow-${inv.id}` }, master,
       h('span', { class: 'opt-text' }, h('span', { class: 'opt-title' }, t('writes.allow')), h('span', { class: 'opt-help' }, t('writes.allow_help')))),
     h('div', { class: 'write-ops' }, groupBlocks),
@@ -148,6 +186,12 @@ export function writesSection(inv, { onChanged }) {
 }
 
 // -- inverter page: the entrance to the dialog ----------------------------------------------------
+
+// A slave still has the per-unit settings (registers the master does not copy).
+function hasPerUnit(invId) {
+  const enabled = new Set(writeConfig(invId).operations);
+  return catalogue().some((op) => enabled.has(op.key) && !op.synchronized);
+}
 
 export function writesPanel(invId) {
   const root = h('section', { class: 'card writes-panel', 'aria-labelledby': 'writes-panel-title' });
@@ -163,7 +207,7 @@ export function writesPanel(invId) {
       active && role === 'slave' ? slaveNotice() : null,
       active && role === 'master' ? h('p', { class: 'muted small master-hint' }, t('writes.master_hint')) : null,
       h('div', { class: 'actions left' },
-        h('button', { class: 'btn', id: 'open-writes', type: 'button', disabled: !active || !canEdit() || role === 'slave', onClick: () => openSettingsDialog(invId) }, t('writes.panel_open'))));
+        h('button', { class: 'btn', id: 'open-writes', type: 'button', disabled: !active || !canEdit() || (role === 'slave' && !hasPerUnit(invId)), onClick: () => openSettingsDialog(invId) }, t('writes.panel_open'))));
   }
   paint();
   // the release is changed on the plant page: look at the stored plant again with every poll
@@ -225,7 +269,7 @@ export function openSettingsDialog(invId) {
     try {
       const plant = await loadPlant();
       const text = String(raw).trim();
-      const value = op.kind === 'bit' ? Number(raw) : op.kind === 'time' ? text : text.replace(',', '.');
+      const value = op.kind === 'button' ? 'press' : op.kind === 'bit' ? Number(raw) : op.kind === 'time' ? text : text.replace(',', '.');
       const data = await mutate('POST', `api/inverters/${invId}/writes/preview`, { operation: op.key, value }, plant.revision);
       view.preview = data.preview;
       view.expires = Date.now() + data.preview.expires_in_s * 1000;
@@ -372,11 +416,26 @@ export function openSettingsDialog(invId) {
         p.word === null || p.word === undefined ? unavailableText(p.reason) : `${fmtValue(op, p.value)} (${hex(p.word)}) · ${t(`writes.peer.${p.state}`)}`))))));
   }
 
-  function inputFor(op, id, locked) {
+  function inputFor(op, id, locked, row) {
+    if (op.kind === 'select') {
+      const locks = (row && row.options) || {};
+      return h('select', { id, disabled: locked || view.busy }, op.options.filter((o) => o.writable).map((o) => h('option', { value: o.slug, disabled: Boolean(locks[o.slug]), 'data-option': o.slug }, locks[o.slug] ? `${localText(o.label)} (${reasonText(locks[o.slug])})` : localText(o.label))));
+    }
+    if (op.kind === 'button') return h('input', { id, type: 'hidden', value: 'press' });
     if (op.kind === 'bit') return h('select', { id, disabled: locked || view.busy }, h('option', { value: '1' }, t('writes.bit.1')), h('option', { value: '0' }, t('writes.bit.0')));
     const attrs = { id, type: 'text', inputmode: op.kind === 'time' ? 'numeric' : 'decimal', autocomplete: 'off', disabled: locked || view.busy, 'aria-describedby': `${id}-help` };
     if (op.kind === 'time') attrs.placeholder = 'HH:MM';
     return h('input', attrs);
+  }
+
+  // Per-unit settings that should agree on all units: the configured value of every unit.
+  function equalHint(key) {
+    const hint = view.info && view.info.equal && view.info.equal[key];
+    if (!hint) return null;
+    const names = new Map(state.inverters.map((i) => [i.id, i.name]));
+    const shown = Object.entries(hint.values).map(([id, v]) => `${names.get(id) || id}: ${v === null ? t('value.unknown') : v}`).join(', ');
+    const verdict = hint.equal === null ? 'unknown' : hint.equal ? 'same' : 'different';
+    return h('p', { class: `muted small equal-hint ${verdict}`, 'data-equal': verdict }, t('writes.equal.keep'), ' ', t(`writes.equal.${verdict}`), ' ', shown);
   }
 
   function rowView(row, compact = false) {
@@ -384,22 +443,21 @@ export function openSettingsDialog(invId) {
     if (!op) return null;
     const locked = row.state !== 'ready';
     const id = `write-input-${row.key}`;
-    const input = inputFor(op, id, locked);
+    const input = inputFor(op, id, locked, row);
     const go = h('button', { class: 'btn small', type: 'button', disabled: locked || view.busy || !canEdit(), 'data-preview': row.key }, t('writes.preview_btn'));
     go.addEventListener('click', () => runPreview(op, input.value));
-    const limit = row.cap
-      ? t(op.power_cap ? 'writes.range.limit_power' : 'writes.range.limit', { max: row.cap, unit: op.unit })
-      : rangeText(op);
+    const limit = rowRange(op, row);
     const slot = SLOT_RE.exec(row.key);
     const title = compact && slot ? t(`writes.slot.${slot[2]}`) : localText(op.name);
     return h('article', { class: `write-row ${compact ? 'write-cell' : ''} ${locked ? 'locked' : ''}`, 'data-operation': row.key },
-      compact ? h('h5', {}, title) : h('h3', {}, title),
+      compact ? h('h5', {}, title, helpButton(op.help, localText(op.name))) : h('h3', {}, title, helpButton(op.help, title)),
       locked
         ? h('p', { class: 'banner warn' }, t('writes.locked', { reason: reasonText(row.reason) }))
         : h('p', { class: 'current' }, t('writes.current'), ': ', h('strong', { class: 'current-value' }, fmtValue(op, row.value)), ` (${hex(row.word)})`),
       h('p', { class: 'muted small', id: `${id}-help` }, limit),
+      equalHint(row.key),
       compact ? null : h('p', { class: 'muted small risk' }, localText(op.risk)),
-      locked ? null : h('div', { class: 'write-edit' }, h('label', { for: id }, t('writes.input', { unit: op.unit || '' })), input, go));
+      locked ? null : h('div', { class: 'write-edit' }, op.kind === 'button' ? null : h('label', { for: id }, t('writes.input', { unit: op.unit || '' })), input, go));
   }
 
   // Read-only context of the ToU group: switch, weekday filter and the inverter's own clock.
@@ -422,8 +480,16 @@ export function openSettingsDialog(invId) {
       h('div', { class: 'slot-cells' }, rows.map((r) => rowView(r, true))));
   }
 
+  // Read-only AFCI context: the module version (R12) and the arc-fault bit of R558.
+  function afciInfo() {
+    const info = view.info && view.info.afci;
+    if (!info) return null;
+    const fault = info.fault === null ? t('value.unknown') : t(`writes.afci.fault.${info.fault}`);
+    return h('p', { class: 'muted small afci-info' }, t('writes.afci.hint', { version: info.module_version === null || info.module_version === undefined ? '–' : hex(info.module_version), fault }));
+  }
+
   function groupView(group, rows) {
-    if (group !== 'tou') return h('section', { class: 'write-group', 'data-group': group }, h('h3', { class: 'group-title' }, t(`writes.group.${group}`)), rows.map((r) => rowView(r)));
+    if (group !== 'tou') return h('section', { class: 'write-group', 'data-group': group }, h('h3', { class: 'group-title' }, t(`writes.group.${group}`)), group === 'engineering' ? afciInfo() : null, rows.map((r) => rowView(r)));
     const plain = rows.filter((r) => !SLOT_RE.test(r.key));
     const slots = [1, 2, 3, 4, 5, 6].map((n) => [n, rows.filter((r) => { const m = SLOT_RE.exec(r.key); return m && Number(m[1]) === n; })]).filter(([, r]) => r.length);
     return h('section', { class: 'write-group', 'data-group': 'tou' },
@@ -454,6 +520,9 @@ export function openSettingsDialog(invId) {
         h('div', { class: 'fact' }, h('dt', {}, localText(p.operation.name)), h('dd', { class: 'change' }, t('writes.preview.change', { old: fmtValue(op, p.old_value), new: fmtValue(op, p.new_value) }))),
         h('div', { class: 'fact' }, h('dt', {}, t('writes.preview.raw_title')), h('dd', {}, t('writes.preview.raw', { old: p.old_word_hex, new: p.new_word_hex, mask: p.mask_hex })))),
       h('p', { class: 'muted small risk' }, localText(p.operation.risk)),
+      (p.companions || []).length ? h('div', { class: 'companions' },
+        h('h4', {}, t('writes.preview.companions')),
+        h('ul', {}, p.companions.map((c) => h('li', { 'data-register': String(c.register) }, `R${c.register}: ${c.value === null || c.value === undefined ? hex(c.word) : c.value}`)))) : null,
       h('h4', {}, t('writes.preview.peers')),
       peerTable(op, p.peers, false),
       role.parallel && role.master && p.peers.length ? h('p', { class: 'muted small master-hint' }, t('writes.master_hint')) : null,
@@ -475,6 +544,10 @@ export function openSettingsDialog(invId) {
         h('strong', { class: 'write-status' }, t(`writes.status.${r.status}`)), ' ', t(`writes.status_help.${r.status}`)),
       r.reason ? h('p', { class: 'muted small' }, t('writes.result.reason', { reason: reasonText(String(r.reason).split(':')[0]) })) : null,
       h('p', { class: 'change' }, h('strong', {}, op ? localText(op.name) : r.operation), ': ', t('writes.preview.change', { old: fmtValue(op, r.old_value), new: fmtValue(op, r.requested_value) })),
+      r.target && r.target.command_state && t(`writes.command.${r.target.command_state}`) !== `writes.command.${r.target.command_state}`
+        ? h('p', { class: 'afci-command', 'data-command': r.target.command_state }, t(`writes.command.${r.target.command_state}`)) : null,
+      r.fault ? h('p', { class: 'afci-fault', 'data-fault': r.fault.state }, t('writes.result.fault', { fault: t(`writes.afci.fault.${r.fault.state}`) }),
+        ' ', t('writes.afci.fault.before', { fault: t(`writes.afci.fault.${r.fault.word_before === null || r.fault.word_before === undefined ? 'unknown' : (r.fault.word_before & r.fault.mask ? 'still_reported' : 'not_reported')}`) })) : null,
       target ? h('p', { class: 'readback' }, t('writes.result.readback', { value: target.word === null ? '–' : fmtValue(op, target.value), word: hex(target.word) })) : null,
       r.attribution === 'not_established' ? h('p', { class: 'banner warn' }, t('writes.result.unknown_note')) : null,
       h('h4', {}, t('writes.result.peers')),

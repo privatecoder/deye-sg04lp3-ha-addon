@@ -10,6 +10,7 @@ import math
 from collections.abc import Mapping
 
 from deye_monitor.profiles.alarms import format_active
+from deye_monitor.profiles.features import Features
 from deye_monitor.profiles.schema import Entry
 
 Value = int | float | str | bool | None
@@ -56,9 +57,13 @@ def decode(
     *,
     energy_resolution: float | None = None,
     main_firmware: int | None = None,
+    features: Features | None = None,
 ) -> Value:
     """Decode ``entry`` from the words of one cycle. ``main_firmware`` (R15) selects the offset of
-    entries with ``fw_offsets``."""
+    entries with ``fw_offsets``; ``features`` decide which terms of a derived entry count (all of
+    them without)."""
+    if entry.derive is not None:
+        return _derived(entry, words_by_addr, features)
     try:
         words = [words_by_addr[a] for a in entry.addresses]
     except KeyError:
@@ -110,6 +115,35 @@ def decode(
         hours, minutes = divmod(field, 100)
         return f"{hours:02d}:{minutes:02d}" if hours <= 23 and minutes <= 59 else None
     return f"{field:04X}" if entry.display == "hex" else field  # raw
+
+
+def _derived(entry: Entry, words_by_addr: Mapping[int, int], features: Features | None) -> Value:
+    """Sum or product of the active terms of a derived entry; a missing word is unknown."""
+    assert entry.derive is not None
+    values: list[float] = []
+    for term in entry.derive.terms:
+        if (
+            term.requires is not None
+            and features is not None
+            and not term.requires.evaluate(features)
+        ):
+            continue
+        word = words_by_addr.get(term.addr)
+        if word is None:
+            return None
+        if not 0 <= word <= 0xFFFF:
+            raise ValueError("raw words must be unsigned 16-bit values")
+        values.append((_signed(word, 16) if term.signed else word) * term.scale * term.multiplier)
+    if not values:
+        return None
+    if entry.derive.op == "sum":
+        result = sum(values)
+    else:
+        if len(values) != 2:
+            return None
+        result = values[0] * values[1] * (-1 if entry.derive.op == "neg_product" else 1)
+    result = round(result, _ROUND_DIGITS)
+    return int(result) if result == int(result) else result
 
 
 def _ascii(words: list[int]) -> str | None:

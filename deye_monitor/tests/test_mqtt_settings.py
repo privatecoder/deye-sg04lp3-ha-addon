@@ -247,7 +247,7 @@ async def test_released_settings_become_config_entities_with_read_back_state(
         assert (charge["min"], charge["max"], charge["step"], charge["mode"]) == (0, 190, 1, "box")
         assert charge["device_class"] == "current" and charge["unit_of_measurement"] == "A"
         volts = comps["set_smart_load_on_voltage"]
-        assert (volts["min"], volts["max"], volts["step"]) == (38.0, 63.0, 0.01)
+        assert (volts["min"], volts["max"], volts["step"]) == (41.0, 60.0, 0.1)
         assert volts["device_class"] == "voltage"
         assert comps["set_battery_low_soc"]["device_class"] == "battery"
         assert comps["set_tou_slot1_power"]["max"] == 8000  # the model's rated power
@@ -961,3 +961,38 @@ async def test_a_force_during_another_inverters_read_is_serviced_when_eligible(
     finally:
         await plane.stop()
     assert reads[:3] == [("deye1", 0.0), ("deye2", 0.0), ("deye1", 6.0)]
+
+
+async def test_an_afci_clear_result_event_carries_the_fault_and_command_evidence(
+    tmp_path: Path,
+) -> None:
+    source = FakeSource({**START_FIELDS, "afci_clear_fault": 1})
+    source.script["afci_clear_fault"] = lambda key, value: {
+        "operation_id": "op-afci",
+        "status": "outcome_unknown",
+        "reason": "consumption_not_established",
+        "target": {"command_state": "consumption_unknown", "matches_request": None},
+        "fault": {
+            "register": 558,
+            "mask": 0x4000,
+            "word_before": 0x4000,
+            "word": 0,
+            "state": "no_longer_reported",
+            "raw": "dropped",
+        },
+    }
+    async with make(tmp_path, source) as rig:
+        await rig.ready()
+        rig.send("afci_clear_fault", "PRESS")
+        await settle(lambda: len(rig.events()) == 1)
+        event = rig.events()[0]
+        assert event["event_type"] == "write_outcome_unknown"
+        assert event["reason"] == "consumption_not_established"
+        assert event["command_state"] == "consumption_unknown"
+        assert event["fault"] == {
+            "register": 558,
+            "mask": 0x4000,
+            "word_before": 0x4000,
+            "word": 0,
+            "state": "no_longer_reported",
+        }

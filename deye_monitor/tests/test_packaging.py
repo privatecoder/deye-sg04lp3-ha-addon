@@ -51,7 +51,7 @@ _FORBIDDEN = (
 
 def test_manifest_basics() -> None:
     assert MANIFEST["slug"] == "deye_monitor"
-    assert MANIFEST["version"] == deye_monitor.__version__ == "0.4.1"
+    assert MANIFEST["version"] == deye_monitor.__version__ == "0.5.0"
     assert MANIFEST["arch"] == ["aarch64", "amd64"]
     assert MANIFEST["init"] is False
     assert MANIFEST["stage"] == "experimental"
@@ -333,12 +333,14 @@ def test_process_exits_2_on_invalid_config_without_leaking_secrets(tmp_path: Pat
 
 
 def test_docs_and_readme_state_the_implementation_status_first() -> None:
-    for name in ("DOCS.md", "README.md"):
-        text = " ".join((APP / name).read_text().split("\n\n")[0:3]).replace(">", " ")
-        head = " ".join(text.split()).lower()  # unwrap the quoted, line-wrapped status block
-        assert "device loop with mqtt publisher" in head, name
-        assert "web interface" in head and "does not exist yet" not in head, name
-        assert "entities appear" in head, name
+    text = " ".join((APP / "DOCS.md").read_text().split("\n\n")[0:3]).replace(">", " ")
+    head = " ".join(text.split()).lower()  # unwrap the quoted, line-wrapped status block
+    assert "device loop with mqtt publisher" in head
+    assert "web interface" in head and "does not exist yet" not in head
+    assert "entities appear" in head
+    readme = " ".join((APP / "README.md").read_text().split()).lower()
+    assert "mqtt discovery" in readme and "web interface" in readme
+    assert "read-only by default" in readme
     docs = (APP / "DOCS.md").read_text()
     assert "Writing settings" in docs  # the opt-in write layer is documented
     assert "### Using the web interface" in docs

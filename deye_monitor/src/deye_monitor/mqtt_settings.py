@@ -110,6 +110,9 @@ class Out:
     retain: bool
 
 
+PRESS_PAYLOAD = "PRESS"
+
+
 def parse_command(desc: WriteDescriptor, payload: bytes) -> tuple[Any, int]:
     """(value for ``submit``, raw field) of a command payload, or ``Refused``. Strict per kind:
     a switch is exactly ``ON`` / ``OFF``; a time is ``HH:MM:SS`` with seconds ``00`` and no
@@ -126,10 +129,19 @@ def parse_command(desc: WriteDescriptor, payload: bytes) -> tuple[Any, int]:
         if text not in ("ON", "OFF"):
             raise Refused("invalid_payload")
         value = 1 if text == "ON" else 0
+    elif desc.kind is Kind.BUTTON:  # exactly the press payload of the discovery document
+        if text != PRESS_PAYLOAD:
+            raise Refused("invalid_payload")
+        value = "press"
     elif desc.kind is Kind.TIME:
         if not _TIME_PAYLOAD.fullmatch(text):
             raise Refused("invalid_payload")
         value = text
+    elif desc.kind is Kind.SELECT:  # exactly one of the published option texts
+        chosen = next((o for o in desc.options if o.label.en == text), None)
+        if chosen is None:
+            raise Refused("invalid_payload")
+        value = chosen.slug
     else:
         if not _NUMBER_PAYLOAD.fullmatch(text):
             raise Refused("invalid_payload")
@@ -142,7 +154,10 @@ def state_value(desc: WriteDescriptor, state: SettingState) -> Any:
     if state.value is None:
         return None
     if desc.kind is Kind.BIT:
-        return bool(state.field)
+        return state.field == desc.on_field
+    if desc.kind is Kind.SELECT:
+        option = desc.option_of(state.field)
+        return None if option is None else option.label.en
     if desc.kind is Kind.TIME:
         text = str(state.value)
         return f"{text}:00" if re.fullmatch(r"[0-9]{2}:[0-5][0-9]", text) else None
@@ -158,6 +173,7 @@ class _Plan:
     failures: int = 0  # consecutive reads that were not fresh (drives the retry delay)
     n: int = 0
     keys: dict[str, int | None] = field(default_factory=dict)  # exposed key -> model cap
+    floors: dict[str, int | None] = field(default_factory=dict)  # exposed key -> lowest value
     token: str = ""
     values: dict[str, Any] = field(default_factory=dict)  # last read-back per key
     ready: dict[str, bool] = field(default_factory=dict)  # gate open per key
@@ -261,7 +277,12 @@ class SettingsPlane:
         for desc in DESCRIPTORS:
             if desc.key in plan.keys:
                 ckey, comp = setting_component(
-                    self.ns, inverter_id, desc, plan.token, plan.keys[desc.key]
+                    self.ns,
+                    inverter_id,
+                    desc,
+                    plan.token,
+                    plan.keys[desc.key],
+                    plan.floors.get(desc.key),
                 )
                 out[ckey] = comp
         if plan.keys:
@@ -374,9 +395,11 @@ class SettingsPlane:
         audit_id: str | None,
         value: Any,
         read_error: str | None,
+        evidence: Mapping[str, Any] | None = None,
     ) -> None:
         """One result event. ``value`` is only ever a fresh read-back; without one it is ``None``
-        and ``read_error`` says why."""
+        and ``read_error`` says why. ``evidence`` is the separate fault / command evidence of the
+        operation (AFCI), reported next to the value, never instead of it."""
         assert event_type in EVENT_TYPES
         body = {
             "event_type": event_type,
@@ -387,6 +410,7 @@ class SettingsPlane:
             "value": None if read_error else value,
             "read_error": read_error,
         }
+        body.update(evidence or {})
         self._emit(Out(self.ns.write_result_topic(inverter_id), encode(body), False))
 
     def _reject(self, inverter_id: str, key: str, requested: Any, reason: str) -> None:
@@ -463,22 +487,25 @@ class SettingsPlane:
         plan.failures = 0 if snap.status == "ok" else plan.failures + 1
         if snap.status == "ok":
             keys = {k: s.cap for k, s in snap.settings.items()}
+            floors: dict[str, int | None] = {
+                k: s.floor for k, s in snap.settings.items() if s.floor is not None
+            }
             plan.reachable = True
             plan.ready = {k: s.ready for k, s in snap.settings.items()}
             plan.reasons = {k: s.reason for k, s in snap.settings.items()}
             plan.values = {k: state_value(BY_KEY[k], s) for k, s in snap.settings.items()}
             status = "exposed" if keys else "none"
-            if status != plan.status or keys != plan.keys:
+            if status != plan.status or keys != plan.keys or floors != plan.floors:
                 if status != plan.status or set(keys) != set(plan.keys):
                     self._renew(inverter_id)  # another set of entities: older commands are void
-                plan.keys, plan.status = keys, status
+                plan.keys, plan.floors, plan.status = keys, floors, status
                 changed = True
         elif snap.status == "withdrawn":
             plan.reachable = False
             plan.ready, plan.values = {}, {}
             if plan.keys or plan.status != "none":
                 self._renew(inverter_id)
-                plan.keys, plan.status = {}, "none"
+                plan.keys, plan.floors, plan.status = {}, {}, "none"
                 changed = True
         else:  # unavailable: keep what is exposed, show it unavailable
             plan.reachable = False
@@ -642,6 +669,7 @@ class SettingsPlane:
             return
         self.executed += 1
         event_type, reason, audit_id = REJECTED, None, None
+        evidence: dict[str, Any] = {}
         try:
             op = await self._source.submit(
                 inverter_id, key, command.value, source=SOURCE, intent=intent
@@ -658,6 +686,7 @@ class SettingsPlane:
             audit_id = op.get("operation_id")
             status = str(op.get("status"))
             reason = op.get("reason")
+            evidence = self._evidence(op)
             event_type = _EVENT_OF_STATUS.get(status, REJECTED if status == "rejected" else UNKNOWN)
             if status == "rejected" and reason == "no_change":
                 event_type = NOOP
@@ -672,7 +701,23 @@ class SettingsPlane:
             audit_id,
             plan.values.get(key),
             error,
+            evidence,
         )
+
+    @staticmethod
+    def _evidence(op: Mapping[str, Any]) -> dict[str, Any]:
+        """The fault verdict (R558 bit 14 before / after) and the command state of an operation,
+        when it has them."""
+        out: dict[str, Any] = {}
+        fault = op.get("fault")
+        if isinstance(fault, Mapping):
+            out["fault"] = {
+                k: fault.get(k) for k in ("register", "mask", "word_before", "word", "state")
+            }
+        state = (op.get("target") or {}).get("command_state")
+        if state is not None:
+            out["command_state"] = state
+        return out
 
     @staticmethod
     def _reason(key: str, params: Mapping[str, Any]) -> str:

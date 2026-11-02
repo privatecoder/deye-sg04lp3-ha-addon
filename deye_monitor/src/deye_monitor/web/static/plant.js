@@ -247,10 +247,36 @@ export function plantView() {
   const addInverter = () => around(() => openInverterDialog());
   const checkInverter = (inv) => around(() => openCheckDialog(inv));
 
+  // The release sections the user has opened or edited are kept across a rebuild of the same
+  // plant revision (a language change); a changed revision starts from the stored plant.
+  function draftOfWrites() {
+    const draft = new Map();
+    for (const el of root.querySelectorAll('details.writes-section')) {
+      draft.set(el.dataset.writes, { open: el.open, inputs: [...el.querySelectorAll('input[type=checkbox]')].map((i) => [i.id || i.value, i.checked]) });
+    }
+    return draft;
+  }
+
+  function restoreWrites(draft) {
+    for (const el of root.querySelectorAll('details.writes-section')) {
+      const saved = draft.get(el.dataset.writes);
+      if (!saved) continue;
+      el.open = saved.open;
+      const kept = new Map(saved.inputs);
+      for (const input of el.querySelectorAll('input[type=checkbox]')) {
+        const key = input.id || input.value;
+        if (!input.disabled && kept.has(key)) input.checked = kept.get(key);
+      }
+    }
+  }
+
+  let renderedRevision;
   function render() {
     const plant = state.plant;
+    const draft = plant && plant.revision === renderedRevision ? draftOfWrites() : new Map();
     root.replaceChildren();
     if (!plant) return;
+    renderedRevision = plant.revision;
     signature = JSON.stringify([plant, state.lang]);
     root.append(h('h1', {}, t('plant.title')), h('p', {}, t('plant.intro')), ...noticeBanners(plant.notices));
     if (!canEdit()) root.append(h('p', { class: 'banner info' }, t('overview.readonly')));
@@ -268,6 +294,7 @@ export function plantView() {
         h('div', { class: 'actions left' },
           h('button', { class: 'btn primary', id: 'add-inverter', type: 'button', disabled: !canEdit() || plant.endpoints.length === 0, onClick: addInverter }, t('plant.add_inverter')))),
       plant.inverters.length ? totalsSection(plant) : null]);
+    restoreWrites(draft);
   }
 
   async function onData() {
@@ -278,7 +305,9 @@ export function plantView() {
     }
   }
 
-  loadPlant().then(render).catch(() => render());
+  // the stored plant is already shown: the refresh only rebuilds the view when it changed anything
+  const current = () => JSON.stringify([state.plant, state.lang]);
+  loadPlant().then(() => { if (current() !== signature) render(); }).catch(() => { if (!signature) render(); });
   render();
   return { el: root, onData, tick: onData };
 }

@@ -65,8 +65,8 @@ MORE = ["battery_voltage", "battery_soc", "inverter_frequency", "pv1_power", "pv
 
 def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None:
     blocks, template_size, r65, addresses = _plan_blocks(MINIMAL, tmp_path)
-    assert blocks == 12 and not r65
-    assert "**4 sensors, 12 polling blocks**" in RUNBOOK and "**12 read blocks**" in RUNBOOK
+    assert blocks == 16 and not r65
+    assert "**4 sensors, 16 polling blocks**" in RUNBOOK and "**16 read blocks**" in RUNBOOK
     # no energy, battery, AC or PV registers; the internal identity/status/settings reads only
     assert addresses == {
         0,
@@ -90,16 +90,20 @@ def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None
         98,
         111,
         133,
+        140,
+        142,
+        146,
         189,
         336,
+        344,
         500,
     }.union(range(551, 559))
     for chosen in (MINIMAL, MINIMAL + MORE):
         assert all(PROFILE.entry(k).selectable for k in chosen)
     (tmp_path / "more").mkdir()
     more_blocks, _, r65_more, _ = _plan_blocks(MINIMAL + MORE, tmp_path / "more")
-    assert more_blocks == 15 and not r65_more
-    assert "**11 sensors, 15 polling blocks**" in RUNBOOK
+    assert more_blocks == 19 and not r65_more
+    assert "**11 sensors, 19 polling blocks**" in RUNBOOK
     assert f"{template_size} sensors" in RUNBOOK
 
 
@@ -107,8 +111,8 @@ def test_the_default_template_figures_in_the_runbook(tmp_path: Path) -> None:
     cfg = plant_config()
     manager = SelectionManager(SelectionStore(tmp_path, specs_from_config(cfg)))
     plan = manager.plan("deye1")
-    assert len(plan.blocks) == 32 and plan.reads_r65
-    assert "32 read blocks" in RUNBOOK
+    assert len(plan.blocks) == 40 and plan.reads_r65
+    assert "40 read blocks" in RUNBOOK
 
 
 def test_the_documented_diagnostic_entities_exist() -> None:

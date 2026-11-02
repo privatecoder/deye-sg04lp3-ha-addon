@@ -51,7 +51,7 @@ async def test_unreported_entities_are_removed_and_restored_with_the_same_ids(
         assert "diag_r65_raw" not in c.last(topic).json()["components"]  # R65 is unreported
         assert r.pub._inv["deye1"].keys == frozenset(keys)  # the saved selection stays intact
         fallback = replace(
-            snap("identity"),
+            snap("identity", words={22: 0xFFFF, 23: 0xFFFF, 24: 0xFFFF, 25: 0xFFFF}),
             profile_keys=frozenset({"mppt_count", "phase_count", "battery_input_code"}),
         )
         r.pub.on_state(
@@ -65,8 +65,15 @@ async def test_unreported_entities_are_removed_and_restored_with_the_same_ids(
             "battery_input_code": "profile",
         }
         for k in payload["sources"]:
-            template = dropped[k]["json_attributes_template"]
-            assert "source" in template
+            # one attributes object: the raw report, the state and the provenance together
+            assert dropped[k]["json_attributes_template"].count(f"{k}_attributes") == 1
+            attrs = payload[f"{k}_attributes"]
+            assert attrs["source"] == "profile"
+            assert {"raw_hex", "raw_decimal", "registers", "state_de"} <= attrs.keys()
+        assert payload["mppt_count"] == "2 MPPT"
+        assert payload["phase_count"] == "3 phases"
+        assert payload["battery_input_code"] == "1 battery input"
+        assert payload["mppt_count_attributes"]["profile_expected"] == 2
         r.pub.on_diagnostics(
             "deye1", {"unreported": {}, "r65": {"raw": 0x0104, "last_read_ok": True}}
         )
@@ -74,10 +81,12 @@ async def test_unreported_entities_are_removed_and_restored_with_the_same_ids(
         restored = c.last(topic).json()["components"]
         assert {k: restored[k]["unique_id"] for k in keys} == ids
         assert "diag_r65_raw" in c.last(topic).json()["components"]
-        r.pub.on_state("deye1", snap("status", cycle=2), {"operating_state": "normal"})
+        r.pub.on_state(
+            "deye1", snap("status", cycle=2, words={500: 2}), {"operating_state": "normal"}
+        )
         await settle(lambda: c.on(state_topic("status")))
-        assert c.last(state_topic("status")).json()["operating_state"] == "Normal"
-        assert "Normal" in restored["operating_state"]["options"]
+        assert c.last(state_topic("status")).json()["operating_state"] == "Normal (reported)"
+        assert "Normal (reported)" in restored["operating_state"]["options"]
 
 
 async def test_r65_diagnostics_exist_only_while_r65_is_read_and_reported(tmp_path: Path) -> None:

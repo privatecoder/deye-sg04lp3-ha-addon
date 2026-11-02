@@ -114,3 +114,86 @@ export function safeStorage() {
     },
   };
 }
+
+// -- (i) help popover ---------------------------------------------------------------------------
+// A button toggles a small floating note. One note is open at a time; it closes on Escape (focus
+// returns to the button), on a click or tap outside, when focus moves away, and when another
+// opens. The note lives next to the button's dialog (or in the body), never inside a <label>.
+
+let openHelp = null;
+let helpObserver = null;
+
+function closeHelp(restoreFocus = false) {
+  if (!openHelp) return;
+  const { button, pop } = openHelp;
+  openHelp = null;
+  if (helpObserver) helpObserver.disconnect();
+  button.setAttribute('aria-expanded', 'false');
+  button.removeAttribute('aria-describedby');
+  pop.hidden = true;
+  if (!button.isConnected) pop.remove();
+  if (restoreFocus && button.isConnected) button.focus();
+}
+
+function placeHelp({ button, pop }) {
+  const margin = 8;
+  const vv = window.visualViewport;
+  const viewTop = vv ? vv.offsetTop : 0;
+  const viewHeight = vv ? vv.height : window.innerHeight;
+  const viewWidth = vv ? vv.width : window.innerWidth;
+  const box = button.getBoundingClientRect();
+  pop.style.maxHeight = `${Math.max(48, viewHeight - 2 * margin)}px`;
+  const width = pop.offsetWidth;
+  const height = pop.offsetHeight;
+  const left = Math.min(Math.max(margin, box.left), Math.max(margin, viewWidth - width - margin));
+  const below = box.bottom + 6;
+  const above = box.top - 6 - height;
+  let top = below + height > viewTop + viewHeight - margin && above > viewTop + margin ? above : below;
+  // never leave the visible area: the note scrolls inside itself when it is taller than the space
+  top = Math.min(top, viewTop + viewHeight - margin - height);
+  top = Math.max(viewTop + margin, top);
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  if (pop.scrollHeight > pop.clientHeight) pop.setAttribute('tabindex', '0'); else pop.removeAttribute('tabindex');
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !openHelp) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeHelp(true);
+}, true);
+document.addEventListener('pointerdown', (event) => {
+  if (openHelp && !openHelp.button.contains(event.target) && !openHelp.pop.contains(event.target)) closeHelp();
+}, true);
+document.addEventListener('focusin', (event) => {
+  if (openHelp && !openHelp.button.contains(event.target) && !openHelp.pop.contains(event.target)) closeHelp();
+});
+window.addEventListener('resize', () => { if (openHelp) placeHelp(openHelp); });
+window.addEventListener('scroll', (event) => { if (openHelp && !openHelp.pop.contains(event.target)) placeHelp(openHelp); }, true);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (openHelp) placeHelp(openHelp); });
+
+export function helpPopover({ label, text, meta }) {
+  const id = uid('help');
+  const button = h('button', { class: 'help-btn', type: 'button', 'aria-label': label, 'aria-expanded': 'false', 'aria-controls': id });
+  const pop = h('div', { class: 'help-pop', id, role: 'note', hidden: true }, h('span', { class: 'help-text' }, text), meta ? h('span', { class: 'help-meta' }, meta) : null);
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (openHelp && openHelp.button === button) {
+      closeHelp(true);
+      return;
+    }
+    closeHelp();
+    (button.closest('dialog') || document.body).append(pop);
+    pop.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    button.setAttribute('aria-describedby', id);
+    openHelp = { button, pop };
+    placeHelp(openHelp);
+    // a repaint of the surrounding view removes the button: take the note away with it
+    helpObserver = helpObserver || new MutationObserver(() => { if (openHelp && !openHelp.button.isConnected) closeHelp(); });
+    helpObserver.observe(document.body, { childList: true, subtree: true });
+  });
+  return button;
+}

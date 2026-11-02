@@ -2,16 +2,16 @@
 
 ## Current implementation status
 
-> **Status: device loop with MQTT publisher and an opt-in write layer (0.4.1).**
+> **Status: device loop with MQTT publisher and an opt-in write layer (0.5.0).**
 > The app validates its configuration, then connects to the configured endpoints (read-only
-> by default: Modbus function code 03 only; the 38 settings under “Writing settings” can be
+> by default: Modbus function code 03 only; the 41 settings under “Writing settings” can be
 > released per inverter and are written from the web interface or from Home Assistant entities), identifies each inverter, binds and checks its serial number, polls the selected
 > registers, fails over to the fallback path and keeps its identity, capability, energy and
 > discovery state in `/data`. The values are published through MQTT Device Discovery, so
 > **entities appear in Home Assistant** (one device per inverter plus a diagnostic device for
 > the app). The Ingress web interface (sidebar: Deye Monitor) sets up the connections and
 > inverters (an assistant guides the first start) and chooses the sensors per inverter; an
-> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.4.1 ready: ...`
+> inverter reads only identity and status until a selection is saved. The log line `deye_monitor 0.5.0 ready: ...`
 > means that the options were accepted and the device loops were started; it is **not** a successful contact with an
 > inverter or a broker.
 
@@ -134,8 +134,9 @@ device loop and without the publisher.
   like a deselected sensor); in the sensor selection it is greyed out with the note "not reported by
   the device (R22=0xFFFF)", and saved selections stay valid. The result is kept per inverter and
   shown in the inverter diagnostics (`unreported`: key, register, raw value). MPPT count, Phase count
-  and Battery inputs are the exception: they show the hardware profile value (SUN-10K: 2 MPPT, 3
-  phases, 1 battery input) with the attribute `source: profile`, and `source: device` otherwise.
+  and Battery inputs are the exception: they show the hardware profile value (for example 2 MPPT, 3
+  phases, 1 battery input) with the attribute `source: profile` (and `profile_expected`; the raw
+  report stays in the other attributes), and `source: device` otherwise.
 * **Readable states.** Enum sensors publish readable labels (`Smart Load`, `Three-phase LV hybrid`,
   `Lithium`, `Normal`); the discovery `options` list them.
 * **Limits.** One discovery document per device is limited to 256 KiB (the app refuses to send
@@ -243,7 +244,7 @@ When several endpoints reach one physical bus under different names, give them t
 | `poll_identity_s` | Interval for identity registers, default 3600. |
 | `allow_writes` | Master switch of the write layer for this inverter (default `false`). Set in the web interface (plant page), never in the inverter form. Without the matching entry in `enabled_write_operations` nothing can be written. |
 | `write_release_firmware` | Set by the app, not by hand: the hardware profile and firmware words (R11, R14, R15, R17, R18) read when you released writing. If the inverter later reports other words (firmware upgrade), writing stays blocked (“Firmware changed since release”) until you release again. Monitoring is not affected. |
-| `enabled_write_operations` | The settings released for writing on this inverter (default: none). A subset of the 38 operations listed under “Writing settings”. |
+| `enabled_write_operations` | The settings released for writing on this inverter (default: none). A subset of the 41 operations listed under “Writing settings”. |
 
 On one bus (same host and port, or the same `bus_id`) every `unit_id` can belong to only one inverter.
 Separate gateways may all use unit 1.
@@ -315,13 +316,33 @@ there, or set "Energy resolution" in the inverter's connection settings. The cho
 statistics series (the old one is never continued with another factor). Check afterwards that
 the daily PV energy matches the display.
 
+## Installation description and what it selects
+
+The step “Describe your plant” is the only thing that preselects sensors and suggests settings.
+Besides the plant features (grid, battery/BMS, GEN port, MPPT inputs, parallel) it asks five more
+questions; each starts as “I do not know” / “no” and then selects nothing:
+
+| Question | Answers | What it preselects |
+| --- | --- | --- |
+| Export policy | export allowed, zero export to the load, zero export with external measurement, not applicable | no sensor yet; compared with R142 |
+| External grid/load measurement | none, CT, meter, CT and second meter, meter and second meter | the external grid currents/powers; with a CT also the CT self-check and direction results; compared with R344 |
+| External start/signal contact | nothing, grid contactor, generator start, shared grid and generator logic, other | no sensor (the signal flags are always offered); compared with R140 |
+| Battery control basis | voltage, SOC, none | the matching protection and threshold settings in the release suggestion; compared with R111 |
+| Time-of-use schedule | yes / no | the schedule sensors and, in the release suggestion, the schedule settings; compared with R146 |
+
+The device setting is shown next to each question (“matches the reported device setting” or “the
+device says ...”) and is never applied by itself. On the plant page the release list offers “Apply
+suggestion”, which only ticks the boxes that fit the description; nothing is released until “Save
+release”.
+
 ## Writing settings
 
 Writing is **off by default** and **per inverter and per setting**. It is a regular feature for
-38 reviewed settings of the SG04LP3 only (register numbers of the V105.8 protocol document; every
-write is exactly one register, function code 16 with count 1). Everything not listed (work mode,
-clock, battery type, topology, identity, the ToU weekday bits and every other register) cannot be
-written.
+128 reviewed settings of the SG04LP3 only (register numbers of the V105.8 protocol document; every
+write is exactly one register, function code 16 with count 1; the single exception is the Low_Noise
+special command R35, count 2 with a fixed second word). The table lists the first group; the
+settings added in 0.5.0 follow below and are listed in full in SPEC 10.9. Everything not listed
+(clock, battery type, topology, identity and every other register) cannot be written.
 
 | Group | Setting | Register | Range / rule |
 | --- | --- | --- | --- |
@@ -336,11 +357,15 @@ written.
 | | GRID charge start SOC | R127 | 10 to 90 %, SOC mode only |
 | Smart Load | OFF voltage / ON voltage | R134 / R136 | 38.00 to 63.00 V (0.01 V), voltage mode only; OFF < ON |
 | | OFF SOC / ON SOC | R135 / R137 | 0 to 100 %, SOC mode only; OFF < ON |
-| ToU schedule | ToU enable (bit 0 only) | R146 | 0 or 1, all other bits preserved |
+| Time of Use schedule | Time of Use enable (bit 0 only) | R146 | 0 or 1, all other bits preserved |
 | | Slot 1-6 start time | R148-R153 | 00:00 to 23:55, minutes in steps of 5, strictly ascending |
 | | Slot 1-6 discharge power | R154-R159 | 0 W to the rated power of the model |
 | | Slot 1-6 target SOC | R166-R171 | 0 to 100 %, SOC mode only |
 | | Slot 1-6 allow GRID charging (bit 0 only) | R172-R177 | 0 or 1, all other bits preserved |
+| Island operation and signals | Force off-grid operation | R179 | 1 = forced off-grid, 0 = “Auto” (never “on-grid”); the whole register, any other stored value locks it |
+| | External signal (select Off / Grid Signal / Gen Signal) | R140 bits 0-1 | One word, mask `0x0003`, other bits preserved, never Off first; an incumbent “Both” is shown only; Gen Signal needs the GEN port as generator (R133 = 0); locked when the description says no external signal contact is used. The last change to Off releases an external contactor |
+| | Signal Island Mode | R178 bits 8-9 | ON writes the pair 11, OFF the pair 10, all other bits preserved; a stored pair 00/01 or `0xFFFF` locks it. Changes the grid-dependent relay policy of the whole parallel plant (N-PE bonding needs a verified wiring design) |
+| PV / MPPT | MPPT multi-point scanning | R341 bit 2 | 0 or 1, all other bits (bits 5-6 in particular) preserved; `0xFFFF` is refused |
 
 Values must be exact: a fractional or non-finite number is refused, nothing is rounded or clamped.
 
@@ -361,7 +386,7 @@ Values must be exact: a fractional or non-finite number is refused, nothing is r
   the commissioning of your battery. The current values are not a specification.
 - **GRID charge enable (R130).** The firmware compares the whole word with 1, so the app writes
   exactly 0 or 1 and refuses to write while the register holds anything else (`unexpected_bits`).
-- **ToU schedule.** The start times must ascend strictly from slot 1 to 6 (slot 6 runs on until
+- **Time of Use schedule.** The start times must ascend strictly from slot 1 to 6 (slot 6 runs on until
   slot 1 starts, across midnight). Each time is sent on its own and takes effect immediately, so
   the neighbouring intervals change with it; the app reads all six times freshly for every edit and
   writes only if the result is a valid, strictly ascending schedule (`tou_order`); a schedule that
@@ -378,7 +403,7 @@ Values must be exact: a fractional or non-finite number is refused, nothing is r
   The settings dialog shows, read-only next to the ToU group, the effective weekday filter
   (R146 bits 1-7 = Monday-Sunday; all zero means every day) and the inverter's own clock
   (R62-R64). Not offered: the slot voltage words R160-R165 and the slot generator charge bit.
-- **Parallel plants.** All 38 registers lie in the settings block that the master copies to the
+- **Parallel plants.** All 41 registers lie in the settings block that the master copies to the
   slaves, so only the master is written (see below).
 
 All gates are decided at the moment of writing from fresh reads (release and firmware
@@ -460,6 +485,30 @@ value before, check the display afterwards and restore a value as a new operatio
 procedure of the first field write is kept in `docs/FIRST-WRITE-RUNBOOK.md`. Never use these buttons
 to “try something” on a plant you depend on.
 
+### More settings (0.5.0 part B2b)
+
+Besides the table above the release list offers, each with its own risk text: Smart Load / AC
+coupling thresholds (order follows R133), ToU slot voltages, the seven ToU weekday switches, the
+Spain mode switch and the slot flag bits, export mode and limits (R142, R143, R145, R340, R104),
+peak-shaving powers (R190, R191), the R178 switches (microinverter cutoff, peak shaving, on-grid Smart
+Load, DRM, BMS Err_Stop), the fan request bypass (R341 bit 4), Low_Noise (R35, a two-word special
+command), grid reconnection time (R180), external CT ratio (R347), the AFCI switch and the "Clear arc
+fault" button (R181), EV charging (R259, R260) and unbalanced load (R237). Settings the master does
+not copy to the slaves (R35, R237, R259, R260) can be written on every unit of a parallel plant; the
+dialog shows the configured value of every unit next to Low_Noise and unbalanced load ("keep all
+units equal"). Also the energy pattern (R141, Batt First / Load First). Not offered: R144, R78 and the clock R62-R64 (a calendar service is planned).
+
+Several of these settings depend on what you tell the app in *Describe your plant*: a setting that
+has a contracted maximum stays **locked until you enter the matching limit** (approved export
+limit for the maximum power sold, the PV sales limit and Solar Sell; grid connection limit for GRID
+peak shaving; generator capacity for generator peak shaving; charger and supply line rating for the
+EV charging power), the maximum is then never above that number. The EV settings also need the
+charger port (GRID or LOAD) to be described and to match the configured one. The suggestions of
+the release dialog come only from questions you answered (or accepted with the template), never
+from the raw defaults. The Home Assistant result event of the arc fault button carries the
+command state and the fault word before and after: "no longer reported" is stated only when the
+fault was reported before and is not afterwards.
+
 ### Home Assistant entities
 
 Requires Home Assistant 2026.5 or newer for the `time` entities (the app is tested against 2026.10.4).
@@ -476,7 +525,7 @@ may use the entities.
 | SOC values (R115-R117, R127, R135, R137, slot target SOC) | `number`, input box, 1 % steps (R127 10 to 90) |
 | slot discharge power (R154-R159) | `number`, input box, 1 W steps, 0 up to the rated power |
 | Smart Load voltages (R134, R136) | `number`, input box, 0.01 V steps, 38.00 to 63.00 V |
-| GRID charge enable (R130), ToU enable (R146 bit 0), slot “allow GRID charging” (R172-R177 bit 0) | `switch` |
+| GRID charge enable (R130), ToU enable (R146 bit 0), slot “allow GRID charging” (R172-R177 bit 0), force off-grid (R179), Signal Island Mode (R178 bits 8-9), MPPT multi-point scanning (R341 bit 2) | `switch` |
 | slot start times (R148-R153) | `time` (seconds are always `00`, minutes in steps of 5) |
 | the result of every command | one `event` entity per inverter, “Write result” |
 

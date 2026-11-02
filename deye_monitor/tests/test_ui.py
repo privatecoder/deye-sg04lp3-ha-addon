@@ -125,12 +125,11 @@ async def test_confirming_features_changes_the_template_and_saves(
         s = await open_ui(browser, stack)
         await open_setup(s)
         page = s.page
-        # The device says "no battery": the answer is pre-filled and marked as to be confirmed.
-        await expect(page.locator(".chip.prefilled")).to_be_visible()
-        await expect(page.locator(".chip.prefilled")).to_have_text(
-            "aus einer Geräteeinstellung gelesen – bitte bestätigen"
+        # The device says "no battery": that is a hint only, the answer stays the description's.
+        await expect(page.locator(".chip.prefilled")).to_have_count(0)
+        await expect(page.locator('fieldset[data-feature="battery"]')).to_contain_text(
+            "Die Geräteeinstellung meldet"
         )
-        await expect(row(page, "battery_soc").locator("input")).not_to_be_checked()
         await expect(row(page, "grid_voltage_a").locator("input")).to_be_checked()
         # Island operation hides the grid values and brings the load output.
         await page.get_by_label("Nichts – Inselbetrieb").check()
@@ -143,7 +142,7 @@ async def test_confirming_features_changes_the_template_and_saves(
         await expect(page.locator(".toast.ok")).to_be_visible()
         assert stack.revision == before + 1
         features = stack.plant.manager.selection("deye1").features
-        assert features.utility_grid is False and features.battery is False
+        assert features.utility_grid is False and features.battery is True
         # A reload shows the saved plant, nothing pending.
         await page.reload()
         await expect(page.locator(".dirty-note")).to_have_text("Alles gespeichert")

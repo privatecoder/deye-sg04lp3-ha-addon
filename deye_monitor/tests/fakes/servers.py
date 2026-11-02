@@ -115,7 +115,7 @@ class Responder:
             if code is not None:
                 pdu = bytes([0x90, code])
             else:
-                pdu = bytes([0x10]) + req.start.to_bytes(2, "big") + b"\x00\x01"
+                pdu = bytes([0x10]) + req.start.to_bytes(2, "big") + req.fcount.to_bytes(2, "big")
         elif touched and b.exception_code is None:
             b = Behavior(exception_code=2)
             pdu = bytes([0x83, b.exception_code or 2])
@@ -176,7 +176,11 @@ class FrameExtractor:
         if self.kind == "rtu":
             if len(self._buf) < 2:
                 return None
-            return 11 if self._buf[1] == 0x10 else 8
+            if self._buf[1] != 0x10:
+                return 8
+            if len(self._buf) < 6:
+                return None
+            return 9 + 2 * int.from_bytes(self._buf[4:6], "big")  # unit fc start count n data crc
         if self.kind == "mbap":
             return 6 + int.from_bytes(self._buf[4:6], "big") if len(self._buf) >= 6 else None
         return 13 + int.from_bytes(self._buf[1:3], "little") if len(self._buf) >= 3 else None

@@ -38,6 +38,7 @@ def snap(
     epoch: int = 1,
     series: str = "g0",
     failed: bool = False,
+    words: dict[int, int] | None = None,
 ) -> Snapshot:
     return Snapshot(
         cycle_id=cycle,
@@ -45,7 +46,7 @@ def snap(
         monotonic_ts=1.0,
         wall_ts=1_700_000_000.0,
         endpoint_id="gw1",
-        words={},
+        words=words or {},
         missing=frozenset(),
         selection_revision=revision,
         lifecycle_epoch=epoch,

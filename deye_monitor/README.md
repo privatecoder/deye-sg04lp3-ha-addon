@@ -1,29 +1,13 @@
 # Deye SG04LP3 Monitor
 
-> **Status: device loop with MQTT publisher and opt-in write layer (0.4.1).** The app
-> validates its configuration, polls the inverters read-only by default (Modbus function code 03) and publishes the
-> chosen sensors through MQTT Device Discovery: entities appear in Home Assistant. The Ingress web
-> interface (sidebar: Deye Monitor) sets up your connections and inverters (a setup assistant guides
-> the first start), describes your plant and chooses the sensors per inverter (see DOCS.md,
-> “Web interface”).
+Home Assistant app for Deye SUN-5/6/8/10/12K-SG04LP3 (low-voltage, three-phase) hybrid inverters, single or in a parallel system. It reads the inverters, publishes the values through MQTT discovery and, if you release it, changes inverter settings.
 
-Home Assistant app that reads one or more Deye SUN-5/6/8/10/12K-SG04LP3 (low-voltage,
-three-phase) hybrid inverters and publishes the values through MQTT discovery.
+- **Set up in the web interface.** The sidebar entry *Deye Monitor* opens a setup assistant. It creates connections and inverters with a read-only connection check, then asks how the plant is used and chooses the sensors per inverter.
+- **Several connection types:** Modbus TCP, RTU over TCP, serial RTU and Solarman V5 (logger), with an optional fallback path per inverter. Only the devices you set up are contacted.
+- **Read-only by default.** The app sends Modbus read requests (function code 03) until you release writing for an inverter and a setting; both are off by default.
+- **Guarded settings control.** Released settings are written one at a time, either in the web interface (preview and confirmation) or through Home Assistant `number`, `switch`, `select`, `time` and `button` entities. Each write is checked against firmware limits and the current device state, then read back. The result is shown, and in Home Assistant it is also sent as an `event`.
+- **Plain-language sensors.** Coded values read as text, with the raw word in the attributes. An (i) help explains the settings (all 128) and the 53 sensors whose meaning is not obvious; not every sensor has one.
 
-- **Read-only by default.** It sends Modbus function code 03 (read holding registers) unless you
-  release writing for an inverter and a setting (both off by default). Released settings can be
-  written in the web interface (one at a time, with preview and confirmation) and appear as Home
-  Assistant `number`, `switch` and `time` entities with a write-result `event` (no confirmation
-  dialog in Home Assistant; same guarded write service): maximum battery charge/discharge current,
-  generator/GRID charge current, GRID charge enable and start SOC, the battery protection SOCs,
-  the four Smart Load thresholds and the ToU schedule (38 settings in total, see `DOCS.md`,
-  “Writing settings”).
-- **No scanning.** Only the gateways, loggers and serial devices you set up are contacted.
-- **Set up in the web interface.** Connections and inverters are created there (with a read-only
-  connection check), not in the app options.
-- **Several connection types:** Modbus TCP, RTU over TCP, serial RTU and Solarman V5
-  (logger), with an optional fallback path per inverter.
+See the *Documentation* tab (`DOCS.md`) for the options, the web interface, the list of settings and their rules.
 
-See the *Documentation* tab (`DOCS.md`) for the current status, the options and the web interface.
-
-Reading against real devices: see `docs/LIVE-READ-RUNBOOK.md`; the procedure of the first field write is kept in `docs/FIRST-WRITE-RUNBOOK.md` (both in the repository).
+Runbooks in the repository: `docs/LIVE-READ-RUNBOOK.md` (first live read) and `docs/FIRST-WRITE-RUNBOOK.md` (first field write).

@@ -34,7 +34,9 @@ async def rtu_exchange(
     return parse_rtu_response(frame, unit, count)
 
 
-async def rtu_write_exchange(reader: asyncio.StreamReader, unit: int, start: int) -> WriteAck:
+async def rtu_write_exchange(
+    reader: asyncio.StreamReader, unit: int, start: int, count: int = 1
+) -> WriteAck:
     """Read one RTU FC16 response: echo (8 bytes) or exception (5 bytes)."""
     head = await read_exactly(reader, 2)
     if head[1] == FC_WRITE_MULTIPLE_EXC:
@@ -43,4 +45,4 @@ async def rtu_write_exchange(reader: asyncio.StreamReader, unit: int, start: int
         frame = head + await read_exactly(reader, 6)
     else:
         raise ModbusFrameError(f"unexpected function code 0x{head[1]:02x}")
-    return parse_rtu_write_response(frame, unit, start)
+    return parse_rtu_write_response(frame, unit, start, count)

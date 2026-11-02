@@ -258,7 +258,7 @@ async def test_feature_answer_while_saving_is_kept(browser: Browser, tmp_path: A
 # -- R7-04 ----------------------------------------------------------------------------------
 
 
-async def test_explicit_default_answer_survives_reloading_suggestions(
+async def test_explicit_answer_survives_reloading_and_the_hint_stays_a_hint(
     browser: Browser, tmp_path: Any
 ) -> None:
     async with ui_stack(tmp_path) as stack:  # R111=2 suggests "no battery"
@@ -266,36 +266,43 @@ async def test_explicit_default_answer_survives_reloading_suggestions(
         await open_setup(s)
         page = s.page
         battery = page.locator('fieldset[data-feature="battery"]')
-        await expect(battery.get_by_label("Nein, ohne Akku")).to_be_checked()
-        await battery.get_by_label("Ja, mit Akku").check()  # equals the stored default
+        await expect(battery.get_by_label("Ja, mit Akku")).to_be_checked()  # not the hint
+        await expect(battery).to_contain_text("Die Geräteeinstellung meldet")
+        await battery.get_by_label("Nein, ohne Akku").check()  # an explicit answer
         save = page.get_by_role("button", name="Speichern", exact=True)
         await expect(save).to_be_enabled()
         await save.click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         selection = stack.plant.manager.selection("deye1")
-        assert selection.features.battery is True and "battery" in selection.confirmed
-        await page.reload()
-        await expect(page.locator("section.step").first).to_be_visible()
-        await expect(battery.get_by_label("Ja, mit Akku")).to_be_checked()
-        await expect(battery).to_contain_text("Die Geräteeinstellung meldet")
-        assert stack.plant.manager.selection("deye1").features.battery is True
-
-
-async def test_unconfirmed_features_are_still_prefilled_and_saved_as_confirmed(
-    browser: Browser, tmp_path: Any
-) -> None:
-    async with ui_stack(tmp_path) as stack:
-        s = await open_ui(browser, stack)
-        await open_setup(s)
-        page = s.page
-        battery = page.locator('fieldset[data-feature="battery"]')
-        await expect(battery.get_by_label("Nein, ohne Akku")).to_be_checked()
-        await page.get_by_role("button", name="Speichern", exact=True).click()
-        await expect(page.locator(".toast.ok")).to_be_visible()
-        selection = stack.plant.manager.selection("deye1")
         assert selection.features.battery is False and "battery" in selection.confirmed
         await page.reload()
         await expect(battery.get_by_label("Nein, ohne Akku")).to_be_checked()
+        await expect(battery.locator(".suggest .chip.match")).to_be_visible()  # now it agrees
+
+
+async def test_identical_descriptions_stay_identical_under_different_readbacks(
+    browser: Browser, tmp_path: Any
+) -> None:
+    seen = []
+    for name, r111 in (("a", 2), ("b", 1)):  # the device reports different battery bases
+        regs = {"r336": 0, "r111": r111}
+        stack_args: dict[str, Any] = {
+            "endpoints": [ep("gw1", host="192.0.2.11")],
+            "inverters": [inverter("deye1", "gw1")],
+            "banks": {"gw1": device_regs(A, **regs)},
+        }
+        async with ui_stack(tmp_path / name, **stack_args) as stack:
+            s = await open_ui(browser, stack)
+            await open_setup(s)
+            page = s.page
+            features = await page.locator("fieldset[data-feature] input:checked").evaluate_all(
+                "els => els.map(e => e.closest('fieldset').dataset.feature + '=' + e.value)"
+            )
+            sensors = await page.locator("input[data-sensor]:checked").evaluate_all(
+                "els => els.map(e => e.dataset.sensor)"
+            )
+            seen.append((sorted(features), sorted(sensors)))
+    assert seen[0] == seen[1]
 
 
 def _one_inverter(r98: int | None) -> dict[str, Any]:
@@ -319,22 +326,17 @@ async def test_bms_question_defaults_to_yes_without_a_device_hint(
         await expect(row(s.page, "bms_soc").locator("input")).to_be_checked()
 
 
-async def test_bms_question_is_prefilled_from_the_battery_type(
+async def test_bms_question_is_not_chosen_from_the_battery_type(
     browser: Browser, tmp_path: Any
 ) -> None:
-    async with ui_stack(tmp_path, **_one_inverter(1)) as stack:  # R98 = 1: lithium
-        s = await open_ui(browser, stack)
-        await open_setup(s)
-        bms = s.page.locator('fieldset[data-feature="bms"]')
-        await expect(bms.get_by_label("Ja, mit Kommunikation")).to_be_checked()
-        await expect(bms.locator(".chip")).to_be_visible()
-    async with ui_stack(tmp_path / "lead", **_one_inverter(0)) as stack:  # R98 = 0: lead
-        s = await open_ui(browser, stack)
-        await open_setup(s)
-        bms = s.page.locator('fieldset[data-feature="bms"]')
-        await expect(bms.get_by_label("Nein, ohne Kommunikation")).to_be_checked()
-        await expect(bms.locator(".chip.prefilled")).to_be_visible()
-        await expect(row(s.page, "bms_soc").locator("input")).not_to_be_checked()
+    for sub, r98 in (("lithium", 1), ("lead", 0)):  # the hint differs, the answer does not
+        async with ui_stack(tmp_path / sub, **_one_inverter(r98)) as stack:
+            s = await open_ui(browser, stack)
+            await open_setup(s)
+            bms = s.page.locator('fieldset[data-feature="bms"]')
+            await expect(bms.get_by_label("Ja, mit Kommunikation")).to_be_checked()
+            await expect(bms.locator(".chip.prefilled")).to_have_count(0)
+            await expect(row(s.page, "bms_soc").locator("input")).to_be_checked()
 
 
 async def test_four_island_devices_layout_and_selection(browser: Browser, tmp_path: Any) -> None:

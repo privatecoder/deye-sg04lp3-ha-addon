@@ -24,6 +24,9 @@ MBAP_EXCEPTION_LEN = 9
 WRITE_PDU_LEN = 8
 RTU_WRITE_REQUEST_LEN = 1 + WRITE_PDU_LEN + 2  # 11
 MBAP_WRITE_REQUEST_LEN = 7 + WRITE_PDU_LEN  # 15 (MBAP length field = 9)
+# The one special command (R35 Low_Noise): FC16, start 35, count 2, data [target, 100]
+RTU_COMMAND_REQUEST_LEN = RTU_WRITE_REQUEST_LEN + 2  # 13
+MBAP_COMMAND_REQUEST_LEN = MBAP_WRITE_REQUEST_LEN + 2  # 17
 RTU_WRITE_ACK_LEN = 8  # unit, fc, start(2), count(2), crc(2)
 MBAP_WRITE_ACK_LEN = 12  # MBAP header (7) + fc, start(2), count(2)
 
@@ -180,28 +183,35 @@ def _check_write(start: int, value: int) -> None:
         raise ValueError(f"register word out of range: {value!r}")
 
 
-def build_fc16_pdu(start: int, value: int) -> bytes:
-    """FC16 PDU for ONE register: fc, start, count=1, byte count=2, value (8 bytes)."""
+def build_fc16_pdu(start: int, value: int, second: int | None = None) -> bytes:
+    """FC16 PDU for ONE register: fc, start, count=1, byte count=2, value (8 bytes). ``second`` is
+    only for the special two-word command (count 2, 10 bytes); the guard decides who may send it."""
     _check_write(start, value)
+    words = [value]
+    if second is not None:
+        _check_write(start, second)
+        words.append(second)
     return (
         bytes([FC_WRITE_MULTIPLE])
         + start.to_bytes(2, "big")
-        + (1).to_bytes(2, "big")
-        + bytes([2])
-        + value.to_bytes(2, "big")
+        + len(words).to_bytes(2, "big")
+        + bytes([2 * len(words)])
+        + b"".join(w.to_bytes(2, "big") for w in words)
     )
 
 
-def build_rtu_write(unit: int, start: int, value: int) -> bytes:
+def build_rtu_write(unit: int, start: int, value: int, second: int | None = None) -> bytes:
     _check_unit(unit)
-    return append_crc(bytes([unit]) + build_fc16_pdu(start, value))
+    return append_crc(bytes([unit]) + build_fc16_pdu(start, value, second))
 
 
-def build_mbap_write(transaction_id: int, unit: int, start: int, value: int) -> bytes:
+def build_mbap_write(
+    transaction_id: int, unit: int, start: int, value: int, second: int | None = None
+) -> bytes:
     if not 0 <= transaction_id <= 0xFFFF:
         raise ValueError(f"transaction id out of range: {transaction_id}")
     _check_unit(unit)
-    pdu = build_fc16_pdu(start, value)
+    pdu = build_fc16_pdu(start, value, second)
     header = (
         transaction_id.to_bytes(2, "big")
         + (0).to_bytes(2, "big")
@@ -217,16 +227,16 @@ def _exception(code: int, raw: bytes) -> ModbusExceptionResponse:
     return exc
 
 
-def _ack(unit: int, pdu: bytes, start: int, raw: bytes) -> WriteAck:
+def _ack(unit: int, pdu: bytes, start: int, raw: bytes, count: int = 1) -> WriteAck:
     if len(pdu) != 5 or pdu[0] != FC_WRITE_MULTIPLE:
         raise ModbusFrameError("malformed write acknowledgement")
     ack = WriteAck(unit, int.from_bytes(pdu[1:3], "big"), int.from_bytes(pdu[3:5], "big"), raw)
-    if ack.start != start or ack.count != 1:
+    if ack.start != start or ack.count != count:
         raise ModbusFrameError("write acknowledgement does not echo start and count")
     return ack
 
 
-def parse_rtu_write_response(frame: bytes, unit: int, start: int) -> WriteAck:
+def parse_rtu_write_response(frame: bytes, unit: int, start: int, count: int = 1) -> WriteAck:
     """One complete RTU FC16 response: echo (8 bytes) or exception 0x90 (5 bytes)."""
     if len(frame) < RTU_EXCEPTION_LEN:
         raise ModbusFrameError("frame too short")
@@ -240,10 +250,12 @@ def parse_rtu_write_response(frame: bytes, unit: int, start: int) -> WriteAck:
         raise _exception(frame[2], frame)
     if len(frame) != RTU_WRITE_ACK_LEN:
         raise ModbusFrameError("bad write acknowledgement length")
-    return _ack(unit, frame[1:-2], start, frame)
+    return _ack(unit, frame[1:-2], start, frame, count)
 
 
-def parse_mbap_write_response(frame: bytes, transaction_id: int, unit: int, start: int) -> WriteAck:
+def parse_mbap_write_response(
+    frame: bytes, transaction_id: int, unit: int, start: int, count: int = 1
+) -> WriteAck:
     """One complete MBAP FC16 response: echo (12 bytes) or exception 0x90 (9 bytes)."""
     if len(frame) < MBAP_EXCEPTION_LEN:
         raise ModbusFrameError("frame too short")
@@ -261,4 +273,4 @@ def parse_mbap_write_response(frame: bytes, transaction_id: int, unit: int, star
         raise _exception(frame[8], frame)
     if len(frame) != MBAP_WRITE_ACK_LEN:
         raise ModbusFrameError("bad write acknowledgement length")
-    return _ack(unit, frame[7:], start, frame)
+    return _ack(unit, frame[7:], start, frame, count)

@@ -21,10 +21,14 @@ FAST_PUBLISHER = PublisherSettings(reconnect_min_s=0.01, reconnect_max_s=0.04)
 
 
 def test_the_request_count_follows_the_released_set_and_the_block_limit() -> None:
-    assert settings_read_requests(["battery_charge_current"], 125) == 4
-    assert settings_read_requests(ALL, 125) == 13  # identity block, selectors, 11 other runs
+    assert settings_read_requests(["battery_charge_current"], 125) == 5
+    assert (
+        settings_read_requests(ALL, 125) == 19
+    )  # identity block, selectors, 12 other runs (R98-R137 read as long runs; the ToU clock,
+    # the R141 pattern, the R179/R189/R344 context words, the R553 warning word and the guard
+    # companions add runs)
     assert settings_read_requests(ALL, 10) > settings_read_requests(ALL, 125)
-    assert settings_read_requests(ALL, 1) == 61
+    assert settings_read_requests(ALL, 1) == 117
     assert settings_read_requests([], 125) == 1  # the identity block is always read
     assert settings_read_requests(ALL, 125) > settings_read_requests(["tou_enable"], 125)
 

@@ -38,7 +38,7 @@ async def test_failed_role_or_bms_read_preserves_the_established_slave_verdict(
         await _next_identity_pass(r, inv, fail=frozenset({failed_register}))
         assert inv.inactive == before
         assert inv.selection == selection
-        assert not inv.current_plan().addresses & {586, *range(210, 220)}  # still not polled
+        assert not inv.current_plan().addresses & {586, *range(210, 228)}  # still not polled
         r.clock.offset += 11
         await inv.step()
         emitted = {k for _, _, v in r.sink.states for k in v}

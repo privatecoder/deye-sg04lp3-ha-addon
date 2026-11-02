@@ -21,7 +21,7 @@ from typing import Any, Protocol
 
 from deye_monitor.config import AppConfig, PollConfig
 from deye_monitor.device import BOOTSTRAP_KEYS
-from deye_monitor.profiles.features import FEATURE_VALUES, Feature, Features
+from deye_monitor.profiles.features import FEATURE_VALUES, NUMBER_FEATURES, Feature, Features
 from deye_monitor.profiles.hardware import HardwareProfile, load_hardware
 from deye_monitor.profiles.plan import (
     ReadPlan,
@@ -137,7 +137,7 @@ class Edit:
     restore, reset, add, remove."""
 
     replace: Record | None = None
-    features: Mapping[str, bool | str] | None = None
+    features: Mapping[str, bool | str | int | None] | None = None
     restore_template: bool = False
     reset: frozenset[str] = frozenset()
     add: frozenset[str] = frozenset()
@@ -190,6 +190,16 @@ def make_features(values: Mapping[str, Any], base: Features | None = None) -> Fe
             feature = Feature(name)
         except ValueError:
             raise ChangeError("unknown_feature", feature=str(name)[:64]) from None
+        span = NUMBER_FEATURES.get(feature)
+        if span is not None:  # an optional whole number (watts) or "not entered"
+            if value is not None and not (
+                isinstance(value, int)
+                and not isinstance(value, bool)
+                and span[0] <= value <= span[1]
+            ):
+                raise ChangeError("invalid_feature_value", feature=name)
+            merged[name] = value
+            continue
         allowed = FEATURE_VALUES[feature]
         if not any(value == a and type(value) is type(a) for a in allowed):
             raise ChangeError("invalid_feature_value", feature=name)

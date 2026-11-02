@@ -272,8 +272,11 @@ def test_load_and_grid_power_pairs_and_roles(profile: Profile) -> None:
         e = profile.entry(key)
         assert (e.low, e.high) == (low, high)
     assert profile.entry("ups_power_a").type == "u32"
-    assert profile.entry("gen_power_raw_a").release == "unresolved"
-    assert not profile.entry("gen_power_raw_total").default_enabled
+    gen = profile.entry("gen_power_raw_total")  # 0.5.0: a signed 32-bit W value (MCU2 1175, C070)
+    assert (gen.type, gen.low, gen.high, gen.scale, gen.unit) == ("s32", 667, 671, 1.0, "W")
+    assert profile.entry("gen_power_raw_a").release == "profile_dependent"
+    assert gen.default_enabled and gen.requires.evaluate(Features(gen_port_mode="smart_load"))
+    assert not gen.requires.evaluate(Features())
 
 
 def test_identity_and_role_entries(profile: Profile) -> None:

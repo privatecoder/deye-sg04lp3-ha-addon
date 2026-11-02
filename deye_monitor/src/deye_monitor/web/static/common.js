@@ -1,7 +1,7 @@
 // Pieces shared by the views: translated texts of states, errors, hints and the load light.
 
 import { t, tOr, localName, localText, errorText } from './i18n.js';
-import { h, toast } from './ui.js';
+import { h, toast, helpPopover } from './ui.js';
 import { state, loadLevel, profileOf, serverNowEstimate, canEdit } from './state.js';
 
 export { errorText };
@@ -185,4 +185,15 @@ function hardwareHint(identity) {
 
 export function describe(entry) {
   return localText(entry.description) || '';
+}
+
+// The (i) button of a setting or sensor: null when it has no help text. ``registers`` (sensors) adds
+// the "Register R83" line and ``raw`` the note that the raw word is an attribute.
+export function helpButton(help, name, registers, raw) {
+  const text = localText(help);
+  if (!text) return null;
+  const lines = [];
+  if (registers && registers.length) lines.push(t('help.register', { regs: registers.map((r) => `R${r}`).join(', ') }));
+  if (raw) lines.push(t('help.raw_attribute'));
+  return helpPopover({ label: t('help.about', { name }), text, meta: lines.length ? lines.join(' · ') : null });
 }

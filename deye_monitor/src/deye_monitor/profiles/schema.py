@@ -39,7 +39,7 @@ MeasurementPoint = Literal[
     "diagnostic",
 ]
 EntryType = Literal[
-    "u16", "s16", "u32", "s32", "ascii", "bitfield", "enum", "hhmm", "raw", "alarms"
+    "u16", "s16", "u32", "s32", "ascii", "bitfield", "enum", "hhmm", "raw", "alarms", "derived"
 ]
 SupportStatus = Literal["supported", "placeholder", "unsupported_for_profile", "unverified"]
 Release = Literal["confirmed", "profile_dependent", "unresolved"]
@@ -159,6 +159,32 @@ class Predicate(_Model):
         return frozenset(used)
 
 
+class Term(_Model):
+    """One word of a derived value: ``value = word (u16 / s16) * scale * multiplier``. A term whose
+    ``requires`` does not hold for the plant features is left out of the result."""
+
+    addr: Annotated[int, Field(ge=0, le=0xFFFF)]
+    signed: bool = False
+    scale: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 1.0
+    multiplier: Annotated[float, Field(allow_inf_nan=False)] = 1.0
+    requires: Predicate | None = None
+
+
+class Derive(_Model):
+    """A value computed from several words of one read group (``type: derived``): ``sum`` adds the
+    terms, ``product`` multiplies exactly two, ``neg_product`` is that product negated (a sign
+    policy of this app). Any missing word of an active term makes the value unknown."""
+
+    op: Literal["sum", "product", "neg_product"]
+    terms: Annotated[tuple[Term, ...], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def _shape(self) -> Derive:
+        if self.op != "sum" and len(self.terms) != 2:
+            raise ValueError("product needs exactly two terms")
+        return self
+
+
 class Entry(_Model):
     key: str
     name: Names
@@ -167,6 +193,7 @@ class Entry(_Model):
     low: Annotated[int, Field(ge=0, le=0xFFFF)] | None = None
     high: Annotated[int, Field(ge=0, le=0xFFFF)] | None = None
     addrs: tuple[Annotated[int, Field(ge=0, le=0xFFFF)], ...] | None = None
+    derive: Derive | None = None  # type derived: the words are those of the terms
     type: EntryType
     mask: Annotated[int, Field(ge=1, le=0xFFFF)] | None = None
     shift: Annotated[int, Field(ge=0, le=15)] = 0
@@ -225,11 +252,26 @@ class Entry(_Model):
     @property
     def addresses(self) -> tuple[int, ...]:
         """Every wire address the entry needs, partners included, in word order low..high."""
+        if self.derive is not None:
+            return tuple(dict.fromkeys(t.addr for t in self.derive.terms))
         if self.addr is not None:
             return (self.addr,)
         if self.low is not None and self.high is not None:
             return (self.low, self.high)
         return self.addrs or ()
+
+    def addresses_for(self, features: Features) -> tuple[int, ...]:
+        """``addresses`` for one plant: a derived entry needs only the words of its ACTIVE terms
+        (the same predicate the decoder applies), every other entry all of its words."""
+        if self.derive is None:
+            return self.addresses
+        return tuple(
+            dict.fromkeys(
+                t.addr
+                for t in self.derive.terms
+                if t.requires is None or t.requires.evaluate(features)
+            )
+        )
 
     @property
     def declares_not_reported(self) -> bool:
@@ -242,8 +284,10 @@ class Entry(_Model):
             return True
         if not self.undefined_not_reported:
             return False
-        defined = self.enum.keys() if self.enum is not None else (self.value_map or {}).keys()
-        return word not in defined
+        if self.enum is not None:  # a masked enum is judged by its field, not by the whole word
+            field = word if self.mask is None else (word & self.mask) >> self.shift
+            return field not in self.enum
+        return word not in (self.value_map or {})
 
     def label(self, value: str) -> str:
         """Published label of an enum value (the value itself without ``enum_labels``)."""
@@ -314,6 +358,12 @@ class Entry(_Model):
         forms = [self.addr is not None, self.low is not None or self.high is not None]
         forms.append(self.addrs is not None)
         out: list[str] = []
+        if (self.type == "derived") != (self.derive is not None):
+            return ["derive is required for (and only for) type derived"]
+        if self.derive is not None:
+            if any(forms) or self.mask is not None or self.shift:
+                out.append("a derived entry has no addr, low/high, addrs or mask")
+            return out
         if sum(forms) != 1:
             return ["exactly one of addr, low+high or addrs is required"]
         if (self.low is None) != (self.high is None):
@@ -362,6 +412,12 @@ class Entry(_Model):
                 out.append("fw_offsets need a scale, a released entry and no raw_offset")
         if self.declares_not_reported and self.addr is None:
             out.append("not_reported applies to single-word entries")
+        if self.type == "derived":
+            if self.scale is not None or self.scale_source or self.raw_offset or self.fw_offsets:
+                out.append("a derived entry carries its scales in the terms")
+            if self.release == "unresolved":
+                out.append("a derived entry is a released physical value")
+            return out
         if self.undefined_not_reported and self.enum is None and self.value_map is None:
             out.append("undefined_not_reported needs an enum or a value_map")
         if self.value_map is not None and self.type != "u16":
@@ -466,6 +522,7 @@ class Profile(_Model):
             if self.hardware not in e.supported_on:
                 problems.append(f"{e.key}: supported_on must list {self.hardware}")
         problems += self._address_problems()
+        problems += self._derived_problems()
         by_key = {e.key: e for e in self.entries}
         r65 = by_key.get(self.energy_resolution_key)
         if r65 is None or r65.addr != 65 or r65.mask is not None:
@@ -476,6 +533,21 @@ class Profile(_Model):
             raise ValueError("; ".join(problems))
         return self
 
+    def _derived_problems(self) -> list[str]:
+        """The words of a derived entry come from entries of its own read group: they are read
+        and published together, so a value never mixes two cycles."""
+        own: dict[str, set[int]] = {}
+        for e in self.entries:
+            if e.derive is None:
+                own.setdefault(e.group, set()).update(e.addresses)
+        return [
+            f"{e.key}: word {a} is not read by another entry of group {e.group}"
+            for e in self.entries
+            if e.derive is not None
+            for a in e.addresses
+            if a not in own.get(e.group, set())
+        ]
+
     def _address_problems(self) -> list[str]:
         """A word belongs to one entity. Allowed overlaps: masked bit fields with disjoint masks,
         and any number of those on top of at most one unmasked ``bitfield``/``raw`` entry that
@@ -483,7 +555,10 @@ class Profile(_Model):
         twins and may overlap."""
         words: dict[int, list[Entry]] = {}
         for e in self.entries:
-            if not e.internal and e.type != "alarms":  # a derived text view of the alarm words
+            if not e.internal and e.type not in (
+                "alarms",
+                "derived",
+            ):  # views of other entries' words
                 for a in e.addresses:
                     words.setdefault(a, []).append(e)
         out: list[str] = []

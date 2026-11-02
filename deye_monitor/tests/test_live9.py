@@ -16,7 +16,7 @@ SN = "2401234567"
 PROFILE = load_profile("sg04lp3_lv_v105_8")
 MASTER, SLAVE = 0x0003, 0x0001  # R336: bit0 parallel enabled, bit1 master
 BMS_KEYS = {e.key for e in PROFILE.entries if e.point == "bms" and not e.internal}
-ZEROS = {f"r{a}": 0 for a in range(210, 220)}
+ZEROS = {f"r{a}": 0 for a in range(210, 228)}
 
 
 # -- zero heuristic ------------------------------------------------------------------------------
@@ -136,7 +136,7 @@ async def test_a_slave_without_bms_link_drops_the_bms_block_and_the_temperature(
         assert set(inv.inactive) == BMS_KEYS | {"battery_temperature"}
         assert inv.inactive["battery_temperature"] == "parallel_slave_temperature"
         assert {inv.inactive[k] for k in BMS_KEYS} == {"parallel_slave_no_bms"}
-        assert not inv.current_plan().addresses & {586, *range(210, 220)}  # not polled
+        assert not inv.current_plan().addresses & {586, *range(210, 228)}  # not polled
         view = status_view(inv, None)
         assert view["inactive"]["bms_soc"] == {"reason": "parallel_slave_no_bms"}
         r.clock.offset += 11

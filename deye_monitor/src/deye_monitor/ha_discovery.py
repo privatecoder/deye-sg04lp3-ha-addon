@@ -34,10 +34,18 @@ from deye_monitor.config import PollConfig
 from deye_monitor.profiles.alarms import active_items
 from deye_monitor.profiles.decode import Value
 from deye_monitor.profiles.schema import Entry, Profile
+from deye_monitor.profiles.states import (
+    NOT_REPORTED,
+    STATES,
+    Presented,
+    attributes_key,
+    present,
+    primary_valid,
+)
 from deye_monitor.write_ops import Kind, WriteDescriptor
 
 READ_PLATFORMS: Final = ("sensor", "binary_sensor")
-WRITE_PLATFORMS: Final = ("number", "switch", "time")
+WRITE_PLATFORMS: Final = ("number", "switch", "time", "select", "button")
 PLATFORMS: Final = (*READ_PLATFORMS, *WRITE_PLATFORMS, "event")
 MAX_DOCUMENT_BYTES: Final = 256 * 1024  # application limit per device discovery document
 APP_DEVICE_SUFFIX: Final = "app"
@@ -103,8 +111,6 @@ _SENSOR_ONLY = frozenset(
         "unit_of_measurement",
         "suggested_display_precision",
         "options",
-        "json_attributes_topic",
-        "json_attributes_template",
     }
 )
 _BINARY_ONLY = frozenset({"payload_on", "payload_off"})
@@ -296,6 +302,11 @@ def inverter_component(
         comp.update(payload_on="ON", payload_off="OFF")
         if entry.device_class:
             comp["device_class"] = entry.device_class
+    elif (spec := STATES.get(entry.key)) is not None and spec.mode == "text":
+        # plain-language state (R33-14): the English label, an enum sensor when the list is fixed
+        if spec.options:
+            comp["device_class"] = "enum"
+            comp["options"] = [o.en for o in spec.options]
     elif entry.type == "enum" and entry.enum:
         # A fixed, complete option list: HA ignores values outside it (and would keep the old
         # state), so the publisher maps every unlisted value to null.
@@ -316,10 +327,15 @@ def inverter_component(
         comp["json_attributes_template"] = (
             f"{{{{ {{'alarms': value_json.get('{entry.key}{ALARM_LIST_SUFFIX}')}} | tojson }}}}"
         )
+    if entry.key in STATES:  # the raw word and the German label travel as attributes
+        comp["json_attributes_topic"] = comp["state_topic"]
+        comp["json_attributes_template"] = (
+            f"{{{{ value_json.get('{attributes_key(entry.key)}') | tojson }}}}"
+        )
     if entry.scale_source:  # the series is not in the name: an attribute tells the series apart
         comp["json_attributes_topic"] = comp["state_topic"]
         comp["json_attributes_template"] = ENERGY_SERIES_ATTRIBUTE
-    if entry.profile_fallback and entry.platform == "sensor":
+    if entry.profile_fallback and entry.platform == "sensor" and entry.key not in STATES:
         # ``source`` tells a device value from the hardware profile's value (the device left it out)
         comp["json_attributes_topic"] = comp["state_topic"]
         comp["json_attributes_template"] = (
@@ -634,10 +650,12 @@ def _setting_template(desc: WriteDescriptor) -> str:
 
 
 def _number_class(desc: WriteDescriptor) -> str | None:
+    if desc.plain_number:
+        return None
     return {"A": "current", "%": "battery", "W": "power", "V": "voltage"}.get(desc.unit)
 
 
-_REGISTER_TAG = re.compile(r"\s*\(R\d+(?: bit \d+)?\)")
+_REGISTER_TAG = re.compile(r"\s*\(R\d+(?: bits? \d+(?:-\d+)?)?\)")
 
 
 def entity_name(name: str) -> str:
@@ -646,14 +664,42 @@ def entity_name(name: str) -> str:
 
 
 def setting_component(
-    ns: Namespace, inverter_id: str, desc: WriteDescriptor, token: str, cap: int | None
+    ns: Namespace,
+    inverter_id: str,
+    desc: WriteDescriptor,
+    token: str,
+    cap: int | None,
+    floor: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """(component key, discovery component) of one released setting. ``cap`` is the model limit
     (A or W) of a model-limited setting; limits are the descriptor's current ones, nothing is
-    clamped or guessed (an unknown model keeps the document maximum, the entity is unavailable)."""
+    clamped or guessed (an unknown model keeps the document maximum, the entity is unavailable).
+    ``floor`` is the lowest value accepted now (a commissioned reserve), aligned up to the step."""
     device_id = ns.inverter_device_id(inverter_id)
     ckey = setting_key(desc.key)
-    platform = {Kind.SCALAR: "number", Kind.BIT: "switch", Kind.TIME: "time"}[desc.kind]
+    platform = {
+        Kind.SCALAR: "number",
+        Kind.BIT: "switch",
+        Kind.TIME: "time",
+        Kind.SELECT: "select",
+        Kind.BUTTON: "button",
+    }[desc.kind]
+    if platform == "button":  # a command only: no state, no value template, nothing optimistic
+        return ckey, {
+            "platform": "button",
+            "unique_id": f"{device_id}_{ckey}",
+            "default_entity_id": f"button.{device_id}_{ckey}",
+            "name": entity_name(desc.name.en),
+            "command_topic": ns.command_topic(inverter_id, token, desc.key),
+            "payload_press": "PRESS",
+            "retain": False,
+            "entity_category": "config",
+            "availability": [
+                {"topic": ns.app_status_topic},
+                {"topic": ns.inverter_availability_topic(inverter_id)},
+                {"topic": ns.write_availability_topic(inverter_id, desc.key)},
+            ],
+        }
     comp: dict[str, Any] = {
         "platform": platform,
         "unique_id": f"{device_id}_{ckey}",
@@ -671,12 +717,19 @@ def setting_component(
             {"topic": ns.write_availability_topic(inverter_id, desc.key)},
         ],
     }
+    if platform == "select":  # the option texts are the state and command payloads
+        comp["options"] = [o.label.en for o in desc.options]
     if platform == "number":
         high = cap if desc.model_limited and cap is not None else desc.max_raw
+        low = desc.min_raw
+        if floor is not None and floor > low:
+            low += -(-(floor - low) // desc.step_raw) * desc.step_raw
+        if high < low:  # an empty permitted domain: the entity is unavailable with its reason, the
+            low, high = desc.min_raw, desc.max_raw  # discovered range stays the static, valid one
         comp.update(
-            min=desc.display(desc.min_raw),
-            max=desc.display(high),
-            step=1 if desc.scale == 1 else 1 / desc.scale,
+            min=desc.display(high if desc.scale < 0 else low),
+            max=desc.display(low if desc.scale < 0 else high),
+            step=desc.engineering_step,
             mode="box",
         )
         if desc.unit:
@@ -823,11 +876,49 @@ def _require_strings(key: str, comp: Mapping[str, Any], names: tuple[str, ...]) 
             raise DiscoveryError(f"component {key}: {need} is required")
 
 
+def _validate_button(key: str, comp: Mapping[str, Any]) -> None:
+    """A command button: the guarded write shape without any state, never retained."""
+    _unknown(
+        f"component {key}",
+        set(comp),
+        frozenset(
+            {
+                "platform",
+                "unique_id",
+                "default_entity_id",
+                "name",
+                "entity_category",
+                "availability",
+                "command_topic",
+                "payload_press",
+                "retain",
+            }
+        ),
+    )
+    _require_strings(key, comp, ("unique_id", "default_entity_id", "command_topic"))
+    if not str(comp["default_entity_id"]).startswith("button."):
+        raise DiscoveryError(f"component {key}: default_entity_id must start with button.")
+    if comp.get("payload_press") != "PRESS" or comp.get("retain") is not False:
+        raise DiscoveryError(f"component {key}: a button presses PRESS and is not retained")
+    if comp.get("entity_category") != "config":
+        raise DiscoveryError(f"component {key}: a writable entity is in the config category")
+    _check_availability(key, comp)
+
+
 def _validate_write(key: str, comp: Mapping[str, Any]) -> None:
     """A writable setting entity: the only components that carry a command topic. Never retained
     commands, never optimistic, always the config category, no command template."""
     platform = comp["platform"]
-    allowed = _WRITE_FIELDS | (_NUMBER_FIELDS if platform == "number" else frozenset())
+    if platform == "button":
+        _validate_button(key, comp)
+        return
+    allowed = _WRITE_FIELDS | (
+        _NUMBER_FIELDS
+        if platform == "number"
+        else frozenset({"options"})
+        if platform == "select"
+        else frozenset()
+    )
     _unknown(f"component {key}", set(comp), allowed)
     _require_strings(
         key,
@@ -843,6 +934,15 @@ def _validate_write(key: str, comp: Mapping[str, Any]) -> None:
     if comp.get("entity_category") != "config":
         raise DiscoveryError(f"component {key}: a writable entity is in the config category")
     _check_availability(key, comp)
+    if platform == "select":
+        options = comp.get("options")
+        if (
+            not isinstance(options, list)
+            or len(options) < 2
+            or not all(isinstance(o, str) and o for o in options)
+            or len(set(options)) != len(options)
+        ):
+            raise DiscoveryError(f"component {key}: a select needs 2 or more distinct options")
     if platform != "number":
         return
     low, high, step = comp.get("min"), comp.get("max"), comp.get("step")
@@ -979,6 +1079,23 @@ def timestamp(wall_ts: float) -> str:
     return datetime.datetime.fromtimestamp(wall_ts, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _profile_presented(entry: Entry, reported: Presented | None, value: Value) -> Presented:
+    """The hardware profile's value as the state of a field the device did not report. The label
+    comes from the same rule applied to the profile value; ``source`` and ``profile_expected`` keep
+    it apart from a device measurement and the raw report stays in the attributes."""
+    spec = STATES[entry.key]
+    attrs = {**(reported.attributes if reported else {}), "source": "profile"}
+    attrs["profile_expected"] = value
+    if not isinstance(value, int) or isinstance(value, bool):
+        label = reported.label if reported else NOT_REPORTED
+    else:
+        word = value << entry.shift if entry.mask is not None else value
+        result = spec.rule(entry, (word,))
+        label = (result[0] if isinstance(result, tuple) else result) or NOT_REPORTED
+    attrs["state_de"] = label.de  # the German state follows the presented label, never the raw one
+    return Presented(label, attrs)
+
+
 def state_payload(
     *,
     cycle_id: int,
@@ -988,6 +1105,7 @@ def state_payload(
     values: Mapping[str, Value],
     entries: Mapping[str, Entry],
     profile_keys: frozenset[str] = frozenset(),
+    words: Mapping[int, int] | None = None,
 ) -> tuple[bytes, int]:
     """Group JSON: only the selected keys, ``null`` for unknown values. Returns (bytes, number of
     values replaced by null because they were not publishable)."""
@@ -1004,10 +1122,22 @@ def state_payload(
             continue
         body[key], flag = clean_value(entry, value)
         replaced += flag
+        decoded = body[key]
+        if key in STATES:
+            presented = present(entry, words) if words else None
+            if key in profile_keys and entry.profile_fallback:
+                # the device left the field out: keep the profile's capability as the value,
+                # the raw report stays in the attributes next to the provenance
+                presented = _profile_presented(entry, presented, value)
+            elif entry.profile_fallback and presented is not None:
+                presented.attributes["source"] = "device"
+            if STATES[key].mode == "text":
+                body[key] = presented.label.en if presented else None
+            elif words and not primary_valid(entry, words):
+                body[key] = None  # a binary of a legacy word that is not whole 0/1
+            body[attributes_key(key)] = presented.attributes if presented else None
         if entry.type == "alarms":
-            body[f"{key}{ALARM_LIST_SUFFIX}"] = (
-                None if body[key] is None else active_items(body[key])
-            )
+            body[f"{key}{ALARM_LIST_SUFFIX}"] = None if decoded is None else active_items(decoded)
     if profile_keys:
         body["sources"] = {k: "profile" for k in sorted(profile_keys) if k in values}
     return encode(body), replaced

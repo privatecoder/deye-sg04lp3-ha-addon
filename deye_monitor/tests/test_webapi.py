@@ -406,6 +406,17 @@ async def test_hardware_status_and_selection_views(tmp_path: Path) -> None:
             "mppt1_used",
             "mppt2_used",
             "parallel",
+            "export_policy",
+            "external_measurement",
+            "external_signal_use",
+            "battery_control_basis",
+            "tou_used",
+            "ev_charger",
+            "export_limit_w",
+            "grid_limit_w",
+            "generator_capacity_w",
+            "ev_charger_limit_w",
+            "ev_offgrid_reserve_soc",
         }
         assert sel["budget"]["blocks"] > 0 and "groups" in sel["budget"]
         # no secrets, no raw frames anywhere

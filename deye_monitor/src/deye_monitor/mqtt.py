@@ -859,6 +859,7 @@ class MqttPublisher:
             values=slot.values,
             entries=rec.entries,
             profile_keys=snap.profile_keys,
+            words=snap.words,
         )
         self.nulled_values += replaced
         await publish(self.ns.group_topic(inverter_id, snap.group), payload, False)

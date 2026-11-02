@@ -10,8 +10,9 @@ from hypothesis import strategies as st
 from deye_monitor.protocol import modbus as m
 from deye_monitor.protocol import solarman_v5 as v5
 from deye_monitor.protocol.guard import (
+    COMMAND_WORDS,
     DENIED_REGISTERS,
-    WRITABLE_MASKS,
+    WRITABLE_FIELDS,
     Framing,
     GuardViolation,
     WriteGrant,
@@ -223,9 +224,7 @@ def test_guard_rejects_padding_concatenation_truncation_and_bad_crc() -> None:
         guard_write_frame(bytes(meta), Framing.SOLARMAN_V5, grant=GRANT, logger_serial=LOGGER)
 
 
-@pytest.mark.parametrize(
-    "register", [0, 22, 23, 24, 80, 81, 91, 92, 98, 111, 141, 142, 147, 160, 165, 178, 336]
-)
+@pytest.mark.parametrize("register", [0, 22, 23, 24, 80, 81, 91, 92, 98, 111, 142, 147, 178, 336])
 @pytest.mark.parametrize("extra", [0, 1])
 def test_guard_rejects_unlisted_and_denied_registers(register: int, extra: int) -> None:
     register += 0  # parametrised for readability
@@ -235,14 +234,14 @@ def test_guard_rejects_unlisted_and_denied_registers(register: int, extra: int) 
 
 
 def test_guard_rejects_every_deny_listed_and_every_unlisted_register() -> None:
-    unlisted = [0, 1, 107, 110, 114, 118, 126, 129, 131, 138, 145, 178, 2000, 65535]
+    unlisted = [0, 1, 110, 138, 139, 2000, 65535]
     for register in [*sorted(DENIED_REGISTERS), *unlisted]:
-        assert register not in WRITABLE_MASKS
+        assert register not in WRITABLE_FIELDS
         with pytest.raises(GuardViolation):
             guard_write_frame(
                 rtu_write(1, register, 7), Framing.RTU, grant=grant(register=register, new_word=7)
             )
-    assert not set(WRITABLE_MASKS) & DENIED_REGISTERS
+    assert not set(WRITABLE_FIELDS) & DENIED_REGISTERS
 
 
 def test_guard_rejects_foreign_bits_and_unchanged_words_and_wrong_masks() -> None:
@@ -285,10 +284,13 @@ def test_read_guard_still_refuses_every_write_frame() -> None:
 
 
 def test_descriptor_table_matches_the_guard_table() -> None:
-    assert {d.register: d.mask for d in DESCRIPTORS} == WRITABLE_MASKS
-    assert len(DESCRIPTORS) == len(WRITABLE_MASKS) == 38
-    assert {115, 116, 117, 127, 146, *range(148, 160), *range(166, 178)} <= set(WRITABLE_MASKS)
-    assert not {111, 141, 142, 147, *range(160, 166)} & set(WRITABLE_MASKS)
+    fields = {(d.register, d.mask) for d in DESCRIPTORS}
+    assert len(fields) + 7 == len(DESCRIPTORS)  # seven weekdays share 0x00FE, R181 two actions
+    wire = {(r, m) for r, masks in WRITABLE_FIELDS.items() for m in masks}
+    assert fields == wire | {(r, 0xFFFF) for r in COMMAND_WORDS}  # plus the special commands
+    assert {115, 116, 117, 127, 146, *range(148, 160), *range(160, 178)} <= set(WRITABLE_FIELDS)
+    assert not {111, 147} & set(WRITABLE_FIELDS)
+    assert 141 in WRITABLE_FIELDS
 
 
 @pytest.mark.parametrize("register", [146, 172, 177])
@@ -323,6 +325,6 @@ def test_property_only_whitelisted_register_and_mask_pass(
         guard_write_frame(rtu_write(1, register, new), Framing.RTU, grant=grant_)
     except GuardViolation:
         return
-    assert WRITABLE_MASKS[register] == mask
+    assert mask in WRITABLE_FIELDS[register]
     assert (new ^ old) & ~mask & 0xFFFF == 0
     assert new != old

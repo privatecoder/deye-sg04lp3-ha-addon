@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from deye_monitor.protocol.modbus import (
+    RTU_COMMAND_REQUEST_LEN,
     RTU_REQUEST_LEN,
     RTU_WRITE_REQUEST_LEN,
     ModbusExceptionResponse,
@@ -35,6 +36,7 @@ REQUEST_PAYLOAD_LEN = REQUEST_METADATA_LEN + RTU_REQUEST_LEN
 REQUEST_FRAME_LEN = HEADER_LEN + REQUEST_PAYLOAD_LEN + TRAILER_LEN
 WRITE_REQUEST_PAYLOAD_LEN = REQUEST_METADATA_LEN + RTU_WRITE_REQUEST_LEN
 WRITE_REQUEST_FRAME_LEN = HEADER_LEN + WRITE_REQUEST_PAYLOAD_LEN + TRAILER_LEN  # 39
+COMMAND_REQUEST_FRAME_LEN = WRITE_REQUEST_FRAME_LEN + 2  # 41 (the two-word special command)
 _MIN_RTU_LEN = 5
 # Inverter response metadata accepted by this app (frame type 0x02 = inverter, status 0x01 =
 # real-time data). Other combinations are not decoded: the RTU offset and meaning are unknown.
@@ -81,10 +83,13 @@ def build_v5_write_request(logger_serial: int, sequence: int, rtu_frame: bytes) 
         raise ValueError(f"logger serial out of range: {logger_serial}")
     if not 0 <= sequence <= 0xFFFF:
         raise ValueError(f"sequence out of range: {sequence}")
-    if type(rtu_frame) is not bytes or len(rtu_frame) != RTU_WRITE_REQUEST_LEN:
-        raise ValueError("rtu_frame must be exactly one 11-byte RTU write request")
+    if type(rtu_frame) is not bytes or len(rtu_frame) not in (
+        RTU_WRITE_REQUEST_LEN,
+        RTU_COMMAND_REQUEST_LEN,
+    ):
+        raise ValueError("rtu_frame must be exactly one 11-byte RTU write or 13-byte command")
     body = (
-        WRITE_REQUEST_PAYLOAD_LEN.to_bytes(2, "little")
+        (WRITE_REQUEST_PAYLOAD_LEN + len(rtu_frame) - RTU_WRITE_REQUEST_LEN).to_bytes(2, "little")
         + CONTROL_REQUEST.to_bytes(2, "little")
         + sequence.to_bytes(2, "little")
         + logger_serial.to_bytes(4, "little")
@@ -244,7 +249,7 @@ def decode_read_response(
         raise
 
 
-def decode_write_response(response: V5Response, unit: int, start: int) -> WriteAck:
+def decode_write_response(response: V5Response, unit: int, start: int, count: int = 1) -> WriteAck:
     """Decode the inner RTU FC16 response of an accepted V5 response. Strict: no double-CRC
     correction is applied to a write acknowledgement."""
     if not response.supported:
@@ -254,4 +259,4 @@ def decode_write_response(response: V5Response, unit: int, start: int) -> WriteA
         )
     if len(response.rtu) < _MIN_RTU_LEN:
         raise V5LoggerError(f"logger returned no modbus response ({len(response.rtu)} bytes)")
-    return parse_rtu_write_response(response.rtu, unit, start)
+    return parse_rtu_write_response(response.rtu, unit, start, count)

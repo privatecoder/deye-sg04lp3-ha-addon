@@ -14,6 +14,7 @@ from deye_monitor.config import PollConfig
 from deye_monitor.profiles.features import Features
 from deye_monitor.profiles.hardware import HardwareProfile
 from deye_monitor.profiles.schema import Profile
+from deye_monitor.profiles.states import context_addresses
 
 MAX_REGISTERS_PER_READ = 125
 
@@ -132,13 +133,13 @@ def build_read_plan(
     """Build the read plan for one inverter.
 
     ``features`` are accepted for the call contract of the UI backend; entry selection is
-    explicit (``selected_keys``), the template is applied by the caller. ``max_gap`` allows
+    explicit (``selected_keys``), the template is applied by the caller; they decide which terms
+    of a derived entry are active, and only those words are dependencies. ``max_gap`` allows
     bridging up to that many addresses between needed ones, but only when every bridged address
     is known to the profile; the default reads exactly the needed words. ``unreported`` are
     entries the device does not report (``unreported_entries``): they are not read any more; a
     mandatory entry or the R65 dependency of the automatic energy resolution stays.
     """
-    del features
     if not 1 <= max_read_registers <= MAX_REGISTERS_PER_READ:
         raise ValueError("max_read_registers must be 1..125")
     if max_gap < 0:
@@ -156,11 +157,15 @@ def build_read_plan(
     if r65_required:
         keys.add(profile.energy_resolution_key)
 
-    deps = {k: by_key[k].addresses for k in sorted(keys)}
+    def reads(k: str) -> tuple[int, ...]:
+        # the state rule's context registers are read with the entry (e.g. the ToU branch R146)
+        return tuple(dict.fromkeys((*by_key[k].addresses_for(features), *context_addresses(k))))
+
+    deps = {k: reads(k) for k in sorted(keys)}
     known = profile.known_addresses
     blocks: list[ReadBlock] = []
     for group in profile.groups:
-        needed = sorted({a for k in keys if by_key[k].group == group for a in by_key[k].addresses})
+        needed = sorted({a for k in keys if by_key[k].group == group for a in reads(k)})
         blocks += _blocks(group, needed, known, max_read_registers, max_gap)
 
     return ReadPlan(
@@ -168,7 +173,7 @@ def build_read_plan(
         keys=frozenset(keys),
         mandatory_keys=mandatory,
         dependencies=deps,
-        reads_r65=any(65 in by_key[k].addresses for k in keys),
+        reads_r65=any(65 in by_key[k].addresses_for(features) for k in keys),
         r65_required_for_energy=r65_required,
         budget=_budget(profile, blocks, poll or PollConfig(), response_time_s, gap_s),
     )

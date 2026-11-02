@@ -6,7 +6,7 @@ import { ApiError, api } from './api.js';
 import { t, errorText, localName, localText } from './i18n.js';
 import { h, uid, modal, toast, debounce } from './ui.js';
 import { state, canEdit, inverterById, profileOf, loadInverters, loadSession, mutate } from './state.js';
-import { stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList, plantInputsOf, plantTotalName } from './common.js';
+import { helpButton, stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList, plantInputsOf, plantTotalName } from './common.js';
 import { openTransfer } from './transfer.js';
 import { writesPanel } from './writes.js';
 
@@ -23,7 +23,7 @@ const GRID_CHOICES = {
 };
 
 function newDraft() {
-  return { fOver: {}, kOver: new Map(), confirm: new Set(), restoreAll: false, restoreSeq: 0, saving: false, baseStale: false, prefilled: new Set(), touched: false, prefillDone: false, search: '', filter: 'all', openGroups: new Map() };
+  return { fOver: {}, kOver: new Map(), confirm: new Set(), restoreAll: false, restoreSeq: 0, saving: false, baseStale: false, touched: false, search: '', filter: 'all', openGroups: new Map() };
 }
 
 export function setupView(invId) {
@@ -108,7 +108,6 @@ export function setupView(invId) {
   // they equal the old base): they are settled against the new stored state afterwards.
   function setFeature(name, value) {
     draft.touched = true;
-    draft.prefilled.delete(name);
     if (!explicit() && value === baseFeatures()[name]) delete draft.fOver[name];
     else draft.fOver[name] = value;
     // An answer is a decision, also when it equals the default: it is stored as confirmed.
@@ -135,23 +134,6 @@ export function setupView(invId) {
   function quick(keep) {
     for (const key of rows.keys()) applyKey(key, keep.includes(key));
     changed();
-  }
-
-  function applySuggestions() {
-    if (draft.touched || draft.prefillDone) return;
-    const suggested = base.status.suggested_features || {};
-    if (!Object.keys(suggested).length) return;
-    draft.prefillDone = true;
-    // Only features the user has not answered yet are pre-filled; an answered one (even equal to
-    // the default) stays, the device setting is then just shown as a hint.
-    const f = baseFeatures();
-    const confirmed = baseConfirmed();
-    for (const [name, value] of Object.entries(suggested)) {
-      if (!(name in DEFAULT_FEATURES) || confirmed.has(name) || value === f[name]) continue;
-      draft.fOver[name] = value;
-      draft.prefilled.add(name);
-      if (name === 'grid_port_use' && value === 'generator' && !confirmed.has('utility_grid')) draft.fOver.utility_grid = false;
-    }
   }
 
   // -- preview ------------------------------------------------------------------------------
@@ -189,11 +171,8 @@ export function setupView(invId) {
     const name = names.find((n) => n in suggested);
     if (!name) return null;
     const mark = h('div', { class: 'suggest' });
-    const prefilled = names.some((n) => draft.prefilled.has(n));
     const matches = current(suggested[name]);
-    if (prefilled && matches) {
-      mark.append(h('span', { class: 'chip prefilled' }, t('setup.prefilled')));
-    } else if (matches) {
+    if (matches) {
       mark.append(h('span', { class: 'chip match' }, t('setup.matches_device')));
     } else {
       mark.append(h('span', { class: 'muted' }, t('setup.device_says', { value: t(`feat.value.${name}.${String(suggested[name])}`) })),
@@ -287,18 +266,65 @@ export function setupView(invId) {
       current: () => f().parallel, choose: (v) => setFeature('parallel', v),
       suggest: () => suggestion(['parallel'], (v) => f().parallel === v),
     });
+    // 0.5.0 questions: they preselect sensors (and settings) only through the answer; the device
+    // setting is shown as a consistency hint and never chosen for the user.
+    const choice = (name, values, visible) => radios({
+      name, legend: t(`feat.${name}.q`), help: t(`feat.${name}.help`),
+      options: values.map((v) => ({ value: v, label: t(`feat.${name}.${v}`), help: t(`feat.${name}.${v}_help`) })),
+      current: () => f()[name], choose: (v) => setFeature(name, v), visible,
+      suggest: () => suggestion([name], (v) => f()[name] === v),
+    });
+    const gridTerminal = () => ['utility', 'generator'].includes(f().grid_port_use);
+    const exportPolicy = choice('export_policy', ['export_allowed', 'zero_export_load', 'zero_export_external', 'not_applicable', 'unknown'], () => f().utility_grid);
+    const measurement = choice('external_measurement', ['none', 'ct', 'meter', 'ct_and_second_meter', 'meter_and_second_meter', 'unknown'], gridTerminal);
+    const signalUse = choice('external_signal_use', ['none', 'grid_contactor', 'generator_start', 'shared_grid_and_generator_logic', 'other', 'unknown']);
+    const basis = choice('battery_control_basis', ['voltage', 'soc', 'none', 'unknown'], () => f().battery);
+    const tou = radios({
+      name: 'tou_used', legend: t('feat.tou_used.q'), help: t('feat.tou_used.help'), options: boolOptions('tou_used'),
+      current: () => f().tou_used, choose: (v) => setFeature('tou_used', v), visible: () => f().battery,
+      suggest: () => suggestion(['tou_used'], (v) => f().tou_used === v),
+    });
+    const evCharger = choice('ev_charger', ['none', 'grid_port', 'load_port', 'unknown']);
+    // optional installation numbers (W): they only cap the maximum of the settings that name them
+    const numberInputs = new Map();
+    const spans = { export_limit_w: [0, 100000], grid_limit_w: [100, 100000], generator_capacity_w: [100, 100000], ev_charger_limit_w: [100, 100000], ev_offgrid_reserve_soc: [0, 100] };
+    const numberField = (name) => {
+      const id = uid('num');
+      const [min, max] = spans[name];
+      const note = h('span', { class: 'note', role: 'status', hidden: true }, t('feat.number.invalid', { min, max }));
+      const input = h('input', { type: 'text', inputmode: 'numeric', id, 'data-number': name, placeholder: t('feat.number.placeholder'), disabled: !canEdit(), 'aria-describedby': `${id}-help`,
+        onInput: (e) => {
+          const text = e.target.value.trim();
+          const ok = text === '' || (/^[0-9]{1,6}$/.test(text) && Number(text) >= min && Number(text) <= max);
+          note.hidden = ok;
+          if (ok) { setFeature(name, text === '' ? null : Number(text)); changed(); }
+        } });
+      numberInputs.set(name, input);
+      return h('div', { class: 'number-field' }, h('label', { for: id }, t(`feat.${name}.q`)), input, h('p', { class: 'help', id: `${id}-help` }, t(`feat.${name}.help`)), note);
+    };
+    const numbers = {
+      el: h('fieldset', { class: 'feature', 'data-feature': 'numbers' },
+        h('legend', {}, t('feat.numbers.title')), h('p', { class: 'help' }, t('feat.numbers.help')),
+        ['export_limit_w', 'grid_limit_w', 'generator_capacity_w', 'ev_charger_limit_w', 'ev_offgrid_reserve_soc'].map(numberField)),
+      sync() {
+        for (const [name, input] of numberInputs) {
+          if (document.activeElement === input) continue;
+          const value = f()[name];
+          input.value = value === null || value === undefined ? '' : String(value);
+        }
+      },
+    };
     const mppt = h('fieldset', { class: 'feature', 'data-feature': 'mppt' },
       h('legend', {}, t('feat.mppt.q')), h('p', { class: 'help' }, t('feat.mppt.help')),
       h('div', { class: 'options' }, [1, 2].map((n) => {
         const input = h('input', { type: 'checkbox', disabled: !canEdit(), 'data-mppt': n, onChange: (e) => { setFeature(`mppt${n}_used`, e.target.checked); changed(); } });
         return h('label', { class: 'option' }, input, h('span', { class: 'opt-text' }, h('span', { class: 'opt-title' }, t('feat.mppt.n', { n })), h('span', { class: 'opt-help' }, t('feat.mppt.n_help', { n }))));
       })));
-    controls.push(grid, battery, bms, gen, { el: mppt, sync() { for (const n of [1, 2]) mppt.querySelector(`[data-mppt="${n}"]`).checked = f()[`mppt${n}_used`]; } }, parallel);
+    controls.push(grid, battery, bms, gen, { el: mppt, sync() { for (const n of [1, 2]) mppt.querySelector(`[data-mppt="${n}"]`).checked = f()[`mppt${n}_used`]; } }, parallel, exportPolicy, measurement, signalUse, basis, tou, evCharger, numbers);
     refs.controls = controls;
     return h('section', { class: 'card step', 'aria-labelledby': 'step1-title' },
       h('h2', { id: 'step1-title' }, h('span', { class: 'step-no' }, '1'), t('setup.step1')),
       h('p', { class: 'muted' }, t('setup.step1_intro')),
-      refs.prefillNote = h('p', { class: 'banner info', role: 'status', hidden: true }, t('setup.prefill_note')),
       controls.map((c) => c.el));
   }
 
@@ -322,7 +348,7 @@ export function setupView(invId) {
       h('label', { class: 'sensor-main', for: id },
         input,
         h('span', { class: 'sensor-text' },
-          h('span', { class: 'sensor-name' }, localName(entry), entry.unit ? h('span', { class: 'unit' }, ` (${entry.unit})`) : null),
+          h('span', { class: 'sensor-name' }, localName(entry), entry.unit ? h('span', { class: 'unit' }, ` (${entry.unit})`) : null, helpButton(entry.help, localName(entry), entry.registers, entry.has_state)),
           h('span', { class: 'sensor-desc', id: `${id}-desc` }, description || ''),
           h('span', { class: 'sensor-meta' },
             entry.hint ? h('span', { class: `chip hint-${entry.hint}` }, t(`sensor.hint.${entry.hint}`)) : null,
@@ -536,7 +562,6 @@ export function setupView(invId) {
     if (device.length) {
       refs.hints.append(h('ul', { class: 'hints' }, device.map((hint) => h('li', { class: `hint ${hint.kind}` }, hintBody(hint)))));
     }
-    refs.prefillNote.hidden = draft.prefilled.size === 0;
     refs.awaiting.hidden = base.selection.chosen !== false;
     refs.takeTemplate.disabled = draft.saving || !canEdit() || sensorDeviations();
     refs.takeTemplateNote.hidden = !sensorDeviations();
@@ -563,8 +588,6 @@ export function setupView(invId) {
     for (const [key, op] of sent.kOver) if (draft.kOver.get(key) === op) draft.kOver.delete(key);
     if (sent.restoreAll && draft.restoreSeq === sent.restoreSeq) draft.restoreAll = false;
     for (const name of sent.confirm) draft.confirm.delete(name);
-    for (const name of sent.confirm) draft.prefilled.delete(name);
-    for (const name of Object.keys(sent.fOver)) draft.prefilled.delete(name);
     normalise();
   }
 
@@ -580,8 +603,6 @@ export function setupView(invId) {
 
   async function save(choose = false) {
     if (draft.saving) return;
-    // Accepting the template also accepts the answers shown pre-filled from the device.
-    if (choose) for (const name of draft.prefilled) if (name in draft.fOver) draft.confirm.add(name);
     const sent = { fOver: { ...draft.fOver }, kOver: new Map(draft.kOver), restoreAll: draft.restoreAll, restoreSeq: draft.restoreSeq, confirm: new Set(draft.confirm) };
     draft.saving = true;
     failure = null;
@@ -602,7 +623,6 @@ export function setupView(invId) {
     conflict = null;
     baseRevision = result.revision;
     draft.baseRevision = baseRevision;
-    draft.prefillDone = true;
     try {
       await loadInverters();
       base = inverterById(invId);
@@ -622,7 +642,7 @@ export function setupView(invId) {
   }
 
   function discard() {
-    Object.assign(draft, newDraft(), { prefillDone: true, openGroups: draft.openGroups });
+    Object.assign(draft, newDraft(), { openGroups: draft.openGroups });
     preview = null;
     failure = null;
     conflict = null;
@@ -666,7 +686,6 @@ export function setupView(invId) {
 
   // -- assemble -------------------------------------------------------------------------------
 
-  applySuggestions();
   refs.banner = h('div', { class: 'messages' });
   refs.status = h('div', { class: 'status-line' });
   refs.budget = h('div', { class: 'budget', 'aria-live': 'polite' });
@@ -714,7 +733,6 @@ export function setupView(invId) {
       if (!dirty() && !draft.saving) { base = inverterById(invId) || base; baseRevision = state.revision; draft.base = base; draft.baseRevision = baseRevision; }
       paintHeader();
       if (writes) writes.refresh();
-      if (!draft.touched) { applySuggestions(); if (dirty()) requestPreview(); }
       paint();
     },
     canLeave: () => !dirty(),

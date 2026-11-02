@@ -119,7 +119,7 @@ async def test_bootstrap_reads_provide_suggested_features(tmp_path: Path) -> Non
         assert suggestion["gen_port_mode"] == "ac_coupled"  # R133 = 2
         assert suggestion["grid_port_use"] == "generator"  # R189 bit 0
         assert suggestion["parallel"] is True  # R336 bit 0
-        assert set(suggestion["_basis"]) == {
+        assert set(suggestion["_basis"]) >= {
             "battery",
             "gen_port_mode",
             "grid_port_use",
@@ -288,3 +288,56 @@ async def test_unreported_capability_words_are_no_conflict_and_stay_visible(
         ]
         words = diag["identity"]["capability_words"]
         assert (words[0], words[22], words[24]) == (0xFFFF, 0xFFFF, 0xFFFF)  # raw values kept
+
+
+async def test_the_installation_questions_get_consistency_hints_from_the_settings(
+    tmp_path: Path,
+) -> None:
+    """R142 / R344 / R140 / R111 / R146 only suggest (the user confirms); nothing is selected."""
+    regs = device_regs(SN, r111=1, r140=0x0003, r142=1, r146=0x0001, r344=0x0003)
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        suggestion = inv.diagnostics()["suggested_features"]
+        assert suggestion["export_policy"] == "zero_export_load"  # R142 = 1
+        assert suggestion["external_measurement"] == "meter_and_second_meter"  # R344 bit 0, 1
+        assert suggestion["external_signal_use"] == "shared_grid_and_generator_logic"  # R140 bits
+        assert suggestion["battery_control_basis"] == "soc"  # R111 = 1
+        assert suggestion["tou_used"] is True  # R146 bit 0
+        assert inv.features.export_policy == "unknown" and not inv.features.tou_used
+
+
+@pytest.mark.parametrize(
+    ("words", "expected"),
+    [
+        (
+            {"r140": 0, "r142": 0, "r344": 0, "r111": 0, "r146": 0},
+            ("none", "export_allowed", "ct", "voltage", False),
+        ),
+        (
+            {"r140": 1, "r142": 2, "r344": 1, "r111": 2, "r146": 0x00FE},
+            ("grid_contactor", "zero_export_external", "meter", "none", False),
+        ),
+        (
+            {"r140": 2, "r142": 0, "r344": 4, "r111": 1, "r146": 0x0101},
+            ("generator_start", "export_allowed", "ct_and_second_meter", "soc", True),
+        ),
+    ],
+)
+async def test_hint_values_follow_the_documented_settings(
+    tmp_path: Path, words: dict[str, int], expected: tuple[str, str, str, str, bool]
+) -> None:
+    async with rig(
+        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(SN, **words)}, tmp_path
+    ) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        s = inv.diagnostics()["suggested_features"]
+        got = (
+            s["external_signal_use"],
+            s["export_policy"],
+            s["external_measurement"],
+            s["battery_control_basis"],
+            s["tou_used"],
+        )
+        assert got == expected

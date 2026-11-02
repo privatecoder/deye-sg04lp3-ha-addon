@@ -156,7 +156,7 @@ async def test_unknown_and_malformed_edits_change_nothing(tmp_path: Path) -> Non
         Edit(remove=frozenset({"bms_soc", "no_such_sensor"})),
         Edit(features={"allow_writes": True}),
         Edit(features={"battery": "yes"}),
-        Edit(features={"mppt1_used": 1}),  # type: ignore[dict-item]  # 1 == True, but not a bool
+        Edit(features={"mppt1_used": 1}),  # 1 == True, but not a bool
         Edit(features={"gen_port_mode": "nuclear"}),
     ):
         with pytest.raises(ChangeError):

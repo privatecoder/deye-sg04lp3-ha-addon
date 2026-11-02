@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from playwright.async_api import Browser, Page, expect
 
+from deye_monitor.write_ops import OPERATION_KEYS
 from tests.plant_helpers import plant_ui
 from tests.test_ui import browser, shot  # noqa: F401
 from tests.test_ui_plant import open_page
@@ -373,8 +374,10 @@ async def test_all_settings_on_a_phone_in_english(
         s = await open_page(browser, url + "#/plant", lang="en-US", width=390)
         page = s.page
         release_box = page.locator('article.inverter[data-inverter="deye1"] details.writes-section')
-        await expect(release_box.locator("input[data-operation]")).to_have_count(38)
-        await expect(release_box.locator("div.write-group")).to_have_count(4)
+        await expect(release_box.locator("input[data-operation]")).to_have_count(
+            len(OPERATION_KEYS)
+        )
+        await expect(release_box.locator("div.write-group")).to_have_count(15)
         await expect(
             release_box.locator('input[data-operation="tou_slot3_grid_charge"]')
         ).to_be_checked()
@@ -384,7 +387,9 @@ async def test_all_settings_on_a_phone_in_english(
         dialog = page.locator("dialog")
         tou = dialog.locator('section.write-group[data-group="tou"]')
         await expect(tou.locator("section.tou-slot")).to_have_count(6)
-        await expect(tou.locator("article.write-row")).to_have_count(25)
+        await expect(tou.locator("article.write-row")).to_have_count(
+            63
+        )  # enable, 7 weekdays, Spain mode, 6 x 9 slot cells
         await expect(tou.locator(".weekday-list li.on")).to_have_count(7)
         await expect(
             dialog.locator('section.write-group[data-group="grid_charge"]')
@@ -433,3 +438,45 @@ async def test_gated_settings_show_their_reason_in_the_dialog(
         await expect(volt.locator(".current-value")).to_have_text("45.00 V")
         assert all(f.responder.writes == [] for f in rig.servers.values())
         await s.check()
+
+
+@pytest.mark.parametrize("tick", [False, True])
+async def test_the_initial_plant_refresh_keeps_the_open_release_and_the_local_choice(
+    browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tick: bool
+) -> None:
+    """R37-02: the plant view shows the loaded plant at once and fetches it again; the response of
+    that second GET (held here until the user has acted) must neither close the release section
+    nor drop a choice made meanwhile."""
+    async with plant_ui(tmp_path, monkeypatch) as (rig, url):
+        await build_plant(rig, inverters=("deye1",), enable=())
+        fast(rig)
+        s = await open_page(browser, url + "#/inv/deye1", lang="en-US")
+        page = s.page
+        await expect(page.locator("#open-writes")).to_be_visible()  # the plant is loaded
+        arrived, release_get = asyncio.Event(), asyncio.Event()
+
+        async def hold(route: Any) -> None:
+            if route.request.method != "GET":
+                await route.continue_()
+                return
+            arrived.set()
+            await release_get.wait()
+            await route.continue_()
+
+        await page.route("**/api/plant", hold)
+        await page.evaluate("location.hash = '#/plant'")
+        await asyncio.wait_for(arrived.wait(), 10)
+        section = page.locator('article.inverter[data-inverter="deye1"] details.writes-section')
+        await section.locator("summary").click()
+        box = section.locator('input[data-operation="force_off_grid"]')
+        await expect(box).to_be_visible()
+        if tick:
+            await box.check()
+        release_get.set()
+        await page.wait_for_timeout(500)  # the held response has been processed
+        await expect(section).to_have_attribute("open", "")
+        await expect(box).to_be_visible()
+        if tick:
+            await expect(box).to_be_checked()
+        assert rig.servers["gw1"].responder.writes == []
+        assert not rig.service.plant.inverters[0].enabled_write_operations

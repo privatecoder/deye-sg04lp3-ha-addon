@@ -54,14 +54,14 @@ class SolarmanV5Transport(StreamTransport):
     async def _write_request(self, grant: WriteGrant) -> WriteAck:
         assert self.logger_serial is not None
         self._seq = (self._seq + 1) & 0xFF
-        rtu = build_rtu_write(grant.unit, grant.register, grant.new_word)
+        rtu = build_rtu_write(grant.unit, grant.register, grant.new_word, grant.command_word)
         await self._write_checked(build_v5_write_request(self.logger_serial, self._seq, rtu), grant)
         while True:
             data = await self._stream.read(MAX_FRAME_LEN)
             if not data:
                 raise EOFError("connection closed by peer")
             for response in self.v5.feed(data, self._seq):
-                return decode_write_response(response, grant.unit, grant.register)
+                return decode_write_response(response, grant.unit, grant.register, grant.count)
 
     def _partial_response_pending(self) -> bool:
         """An incomplete frame that outlives the request deadline is dropped with the

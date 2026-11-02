@@ -1,6 +1,6 @@
 # Deye SG04LP3 Monitor — Specification v1
 
-Home Assistant app (formerly "add-on") that polls 1..n Deye SUN-5/6/8/10/12K-SG04LP3 (LV, three-phase) inverters, exposes the values to Home Assistant via MQTT Device Discovery and, only when explicitly enabled per inverter and per setting, can change 38 reviewed settings from the web interface and through Home Assistant entities (§10, write layer, version 0.4.0). **Without that enablement the app is strictly read-only**; live writes are performed exclusively by the owner.
+Home Assistant app (formerly "add-on") that polls 1..n Deye SUN-5/6/8/10/12K-SG04LP3 (LV, three-phase) inverters, exposes the values to Home Assistant via MQTT Device Discovery and, only when explicitly enabled per inverter and per setting, can change 41 reviewed settings from the web interface and through Home Assistant entities (§10, write layer, version 0.5.0). **Without that enablement the app is strictly read-only**; live writes are performed exclusively by the owner.
 
 Knowledge base: `KB = <local knowledge base>`, in particular
 `KB/.orch/reviewer-codex-6.1-addon-grundlagen.md` (referred to below as **GRUNDLAGEN**, cited with section numbers),
@@ -103,6 +103,7 @@ Source of all definitions: `KB/Modbus/V105.8/registers.json` + GRUNDLAGEN §1 + 
 | `producer_evidence` | if available | build, image SHA-256, store offset (REVIEW2 §5.3/§5.4) |
 | `default_enabled` | yes | part of the template if `requires` is satisfied |
 | `internal` | optional | for internal mandatory reads (§9.3), creates no entity |
+| `derive` (type `derived`, 0.5.0) | for derived values | `op` (`sum`, `product`, `neg_product`) over `terms` (word, signed, scale, multiplier, optional per-term `requires`). The words must be read by other entries of the **same read group** (one cycle, never a mix of two); a missing word of an active term makes the value unknown. Used for DC input power (only the MPPT inputs the description marks as used), battery power and BMS power (V × I; the direction is not interpreted, the BMS sign is an app convention) |
 
 Only `support_status: supported` **and** `release ∈ {confirmed, profile_dependent}` yield physical sensors. Everything else at most as an explicitly labeled, disabled-by-default raw diagnostic (raw value, no unit, no statistics); `placeholder` is not offered at all.
 
@@ -115,7 +116,7 @@ Groups and default intervals (GRUNDLAGEN §1.2):
 | `battery` | 10 s | R586–R588, R590 (raw diagnostic only, factor unresolved), R591, R592. **R589 and R593–R596 are battery 2** and `placeholder` on SG04LP3 (1151/1175 zero-filled) |
 | `ac` | 10 s | R598–R600, R603–R619, R621–R638, R640–R646, R650–R655, **R656–R659** (load high words for R650–R653) + required high words from 687..708 per catalog; **never R620/R709 as a pair**; R654/R660 (apparent power) not released |
 | `pv` | 10 s | MPPT1: R672 power, R676 voltage, R677 current; MPPT2: R673, R678, R679. R674/R675/R680–R683 (PV3/PV4), R530–R533, R718–R721 = `placeholder` (zero-filled in 1151/1175); PV5–PV10 and AI-Arc R722–R748 = `unverified`/`unresolved`, not offered |
-| `settings` | 300 s | R80, R98, R111, R133, R146, R148–R177 (ToU) — diagnostic sensors only; R166–R171 raw diagnostic only |
+| `settings` | 300 s | R80, R98, R111, R133, R140, R142, R146, R148–R177 (ToU), R178/R179/R341 (reported switch settings), R220–R227 (BMS reports), R344/R345/R347 (grid sensing source), R544 (DRM) — diagnostic sensors only; R166–R171 raw diagnostic only. R140/R142/R146/R344 are also internal hint reads for the installation questions (§9.2) |
 | `energy` | 60 s | Only the whitelist of active kWh counters (§5.1); read group ≠ semantic type |
 
 The addresses to be read are **derived from the dependencies of the enabled sensors** (incl. non-adjacent partners), not from fixed ranges. The profile validator requires exactly one low word and one high word for every u32/s32 sensor; excluded sensors do not smuggle in partners.
@@ -202,6 +203,13 @@ Goal: maximally user-friendly; only what is needed is polled. Four separate laye
 | `gen_port_mode` | `unused`, `generator`, `smart_load`, `ac_coupled` (reconcile with R133) |
 | `mppt1_used`, `mppt2_used` | yes/no |
 | `parallel` | yes/no |
+| `export_policy` (0.5.0) | `export_allowed`, `zero_export_load`, `zero_export_external`, `not_applicable`, `unknown` (default) |
+| `external_measurement` (0.5.0) | `none`, `ct`, `meter`, `ct_and_second_meter`, `meter_and_second_meter`, `unknown` (default) |
+| `external_signal_use` (0.5.0) | `none`, `grid_contactor`, `generator_start`, `shared_grid_and_generator_logic`, `other`, `unknown` (default) |
+| `battery_control_basis` (0.5.0) | `voltage`, `soc`, `none`, `unknown` (default) |
+| `tou_used` (0.5.0) | yes/no (default no) |
+
+The five 0.5.0 features start as "unknown"/no and select nothing; the EV charger question (`ev_charger`: none / grid_port / load_port / unknown) and the four optional installation numbers (`export_limit_w`, `grid_limit_w`, `generator_capacity_w`, `ev_charger_limit_w`, whole watts) are no sensor predicates: they only gate and cap the matching settings (10.9). **Preselection** is a pure predicate of the saved answers (`default_enabled` plus `requires`); no register value, owner-plant assumption or last use adds a selected entity. Settings read from the device (R142, R344, R140, R111, R146 through the internal hint entries) only produce consistency hints; the UI never applies them. `profiles/setting_presets.py` maps the answers to the operations the release dialog may tick ("Apply suggestion"); it releases nothing.
 
 `requires` uses predicates (`all_of`/`any_of`) over these features, e.g. GEN power: `gen_port_mode in [generator, smart_load, ac_coupled]`. Register mapping per measurement location according to REVIEW2 §4 (grid_terminal, battery, bms, gen_port, inverter_output, ups_load, pv, parallel, tou, diagnostic). Diagnostics (identity, R65, R80, R98/R111, R133, R336, R500, R551–R558) are **always** available, independent of features. Suggestion of the features from read settings (R111, R133, R189, R336) on first connection, user confirms.
 
@@ -256,14 +264,14 @@ Accepted contract: Codex' write contract v1 (`reviewer-codex-6.1-write-contract-
 
 ### 10.1 Owner decisions (0.3.0, extended in 0.4.0)
 
-- **Whitelist = 38 descriptors** (0.4.0; the first nine of 0.3.0 are R108, R109, R125, R128, R130, R134-R137; table in 10.2). Each must still be enabled per inverter by the owner (`allow_writes` **and** the operation in `enabled_write_operations`).
+- **Whitelist = 128 descriptors in 0.5.0 part B2b (review 32: + R141) (full table in 10.9); 42 descriptors** (0.5.0 part A: 38 of 0.4.0 plus R179, R178 bits 8-9, R341 bit 2 and the R140 select; the first nine of 0.3.0 are R108, R109, R125, R128, R130, R134-R137; table in 10.2). Each must still be enabled per inverter by the owner (`allow_writes` **and** the operation in `enabled_write_operations`).
 - **Current envelope per model** replaces the generic 0-185 A of V105.8 for R108/R109/R125/R128 (0.4.0 revision 2; the datasheet-only 150/190 A caps are gone). Two limits: the **application policy** (owner decision) 5K 120 A, 6K 130 A, 8K 185 A, 10K 210 A, 12K 240 A, which is the whole envelope of R125 and R128; and the **retained firmware ceilings** of the direct clamps R108/R109 (MCU2 1175, same initializer branch as the rated power; knowledge base `model-cap-findings`): charge/discharge 5K 125/125, 6K 130/130, 8K 185/185, 10K 220/220, 12K 240/240 A, with a 200 A *charge* ceiling on the 10/12 kW hardware branch (R28 != 5 and hardware word F7B5 == 1). R108/R109 accept the **intersection** (policy and ceiling). The branch is proven by fresh R28/R14 (R28 == 5, or no reading of R14 (nibble, byte, either half) equals 1); an unproven 10/12 kW unit gets the conservative 200 A charge cap. A firmware cap is not an installation or battery limit and never widens the policy. The model comes from the rated power (R20 low word, R21 high word, 0.1 W units; exactly 5/6/8/10/12 kW). An unknown model locks the operation. Source in the descriptor (`write_ops.py`).
-- **Excluded** (0.4.0): R141/R142 work mode, the slot voltage words R160-R165 and slot bit 1 (generator charge), the ToU weekday bits, the clock, and the full deny list (R80, R81, R91, R92, R22-R24, R98, R111, R141, R142, R147, R336, R341, R160-R165, R1100-R1121, everything not listed).
+- **Excluded** (0.4.0; R142, R160-R165, slot bit 1 and the weekday bits are released in 0.5.0 part B2b, see 10.9): R141/R142 work mode, the slot voltage words R160-R165 and slot bit 1 (generator charge), the ToU weekday bits, the clock, and the full deny list (R80, R81, R91, R92, R22-R24, R98, R111, R147, R336, every bit of R341 except the admitted `0x0004`, R160-R165, R1100-R1121, everything not listed).
 - **Two transports** (0.4.0): the Ingress web interface (admin user, CSRF, plant revision, preview and permit) and Home Assistant entities (§10.8, no human preview: the owner's decision; access is controlled by Home Assistant and the broker, the audit records `source=mqtt` and no user). Both enter the same transport-independent service (`submit`, §10.7).
 - **No preselected write target** in a parallel plant. UI text: "Writes this inverter only. Other inverters are observed; matching values do not prove synchronization." Peer observation on all other plant members (same / different / unavailable): after 1 s and again after 30 s (`late_observe_delay_s`, read-only, a later observation and not an attribution; the plant write lock is not held while it waits), plus an owner-triggered "read again" (`POST api/writes/operations/<id>/peers`, audit event `peer_reread`). A pending later observation after a restart becomes `interrupted`.
 - **Parallel: the master distributes the settings, slaves are locked (0.3.2).** Firmware evidence (Codex, MCU2 V1175 / MCU1 C070): the master transfers 236 settings words (R65-R209, R339-R429) to every slave, all nine v1 registers are in the compared prefix and are copied whole-word, and a slave's divergent value is overwritten by a later master snapshot (checksum mismatch). Field anchors: R108 on the master reached all slaves within ~18 s (1 s observation still old); R130 reached all four units. Not established: a fixed latency or deadline (staged transfer), persistence across a restart (a storage write/readback attempt exists, no durability proof), behaviour of other settings or of a slave write that is not overwritten. Owner decision: **a slave is not written.** The role is read fresh (R336) at the preview and again at the send point; a slave, or a role word that reads but does not decode, is `rejected` with reason `parallel_slave`, an R336 read that fails is `rejected` as `read_failed` (no permit, no FC16); a single inverter or parallel mode off is unaffected; the lock follows the current role. The UI shows the reason with a link to the master and disables the slave's release checkboxes; on the master it says the value is distributed (in one owner test, R108 reached all slaves within about 18 s; no latency is guaranteed). "Matching values do not prove synchronization" stays the generic rule.
 - **Defaults**: 1 s observation delay, a later peer observation at 30 s, at least 5 s pacing between plant writes, permit 30 s, single-use operation id.
-- FC16 with count=1 only through the lowest byte guard; FC06 never; no retry, fallback, rollback or fan-out. Field read-modify-write with mask for every register except R130, which is a whole word: only 0 or 1 is written and any other stored word blocks the write (`unexpected_bits`). Durable audit log, intent before the send, with the DR2-11 statuses.
+- FC16 with count=1 only through the lowest byte guard; FC06 never; no retry, fallback, rollback or fan-out. Field read-modify-write with mask for every register except R130 and R179, which are whole words: only 0 or 1 is written and any other stored word blocks the write (`unexpected_bits`). Durable audit log, intent before the send, with the DR2-11 statuses.
 - **Firmware release (R17-01)**: the release call (`allow_writes` plus operations) stores the firmware fingerprint read at that moment in the inverter config (`write_release_firmware`: hardware profile name and the identity words R11, R14, R15, R17, R18). Releasing needs a fresh successful identity read; without it the release is refused. Preview and the final send point read the current words and require an exact match; a mismatch is `rejected` with reason `firmware_changed` (no permit, no FC16). The release stays stored but is inert until the owner releases again (which replaces the fingerprint). There is no hardcoded firmware allow-list: the owner's acceptance is the release, bound to the fingerprint. Monitoring is unaffected.
 - Smart Load descriptors are gated on GEN = Smart Load (R133) and on R111 (voltage thresholds R134/R136 only with R111 = 0, SOC thresholds R135/R137 only with R111 = 1); ON/OFF ordering is application policy; one field per confirmation. The mode is read from R111 at every use, never inferred from `bms` and never changed.
 
@@ -291,6 +299,10 @@ All wire words are unsigned 16-bit, big-endian; engineering values must encode e
 | `tou_slot{n}_power` | R153+n | 1 W, `0xFFFF` | 0 to the rated power (R20/R21 U32 x 0.1 W; unknown model: `model_unknown`) | ToU gates |
 | `tou_slot{n}_soc` | R165+n | 1 %, `0xFFFF` | 0-100 | ToU gates; R111 = 1 |
 | `tou_slot{n}_grid_charge` | R171+n bit 0 | `0x0001`, shift 0 | 0 or 1 ("allow GRID charging", not "force") | ToU gates; all other bits (generator charge bit 1, ...) preserved from the fresh word |
+| `force_off_grid` | R179 | whole word, mask `0x0001` | ON = 1 force off-grid, OFF = 0 "Auto" (never "on-grid") | no battery or mode gate; incumbent not 0/1 (also `0xFFFF`): `unexpected_bits`; master or single unit |
+| `external_signal` (select) | R140 bits 0-1 | `0x0003`; Off 0 / Grid 1 / Gen 2; 3 "Both" is display-only | `new = (old & 0xFFFC) \| field`, one FC16 word, `0xFFFF` in or out: `unexpected_bits`; Gen needs fresh R133 = 0 (`gen_port_not_generator`); description answer `none`: `signal_not_used`; master or single unit |
+| `signal_island_mode` | R178 bits 8-9 | `0x0300`, shift 8; ON = pair 11, OFF = pair 10 | `new = (old & 0xFCFF) \| 0x0300 / 0x0200`, other pairs preserved | incumbent `0xFFFF` or result `0xFFFF`: `unexpected_bits`; stored pair 00/01 (unknown, "no action"): `existing_value_outside_range`; master or single unit |
+| `mppt_scan` | R341 bit 2 | `0x0004`, shift 2 | 0 or 1 | all other bits (bits 5-6 limiter) preserved; incumbent or result `0xFFFF`: `unexpected_bits`; master or single unit |
 
 The descriptor model is declarative (`write_ops.py`): `requires_r111`, `needs_smart_load`, `tou` (R146 bit 8 gate), `whole_word_bool`, `below` / `above` and `chain` (the whole ordered group a value belongs to, strictly ascending, error key `threshold_order` or `tou_order`), `current_cap` / `power_cap` (model limit in A / W) and the `time` kind (HH:MM, optional `:00` seconds, no timezone). **Groups are validated as a whole** (no neighbour-only mode): at execution all three SOC thresholds (shutdown < low < restart, each 0..100, R111 == 1) and all six ToU starts (start1 < ... < start6, each valid HHMM) are read fresh in the same critical section, every companion must be valid in its own domain (`companion_invalid` otherwise), and the resulting group, with the edited value in place, must be fully valid and strictly ordered (`threshold_order` / `tou_order`; `ordering: group` when the break is elsewhere in the group). A group that is already broken is therefore not edited at all: the owner repairs it on the inverter display or in the cloud, or by edits that each produce a valid group. The same applies to the Smart Load ON/OFF pairs. An edit never rearranges another register. **Incumbent validity is separate from target granularity**: a stored time is valid as any HHMM 00:00-23:59 (minutes < 60), so a stored 23:56-23:59 may be replaced; a new time is a 5-minute step up to 23:55. **Protection envelope (owner policy):** no extra commissioned limits; the domain 0..100, a full valid strict triplet, R111 == 1 and the risk text are the envelope - the commissioned battery limits remain the owner's responsibility. Refusal keys: `soc_mode_required`, `voltage_mode_required`, `gen_not_smart_load`, `spain_mode`, `unexpected_bits`, `model_unknown`, `existing_value_outside_range`, `companion_invalid`, `threshold_order`, `tou_order`, `no_change`.
 
@@ -298,7 +310,7 @@ A stored value outside the accepted range (so that it could not be restored insi
 
 ### 10.3 Guard (DR2-09)
 
-`protocol/modbus` builds FC16 with count 1 (byte count 2, PDU 8 bytes, RTU request 11, MBAP request 15 with length field 9, V5 request 39 bytes); echo is RTU 8 / MBAP 12 bytes, exception `0x90` is RTU 5 / MBAP 9. `protocol/guard.guard_write_frame` checks exactly one complete frame against a `WriteGrant` (unit, register, mask, old word, new word): register in the fixed table of 38 registers (the masks are `0xFFFF` except R130, R146 and R172-R177 with `0x0001`) (also not in the explicit deny list), mask equal to the register's writable mask, count 1 and byte count 2, unit = configured target (a V5 logger only on inner unit 1), the word equals the grant, bits outside the mask equal the old word, the word differs from the old one, no padding or concatenated frames, V5 envelope and metadata unchanged strict. The read guard still refuses every FC16/FC06 frame. The transport's one write sink (`StreamTransport._write_checked`) runs this guard and sends exactly the bytes it returns. `transport.write_register` returns the echo, raises `ModbusExceptionResponse` for a device exception, `WriteNotSent` if no byte was handed to the stream and `WriteIndeterminate` after a possible transmission; it is never retried.
+`protocol/modbus` builds FC16 with count 1 (byte count 2, PDU 8 bytes, RTU request 11, MBAP request 15 with length field 9, V5 request 39 bytes); echo is RTU 8 / MBAP 12 bytes, exception `0x90` is RTU 5 / MBAP 9. `protocol/guard.guard_write_frame` checks exactly one complete frame against a `WriteGrant` (unit, register, mask, old word, new word): register in the fixed table of 42 registers (the masks are `0xFFFF` except R130, R146, R172-R177 and R179 with `0x0001`, R140 with `0x0003`, R178 with `0x0300` and R341 with `0x0004`; R179 admits only the words 0 and 1, R140, R178 and R341 never the placeholder word `0xFFFF` as old or new word, and R178 only the bit pairs 10 and 11 before and after) (also not in the explicit deny list), mask equal to the register's writable mask, count 1 and byte count 2, unit = configured target (a V5 logger only on inner unit 1), the word equals the grant, bits outside the mask equal the old word, the word differs from the old one, no padding or concatenated frames, V5 envelope and metadata unchanged strict. The read guard still refuses every FC16/FC06 frame. The transport's one write sink (`StreamTransport._write_checked`) runs this guard and sends exactly the bytes it returns. `transport.write_register` returns the echo, raises `ModbusExceptionResponse` for a device exception, `WriteNotSent` if no byte was handed to the stream and `WriteIndeterminate` after a possible transmission; it is never retried.
 
 ### 10.4 Flow, permits and serialisation (DR2-12)
 
@@ -322,13 +334,230 @@ Exact RTU/MBAP/V5 frames and parsers, guard rejections, descriptor boundaries/st
 
 `WriteService.submit(inverter_id, key, value, source=...)` runs the same guarded core without a human preview: the request is validated and bound (release, identity, role, route, lifecycle, peer baselines) when it is received, but nothing is taken from it except the value; the old word, the new word and every gate come from the fresh reads of the send point inside the plant write lock, followed by the same audit intent before the send, 5 s pacing, exactly one FC16 with count 1, no retry, fallback, fan-out or rollback, and the same observation. The audit records carry `source` (`web`, `mqtt`). A request whose fresh word already equals the requested one is an audited result `noop` (reason `no_change`, no intent, no FC16); the Web path still refuses it before a permit exists. A refusal before the send raises `Refused` and writes nothing; one at the send point is a `rejected` record (no intent is appended). The Web path keeps preview, permit and the extra "context unchanged" conflict check.
 
+### 10.9 Part B2b (0.5.0): contracted settings, special command, per-descriptor role
+
+- **Guard**: `WRITABLE_FIELDS` maps a register to the set of contracted masks (a grant names
+  exactly one); `FIELD_DOMAINS` / `TARGET_DOMAINS` are keyed by (register, mask); `TRANSITIONS`
+  restricts the whole-word moves of R181 to 0<->1 and 1->2; `WORD_SIGNATURES` requires the R259 low
+  byte DD / DE / ED / EE in the old and the new word; R160-R165, R142 and R141 left the deny list (R147
+  and the rest stay denied; R141 is the whole word 0 / 1: `FIELD_DOMAINS`, `SENTINEL_REGISTERS`).
+- **Special command (R35)**: `WriteGrant.command_word` = 100 with `COMMAND_WORDS {35: 100}`: one
+  FC16 with start 35, count 2, data `[target, 100]` (RTU 13, MBAP 17, V5 41 bytes). R35 is not in
+  `WRITABLE_FIELDS`, so a scalar write of R35 and every other count-2 frame are refused; the
+  target and the incumbent are exactly 0 / 1.
+- **Role**: `WriteDescriptor.synchronized` (R65-R209, R339-R429) decides per descriptor in prepare,
+  send, `current`, `snapshot`, MQTT exposure and Web release; per-unit descriptors need no master
+  role (addressed unit only), an unreadable role locks everything.
+- **Dynamic relationships** are checked from both sides (`Bound` plus `BOUND_CHILDREN`), the
+  companions bring their own validation inputs (`_dependency_addresses`), the R133 transition
+  validates the thresholds of the new mode (`mode_check`), the ON/OFF pairs follow R133
+  (`ModeOrder`).
+- **Kinds**: `Kind.BUTTON` (R181 clear, HA `button` platform with `payload_press` PRESS, no state),
+  weekday switches (`weekday`), `incumbent_range` (R180), `accepted_after` / `fault_probe`
+  (button acceptance apart from the fault bit), `equal_hint` (advisory over all units).
+- **Contextual guards (review 32)**: a descriptor can name `guards` (evaluated by `WriteService`
+  on the fresh words and the installation description at current / snapshot / preview / send:
+  `gen_source`, `ev_charger`, `ev_context`, `tou_context`), a target-dependent `transition`
+  (`solar_sell`, `spain_on`, `ev_soc`), option guards (`export_target` of the R142 select),
+  `context_registers` (read, validated), `report_registers` (read and shown only: R179 beside
+  R180, R344 beside R347, R143/R145/R190/R191/R344 beside R142, R133/R189 beside R190) and an
+  `envelope`. Every register they name is in `_addresses`, so the snapshot budget counts it
+  (19 requests at block 125 and 117 at block 1 with all 128 released; R553 is read for R142).
+  - R145 Solar Sell needs fresh R142 in {1, 2}; ON also needs the entered export allowance and a
+    valid R143 within it. R98 = 1 gates BMS Err_Stop (no healthy-communication requirement).
+  - R142: every target needs R145 as a legal whole word; an unknown R178 (0xFFFF) is unknown, not
+    off, and refuses; where an R178 peak-shaving pair is on the armed power R190 / R191 must pass
+    its activation check (below); target 0 (or R145 = 1) needs R143 valid within the allowance.
+  - **Product policy for target 2 (external zero-export), a contract change (review 34, R34-02):**
+    the final R142 contract asks for a fresh *functioning* external CT / meter. The app cannot
+    establish function; it admits target 2 only with (a) a described path, (b) the matching R344
+    in the layout established for this build (bit 0 meter / CT, bit 1 second meter; any other bit
+    is an unestablished layout and refuses, bit 2 is not interchangeable with bit 1), and (c) no
+    known measurement failure: the meter communication warning W4 (R553 bit 3) is read fresh at
+    preview and send and refuses while active (R553 unreadable refuses too). Functional
+    measurement beyond that is not verified and the risk text says so. This is an admission policy,
+    not proof that the original functioning-path condition is met. Nothing is repaired.
+  - **Activation controls (review 34, R34-03):** whatever arms a parameter validates that
+    parameter's *effective* installation envelope and source conditions with fresh words:
+    R142 (for each pair that R178 shows on), and the R178 peak-shaving ON pairs (R190 / R191).
+    The armed power must be a legal word, within min(model cap, entered generator capacity / grid
+    limit) and, for R190, the generator source guard must hold (below). A stored over-limit value
+    stays readable and lowerable but cannot be newly armed; OFF is always possible. No hidden
+    reduction, repair or fan-out.
+  - EV: whole R259 validated first (signature DD/DE/ED/EE and SOC byte 0..100) for every EV
+    setting including R260; a described charger (`ev_charger`: none / grid_port / load_port) whose
+    port equals the configured location; the SOC threshold needs R111 = 1 and the entered
+    **EV off-grid reserve SOC** (`ev_offgrid_reserve_soc`, 0..100 %, installation description;
+    without it the setting is unavailable, `ev_reserve_missing`). The target must be at least that
+    reserve and, as an additional stated bound, at least the fresh battery low SOC R117. R117 is no
+    alias of the reserve. The effective floor is shown in the Web row (`floor`) and as the HA
+    number minimum (aligned up to the step) and is rechecked at send; a target is never raised
+    silently.
+  - **Installation limits** (`Features`, optional whole numbers, "Describe your plant"; a blank is
+    "not entered", the approved export allowance may be an explicit 0 and never arms Solar Sell /
+    Selling First (`export_allowance_zero`); ratings of sources and chargers are 100..100000 W):
+    `export_limit_w` (R143, R340, Solar Sell ON), `grid_limit_w` (R191), `generator_capacity_w`
+    (R190), `ev_charger_limit_w` (R260). The effective maximum is min(model cap, documented
+    maximum, entered limit), aligned down to the step, in Web, HA `number` maximum and the send
+    point; a missing entry locks the setting (`envelope_missing`). A stored value above the limit
+    stays readable and can be lowered.
+  - R190 needs a generator described on the GEN port, fresh R133 = 0 and fresh R189 = 0 (whole
+    word, 1 selects the generator on GRID); R189 = 1 or any other word refuses
+    (`gen_source_on_grid`, `gen_source_selector_unknown`). A generator described on the GRID
+    terminal stays unavailable (`gen_source_unresolved`: the R190 operating branch with the
+    generator on GRID is not proved).
+  - ToU: weekday changes and Spain ON need a valid clock (R62-R64: a real Gregorian date, years
+    2000..2099, valid time fields; the displayed clock is empty otherwise), battery basis (R111) and
+    strictly ascending slot starts; Spain OFF is always possible. The generator-charge flag needs
+    a described generator on GEN and fresh R133 = 0.
+  - AFCI: transport ACK, observed stored request (`request_stored`) and unknown consumption
+    (`consumption_unknown`, status `outcome_unknown`) are separate; R558 bit 14 is read before
+    and after: 1 to 0 "no longer reported", 0 to 0 "not reported", unreadable "unknown"; the HA
+    result event carries `fault` and `command_state`.
+  - Presets (`suggested_operations(features, confirmed)`): only answered questions count.
+- **Deferred**: R62-R64 calendar service (part C), R78 (blocked contract), R144 (not offered by
+  the contract).
+
+Full table of the 128 descriptors (generated from `write_ops.DESCRIPTORS`):
+
+| Key | Register / mask | Kind | Range / options | Scope | Group |
+| --- | --- | --- | --- | --- | --- |
+| `battery_charge_current` | R108 `0xFFFF` | scalar | 0..185 A step 1 | master/single | battery |
+| `battery_discharge_current` | R109 `0xFFFF` | scalar | 0..185 A step 1 | master/single | battery |
+| `battery_shutdown_soc` | R115 `0xFFFF` | scalar | 0..100 % step 1 | master/single | battery |
+| `battery_low_soc` | R117 `0xFFFF` | scalar | 0..100 % step 1 | master/single | battery |
+| `battery_restart_soc` | R116 `0xFFFF` | scalar | 0..100 % step 1 | master/single | battery |
+| `generator_charge_current` | R125 `0xFFFF` | scalar | 0..185 A step 1 | master/single | grid_charge |
+| `grid_charge_current` | R128 `0xFFFF` | scalar | 0..185 A step 1 | master/single | grid_charge |
+| `grid_charge_enable` | R130 `0x0001` | bit | 0/1 | master/single | grid_charge |
+| `grid_charge_start_soc` | R127 `0xFFFF` | scalar | 10..90 % step 1 | master/single | grid_charge |
+| `smart_load_off_voltage` | R134 `0xFFFF` | scalar | 41.0..60.0 V step 0.1 | master/single | smart_load |
+| `smart_load_off_soc` | R135 `0xFFFF` | scalar | 0..100 % step 1 | master/single | smart_load |
+| `smart_load_on_voltage` | R136 `0xFFFF` | scalar | 41.0..60.0 V step 0.1 | master/single | smart_load |
+| `smart_load_on_soc` | R137 `0xFFFF` | scalar | 0..100 % step 1 | master/single | smart_load |
+| `tou_enable` | R146 `0x0001` | bit | 0/1 | master/single | tou |
+| `tou_weekday_mon` | R146 `0x00FE` | bit | 0/1 | master/single | tou |
+| `tou_weekday_tue` | R146 `0x00FE` | bit | 0/1 | master/single | tou |
+| `tou_weekday_wed` | R146 `0x00FE` | bit | 0/1 | master/single | tou |
+| `tou_weekday_thu` | R146 `0x00FE` | bit | 0/1 | master/single | tou |
+| `tou_weekday_fri` | R146 `0x00FE` | bit | 0/1 | master/single | tou |
+| `tou_weekday_sat` | R146 `0x00FE` | bit | 0/1 | master/single | tou |
+| `tou_weekday_sun` | R146 `0x00FE` | bit | 0/1 | master/single | tou |
+| `tou_spain_mode` | R146 `0x0100` | bit | 0/1 | master/single | tou |
+| `force_off_grid` | R179 `0x0001` | bit | 0/1 | master/single | island |
+| `signal_island_mode` | R178 `0x0300` | bit | 2/3 pair | master/single | island |
+| `mppt_scan` | R341 `0x0004` | bit | 0/1 | master/single | pv |
+| `grid_reconnection_time` | R180 `0xFFFF` | scalar | 10..900 s step 10 | master/single | grid |
+| `external_ct_ratio` | R347 `0xFFFF` | scalar | 100..20000 :1 step 100 | master/single | export |
+| `bms_loss_fault` | R178 `0x0C00` | bit | 2/3 pair | master/single | battery |
+| `afci_enable` | R181 `0xFFFF` | bit | 0/1 | master/single | engineering |
+| `afci_clear_fault` | R181 `0xFFFF` | button | press -> 2 | master/single | engineering |
+| `low_noise` | R35 `0xFFFF` | bit | 0/1 | per unit | engineering |
+| `bypass_fan_minimum_request` | R341 `0x0010` | bit | 0/1 | master/single | pv |
+| `external_signal` | R140 `0x0003` | select | 0=off, 1=grid, 2=gen, 3=both | master/single | signal |
+| `energy_pattern` | R141 `0xFFFF` | select | 0=batt_first, 1=load_first | master/single | battery |
+| `battery_float_voltage` | R101 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | battery_curve |
+| `battery_absorption_voltage` | R100 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | battery_curve |
+| `battery_equalization_voltage` | R99 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | battery_curve |
+| `battery_capacity` | R102 `0xFFFF` | scalar | 1..2000 Ah step 1 | master/single | battery_setup |
+| `battery_empty_voltage` | R103 `0xFFFF` | scalar | 41.0..52.0 V step 0.1 | master/single | battery_setup |
+| `battery_equalization_interval` | R105 `0xFFFF` | scalar | 0..90 d step 1 | master/single | battery_curve |
+| `battery_equalization_duration` | R106 `0xFFFF` | scalar | 0.0..10.0 h step 0.5 | master/single | battery_curve |
+| `battery_temperature_compensation` | R107 `0xFFFF` | scalar | -20.0..0.0 mV/°C/cell step 1 | master/single | battery_curve |
+| `battery_activation` | R112 `0x0001` | bit | 0/1 | master/single | battery_setup |
+| `battery_internal_resistance` | R113 `0xFFFF` | scalar | 1..200 mΩ step 1 | master/single | battery_setup |
+| `battery_charge_efficiency` | R114 `0xFFFF` | scalar | 0.1..100.0 % step 0.1 | master/single | battery_setup |
+| `battery_shutdown_voltage` | R118 `0xFFFF` | scalar | 41.0..60.0 V step 0.1 | master/single | battery |
+| `battery_low_voltage` | R120 `0xFFFF` | scalar | 41.0..60.0 V step 0.1 | master/single | battery |
+| `battery_restart_voltage` | R119 `0xFFFF` | scalar | 41.0..60.0 V step 0.1 | master/single | battery |
+| `grid_charge_start_voltage` | R126 `0xFFFF` | scalar | 41.0..58.0 V step 0.1 | master/single | grid_charge |
+| `generator_max_run_time` | R121 `0xFFFF` | scalar | 0.0..24.0 h step 0.5 | master/single | gen |
+| `generator_cooling_time` | R122 `0xFFFF` | scalar | 0.0..24.0 h step 0.5 | master/single | gen |
+| `generator_charge_start_voltage` | R123 `0xFFFF` | scalar | 41.0..56.8 V step 0.1 | master/single | gen |
+| `generator_charge_soc` | R124 `0xFFFF` | scalar | 10..90 % step 1 | master/single | gen |
+| `generator_charge_enable` | R129 `0x0001` | bit | 0/1 | master/single | gen |
+| `ac_coupling_upper_frequency` | R131 `0xFFFF` | scalar | 50.5..65.0 Hz step 0.01 | master/single | gen |
+| `smart_load_force` | R132 `0x0001` | bit | 0/1 | master/single | gen |
+| `gen_port_usage` | R133 `0xFFFF` | select | 0=generator, 1=smart_load, 2=ac_coupled | master/single | gen |
+| `generator_peak_shaving_power` | R190 `0xFFFF` | scalar | 500..16000 W step 10 | master/single | peak_shaving |
+| `grid_peak_shaving_power` | R191 `0xFFFF` | scalar | 1000..16000 W step 100 | master/single | peak_shaving |
+| `export_mode` | R142 `0xFFFF` | select | 0=sell, 1=internal_zero, 2=external_zero | master/single | export |
+| `export_max_power` | R143 `0xFFFF` | scalar | 0..12000 W step 100 | master/single | export |
+| `pv_sale_enable` | R145 `0xFFFF` | bit | 0/1 | master/single | export |
+| `zero_export_bias` | R104 `0xFFFF` | scalar | 20..500  step 10 | master/single | export |
+| `pv_sale_max_power` | R340 `0xFFFF` | scalar | 400..12000 W step 100 | master/single | export |
+| `microinverter_export_cutoff` | R178 `0x0003` | bit | 2/3 pair | master/single | island |
+| `generator_peak_shaving` | R178 `0x000C` | bit | 2/3 pair | master/single | peak_shaving |
+| `grid_peak_shaving` | R178 `0x0030` | bit | 2/3 pair | master/single | peak_shaving |
+| `on_grid_smart_load_always_on` | R178 `0x00C0` | bit | 2/3 pair | master/single | smart_load |
+| `drm_enable` | R178 `0x3000` | bit | 2/3 pair | master/single | island |
+| `ev_free_work` | R259 `0x0003` | bit | 1/2 pair | per unit | ev |
+| `ev_location` | R259 `0x0030` | select | 1=grid, 2=load | per unit | ev |
+| `ev_offgrid_soc` | R259 `0xFF00` | scalar | 0..100 % step 10 | per unit | ev |
+| `ev_max_power` | R260 `0xFFFF` | scalar | 0..22000 W step 100 | per unit | ev |
+| `unbalanced_load` | R237 `0xFFFF` | bit | 0/1 | per unit | engineering |
+| `tou_slot1_start` | R148 `0xFFFF` | time | HH:MM, 5 min | master/single | tou |
+| `tou_slot1_power` | R154 `0xFFFF` | scalar | 0..12000 W step 1 | master/single | tou |
+| `tou_slot1_soc` | R166 `0xFFFF` | scalar | 0..100 % step 1 | master/single | tou |
+| `tou_slot1_voltage` | R160 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | tou |
+| `tou_slot1_gen_charge` | R172 `0x0002` | bit | 0/1 | master/single | tou |
+| `tou_slot1_spain_gm` | R172 `0x0004` | bit | 0/1 | master/single | tou |
+| `tou_slot1_spain_bu` | R172 `0x0008` | bit | 0/1 | master/single | tou |
+| `tou_slot1_spain_ch` | R172 `0x0010` | bit | 0/1 | master/single | tou |
+| `tou_slot1_grid_charge` | R172 `0x0001` | bit | 0/1 | master/single | tou |
+| `tou_slot2_start` | R149 `0xFFFF` | time | HH:MM, 5 min | master/single | tou |
+| `tou_slot2_power` | R155 `0xFFFF` | scalar | 0..12000 W step 1 | master/single | tou |
+| `tou_slot2_soc` | R167 `0xFFFF` | scalar | 0..100 % step 1 | master/single | tou |
+| `tou_slot2_voltage` | R161 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | tou |
+| `tou_slot2_gen_charge` | R173 `0x0002` | bit | 0/1 | master/single | tou |
+| `tou_slot2_spain_gm` | R173 `0x0004` | bit | 0/1 | master/single | tou |
+| `tou_slot2_spain_bu` | R173 `0x0008` | bit | 0/1 | master/single | tou |
+| `tou_slot2_spain_ch` | R173 `0x0010` | bit | 0/1 | master/single | tou |
+| `tou_slot2_grid_charge` | R173 `0x0001` | bit | 0/1 | master/single | tou |
+| `tou_slot3_start` | R150 `0xFFFF` | time | HH:MM, 5 min | master/single | tou |
+| `tou_slot3_power` | R156 `0xFFFF` | scalar | 0..12000 W step 1 | master/single | tou |
+| `tou_slot3_soc` | R168 `0xFFFF` | scalar | 0..100 % step 1 | master/single | tou |
+| `tou_slot3_voltage` | R162 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | tou |
+| `tou_slot3_gen_charge` | R174 `0x0002` | bit | 0/1 | master/single | tou |
+| `tou_slot3_spain_gm` | R174 `0x0004` | bit | 0/1 | master/single | tou |
+| `tou_slot3_spain_bu` | R174 `0x0008` | bit | 0/1 | master/single | tou |
+| `tou_slot3_spain_ch` | R174 `0x0010` | bit | 0/1 | master/single | tou |
+| `tou_slot3_grid_charge` | R174 `0x0001` | bit | 0/1 | master/single | tou |
+| `tou_slot4_start` | R151 `0xFFFF` | time | HH:MM, 5 min | master/single | tou |
+| `tou_slot4_power` | R157 `0xFFFF` | scalar | 0..12000 W step 1 | master/single | tou |
+| `tou_slot4_soc` | R169 `0xFFFF` | scalar | 0..100 % step 1 | master/single | tou |
+| `tou_slot4_voltage` | R163 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | tou |
+| `tou_slot4_gen_charge` | R175 `0x0002` | bit | 0/1 | master/single | tou |
+| `tou_slot4_spain_gm` | R175 `0x0004` | bit | 0/1 | master/single | tou |
+| `tou_slot4_spain_bu` | R175 `0x0008` | bit | 0/1 | master/single | tou |
+| `tou_slot4_spain_ch` | R175 `0x0010` | bit | 0/1 | master/single | tou |
+| `tou_slot4_grid_charge` | R175 `0x0001` | bit | 0/1 | master/single | tou |
+| `tou_slot5_start` | R152 `0xFFFF` | time | HH:MM, 5 min | master/single | tou |
+| `tou_slot5_power` | R158 `0xFFFF` | scalar | 0..12000 W step 1 | master/single | tou |
+| `tou_slot5_soc` | R170 `0xFFFF` | scalar | 0..100 % step 1 | master/single | tou |
+| `tou_slot5_voltage` | R164 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | tou |
+| `tou_slot5_gen_charge` | R176 `0x0002` | bit | 0/1 | master/single | tou |
+| `tou_slot5_spain_gm` | R176 `0x0004` | bit | 0/1 | master/single | tou |
+| `tou_slot5_spain_bu` | R176 `0x0008` | bit | 0/1 | master/single | tou |
+| `tou_slot5_spain_ch` | R176 `0x0010` | bit | 0/1 | master/single | tou |
+| `tou_slot5_grid_charge` | R176 `0x0001` | bit | 0/1 | master/single | tou |
+| `tou_slot6_start` | R153 `0xFFFF` | time | HH:MM, 5 min | master/single | tou |
+| `tou_slot6_power` | R159 `0xFFFF` | scalar | 0..12000 W step 1 | master/single | tou |
+| `tou_slot6_soc` | R171 `0xFFFF` | scalar | 0..100 % step 1 | master/single | tou |
+| `tou_slot6_voltage` | R165 `0xFFFF` | scalar | 41.0..58.8 V step 0.1 | master/single | tou |
+| `tou_slot6_gen_charge` | R177 `0x0002` | bit | 0/1 | master/single | tou |
+| `tou_slot6_spain_gm` | R177 `0x0004` | bit | 0/1 | master/single | tou |
+| `tou_slot6_spain_bu` | R177 `0x0008` | bit | 0/1 | master/single | tou |
+| `tou_slot6_spain_ch` | R177 `0x0010` | bit | 0/1 | master/single | tou |
+| `tou_slot6_grid_charge` | R177 `0x0001` | bit | 0/1 | master/single | tou |
+
 ### 10.8 Home Assistant entities (part B)
 
 Normative sources: `KB/.orch/reviewer-codex-6.1-write-v2-debate-1.md` §4 and `research-ha-writable-entities-1.md`; schemas of the pinned HA Core 2026.10.4 (`ha-schema-tests`). Implementation: `mqtt_settings.py` (`SettingsPlane`), builders in `ha_discovery.py`, wiring in `mqtt.py`/`app.py`.
 
 - **Exposure.** Per inverter, for every setting that is released (`allow_writes` + operation, firmware fingerprint) and whose release is confirmed by a fresh read (`WriteService.snapshot`: identity, fingerprint, R336 role: master or parallel off; battery present for battery settings): one discovery component `set_<operation>` of the inverter's device: current/SOC/power/voltage settings `number` (`mode: box`, `min`/`max`/`step` from the descriptor and the model limit, `unit_of_measurement`, `device_class` current / battery / power / voltage), the three bit settings `switch`, slot starts `time`; all `entity_category: config`, `optimistic: false`, `retain: false`, no command template, `state_topic` = `<prefix>/<instance>/<inverter>/write/state` (JSON of read-back values), per-setting availability topic (`.../write/available/<operation>`, retained) in addition to the app and inverter availability. Names are the English descriptor names (MQTT discovery has no per-language names). A gated setting (R111 mode, GEN port, ToU Spain mode, unknown model, stored value out of range) is **published unavailable, not omitted** (decision: the entity keeps its Home Assistant customisations and returns with the next fresh read). Withdrawn release (no longer released, other firmware, slave role) removes the components through the existing cleanup ledger; an unreadable unit does not remove anything. Before the first fresh read of a process the persisted components of still released settings are carried over unchanged (unavailable, command topic of a dead generation, not subscribed).
 - **Event entity.** One `event` component `write_result` per inverter that has write components (`.../write/result`, not retained), `event_types`: `write_readback_confirmed`, `write_rejected`, `write_failed`, `write_outcome_unknown`, `write_noop`; JSON payload `event_type`, `setting`, `requested_value`, `reason`, `audit_id`, `value` (the read-back).
-- **State.** Read-back only: after the discovery, with the settings poll interval (`poll_settings_s`, a fresh guarded read through the same bus scheduler), and after every command; a rejected command is reported with a freshly read value (asynchronously, one read per batch, bounded; `value: null` plus `read_error` when no fresh read is possible - never a cached value) and the state is republished. The registers are read through the write service's context read (one bus critical section), not through the profile read plan, but **the recurring traffic is part of the bus load**: per inverter with released writes, `settings_read_requests` (identity block plus the runs of the released settings and the R28 selector, split at the endpoint's block limit; 13 requests with all 38 released at the default block size) every `poll_settings_s` is added to `bus_utilisation` and listed under `settings_snapshots` in the runtime diagnostics while the entities are active.
+- **State.** Read-back only: after the discovery, with the settings poll interval (`poll_settings_s`, a fresh guarded read through the same bus scheduler), and after every command; a rejected command is reported with a freshly read value (asynchronously, one read per batch, bounded; `value: null` plus `read_error` when no fresh read is possible - never a cached value) and the state is republished. The registers are read through the write service's context read (one bus critical section), not through the profile read plan, but **the recurring traffic is part of the bus load**: per inverter with released writes, `settings_read_requests` (identity block plus the runs of the released settings and the R28 selector, split at the endpoint's block limit; 19 requests with all 128 released at the default block size) every `poll_settings_s` is added to `bus_utilisation` and listed under `settings_snapshots` in the runtime diagnostics while the entities are active.
 - **Command topics.** `<prefix>/<instance>/<inverter>/write/set/<token>/<operation>`; `<token>` = process nonce + counter, renewed at every session and every change of the exposed set. Subscribed (QoS 1) before the discovery that announces them, unsubscribed after the discovery that removes them. A message with the retain flag is dropped. Strict payloads: `number` plain decimal (`-?[0-9]{1,6}(\.[0-9]{1,6})?`, exact for the step), `switch` `ON`/`OFF`, `time` `HH:MM:SS` with seconds `00` and no timezone (then the five-minute rule of §10.2); anything else is `write_rejected` (`invalid_payload`, `value_not_exact`, ...) without a write. MQTT 3.1.1 cannot mark a live retained delivery as retained: generation-scoped topics and broker rules (no retained publishes on `.../write/set/#`) are the second line, documented in DOCS.md.
 - **Queue.** One FIFO per plant, bounded to 32 (`queue_full`), no coalescing (OFF -> edit -> ON stays three writes), executed one at a time through `WriteService.submit(..., source="mqtt")`; a command is refused at receipt while its setting or unit is unavailable (the gate's reason, or `unavailable`). An accepted command captures an immutable **binding** (serial, lifecycle and connection epoch, endpoint, unit, role, release revision, firmware fingerprint, plant revision) and the **deadline** `received + 60 s`, and carries a revocation test (session, exposure). `WriteService.submit(..., intent=)` compares all of it again at the **final send point**, after the plant lock, pacing and bus waits, immediately before the audit intent: a change is `superseded_context`, a passed deadline is `expired`, in both cases a `write_rejected` result with zero FC16 (the effective expiry is the minimum of the deadline and the 30 s permit). A session end, an exposure withdrawal or a set change revokes every not-yet-sent intent; a write that was already transmitted keeps its observation and audit. A queued command is also discarded with `superseded_context` when the session, the exposed set, the generation, the plant revision or the restart changes.
 - **Result mapping.** `readback_confirmed` -> `write_readback_confirmed`; `failed` -> `write_failed`; `outcome_unknown` -> `write_outcome_unknown`; `noop` (or `no_change` at the send point) -> `write_noop`; any `rejected` or `Refused` -> `write_rejected` with the reason of the closed gate. The fresh state is published before the event.

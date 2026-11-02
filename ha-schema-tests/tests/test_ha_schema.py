@@ -25,12 +25,16 @@ from homeassistant.components.mqtt.binary_sensor import (
     DISCOVERY_SCHEMA as BINARY_SCHEMA,
 )
 from homeassistant.components.mqtt.binary_sensor import MqttBinarySensor
+from homeassistant.components.mqtt.button import DISCOVERY_SCHEMA as BUTTON_SCHEMA
+from homeassistant.components.mqtt.button import MqttButton
 from homeassistant.components.mqtt.event import DISCOVERY_SCHEMA as EVENT_SCHEMA
 from homeassistant.components.mqtt.event import MqttEvent
 from homeassistant.components.mqtt.models import ReceiveMessage
 from homeassistant.components.mqtt.number import DISCOVERY_SCHEMA as NUMBER_SCHEMA
 from homeassistant.components.mqtt.number import MqttNumber
 from homeassistant.components.mqtt.schemas import DEVICE_DISCOVERY_SCHEMA, SHARED_OPTIONS
+from homeassistant.components.mqtt.select import DISCOVERY_SCHEMA as SELECT_SCHEMA
+from homeassistant.components.mqtt.select import MqttSelect
 from homeassistant.components.mqtt.sensor import DISCOVERY_SCHEMA as SENSOR_SCHEMA
 from homeassistant.components.mqtt.sensor import MqttSensor
 from homeassistant.components.mqtt.switch import DISCOVERY_SCHEMA as SWITCH_SCHEMA
@@ -46,12 +50,15 @@ DOCS = (
     "discovery_app.json",
     "discovery_app_plant.json",
     "discovery_inverter_writes.json",
+    "discovery_inverter_sensors_050.json",
 )
 SCHEMAS = {
     "sensor": SENSOR_SCHEMA,
     "binary_sensor": BINARY_SCHEMA,
     "number": NUMBER_SCHEMA,
     "switch": SWITCH_SCHEMA,
+    "select": SELECT_SCHEMA,
+    "button": BUTTON_SCHEMA,
     "time": TIME_SCHEMA,
     "event": EVENT_SCHEMA,
 }
@@ -110,9 +117,11 @@ def test_goldens_pass_root_and_platform_schemas(name: str) -> None:
         comps = effective(payload)
         assert comps and set(comps) == set(payload["components"])
         for key, comp in comps.items():
-            assert comp["unique_id"] and comp["state_topic"], key
+            assert comp["unique_id"], key
+            assert comp.get("state_topic") or comp.get("payload_press"), key  # a button: no state
             if comp.get("command_topic"):  # a writable entity: guarded shape survives the schema
-                assert comp["retain"] is False and comp["optimistic"] is False, key
+                assert comp["retain"] is False, key
+                assert comp.get("optimistic", False) is False, key
                 assert comp["entity_category"] == "config", key
 
     run_in_ha(check)
@@ -229,8 +238,8 @@ def test_real_sensor_handlers_for_numbers_enums_and_energy() -> None:
         volt._update_state(message({"battery_voltage": 0}))
         assert volt.native_value == "0"
         enum = make_sensor(hass, comps["operating_state"])
-        enum._update_state(message({"operating_state": "Normal"}))
-        assert enum.native_value == "Normal"
+        enum._update_state(message({"operating_state": "Normal (reported)"}))
+        assert enum.native_value == "Normal (reported)"
         enum._update_state(message({"operating_state": None}))  # the publisher maps unknown_99
         assert enum.native_value is None  # to null, so the old state cannot stay
         energy_key = next(k for k in comps if k.startswith("battery_energy_charge_total_"))
@@ -402,13 +411,13 @@ def test_number_entities_read_the_state_and_send_plain_numbers() -> None:
 
         volts = make_entity(hass, MqttNumber, NUMBER_SCHEMA, comps["set_smart_load_on_voltage"])
         assert (volts.native_min_value, volts.native_max_value, volts.native_step) == (
-            38.0, 63.0, 0.01,
+            41.0, 60.0, 0.1,
         )  # fmt: skip
         sent = published(volts)
-        volts._message_received(message({"smart_load_on_voltage": 50.25}))
-        assert volts.native_value == 50.25
-        await volts.async_set_native_value(52.25)
-        assert sent[0][1] == 52.25  # str() of this is exactly what the app parses
+        volts._message_received(message({"smart_load_on_voltage": 50.2}))
+        assert volts.native_value == 50.2
+        await volts.async_set_native_value(52.2)
+        assert sent[0][1] == 52.2  # str() of this is exactly what the app parses
 
     run_in_ha(check)
 
@@ -433,6 +442,40 @@ def test_switch_entities_use_on_off_and_unknown_is_not_guessed() -> None:
             await switch.async_turn_off()
             assert [p for _, p in sent] == ["ON", "OFF"]  # what the app accepts, nothing else
             assert switch.assumed_state is False
+
+    run_in_ha(check)
+
+
+def test_select_entities_show_option_texts_null_and_send_the_exact_text() -> None:
+    comp = load("discovery_inverter_writes.json")["components"]["set_external_signal"]
+
+    async def check(hass: HomeAssistant) -> None:
+        select = make_entity(hass, MqttSelect, SELECT_SCHEMA, comp)
+        sent = published(select)
+        assert select.options == ["Off", "Grid Signal", "Gen Signal", "Both (shared output)"]
+        assert select.assumed_state is False
+        select._message_received(message({"external_signal": "Grid Signal"}))
+        assert select.current_option == "Grid Signal"
+        select._message_received(message({"external_signal": "Both (shared output)"}))
+        assert select.current_option == "Both (shared output)"  # an incumbent is shown
+        select._message_received(message({"external_signal": None}))
+        assert select.current_option is None  # unknown stays unknown
+        select._message_received(message({"external_signal": "Grid"}))  # not an option: ignored
+        assert select.current_option is None
+        await select.async_select_option("Gen Signal")
+        assert sent == [("deye/ab12cd34/deye1/write/set/t1/external_signal", "Gen Signal")]
+
+    run_in_ha(check)
+
+
+def test_button_entity_sends_the_press_payload_and_nothing_else() -> None:
+    comp = load("discovery_inverter_writes.json")["components"]["set_afci_clear_fault"]
+
+    async def check(hass: HomeAssistant) -> None:
+        button = make_entity(hass, MqttButton, BUTTON_SCHEMA, comp)
+        sent = published(button)
+        await button.async_press()
+        assert sent == [("deye/ab12cd34/deye1/write/set/t1/afci_clear_fault", "PRESS")]
 
     run_in_ha(check)
 

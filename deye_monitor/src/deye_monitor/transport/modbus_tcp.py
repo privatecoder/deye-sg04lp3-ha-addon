@@ -59,7 +59,9 @@ class ModbusTcpTransport(StreamTransport):
     async def _write_request(self, grant: WriteGrant) -> WriteAck:
         self._tid = (self._tid + 1) & 0xFFFF
         tid = self._tid
-        frame = build_mbap_write(tid, grant.unit, grant.register, grant.new_word)
+        frame = build_mbap_write(
+            tid, grant.unit, grant.register, grant.new_word, grant.command_word
+        )
         await self._write_checked(frame, grant)
         while True:
             reply = self._take_frame()
@@ -72,7 +74,7 @@ class ModbusTcpTransport(StreamTransport):
             if int.from_bytes(reply[0:2], "big") != tid:
                 self.counters.stale_frames += 1
                 continue
-            return parse_mbap_write_response(reply, tid, grant.unit, grant.register)
+            return parse_mbap_write_response(reply, tid, grant.unit, grant.register, grant.count)
 
     def _take_frame(self) -> bytes | None:
         rx = self._rx

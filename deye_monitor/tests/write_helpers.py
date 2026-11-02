@@ -17,21 +17,63 @@ REGS: dict[str, int] = {
     "r62": (26 << 8) | 11,  # inverter clock 2026-11-01 12:30:15
     "r63": (1 << 8) | 12,
     "r64": (30 << 8) | 15,
-    "r108": 50,
+    "r98": 0,  # battery type word: the lead / internal curve is active
+    "r99": 5500,  # equalization 55.00 V >= absorption >= float
+    "r100": 5400,
+    "r101": 5300,
+    "r102": 200,  # capacity (Ah)
+    "r103": 4500,
+    "r105": 30,
+    "r106": 6,
+    "r107": 5,
+    "r108": 100,
     "r109": 60,
     "r111": 1,  # battery control mode: SOC
+    "r112": 0,
+    "r113": 20,
+    "r114": 983,
+    "r118": 4500,  # voltage shutdown < low < restart
+    "r119": 5200,
+    "r120": 4800,
     "r115": 25,  # shutdown < low < restart
     "r116": 50,
     "r117": 35,
+    "r121": 60,  # generator maximum run time 6.0 h
+    "r122": 10,
+    "r123": 4800,
+    "r124": 40,
     "r125": 30,
+    "r129": 0,
+    "r131": 5100,
+    "r132": 0,
+    "r183": 0,  # 50 Hz
+    "r126": 4800,
     "r127": 30,
     "r128": 20,
     "r130": 0,
     "r133": 1,  # GEN port = Smart Load
+    "r189": 0,  # generator input selector: GEN port
+    "r553": 0,  # warning word 1: none active (bit 3 = W4 meter communication)
     "r134": 4500,
     "r135": 20,
     "r136": 5000,
     "r137": 60,
+    "r237": 0,  # active unbalanced load off
+    "r259": 0x32DD,  # EV: off-grid SOC 50 %, GRID port, free work off (signature DD)
+    "r260": 3000,  # EV maximum power (W)
+    "r35": 0,  # Low_Noise: 15 kHz
+    "r180": 600,  # grid reconnection time (s)
+    "r181": 1,  # AFCI configured enabled
+    "r347": 2000,  # external CT ratio
+    "r104": 100,  # zero-export minimum limit (raw)
+    "r142": 0,  # export mode: power sales enabled
+    "r143": 3000,
+    "r145": 0,
+    "r190": 5000,
+    "r191": 5000,
+    "r340": 5000,
+    "r140": 0x0000,  # external signal off
+    "r141": 0,  # energy pattern: Batt First
     "r146": 0x00FE,  # ToU off, all weekdays, no Spain mode
     "r148": 0,  # slot start times (HHMM), strictly ascending
     "r149": 500,
@@ -45,6 +87,7 @@ REGS: dict[str, int] = {
     "r157": 4000,
     "r158": 5000,
     "r159": 6000,
+    **{f"r{160 + i}": 5000 for i in range(6)},  # slot target voltages (50.00 V)
     "r166": 30,  # slot target SOC (%)
     "r167": 40,
     "r168": 50,
@@ -99,6 +142,22 @@ async def build_plant(
         )
         assert status == 200, body
     await settle(rig, inverters)
+    for (
+        inverter
+    ) in inverters:  # the installation limits and the EV charger the contracts intersect with
+        inv = rig.app.runtime.inverters[inverter] if rig.app.runtime else None
+        if inv is not None:
+            inv.features = inv.features.model_copy(update=INSTALLATION)
+
+
+INSTALLATION: dict[str, Any] = {
+    "export_limit_w": 12000,
+    "grid_limit_w": 16000,
+    "generator_capacity_w": 16000,
+    "ev_charger_limit_w": 22000,
+    "ev_offgrid_reserve_soc": 0,
+    "ev_charger": "grid_port",
+}
 
 
 async def settle(rig: PlantRig, inverters: tuple[str, ...]) -> None:

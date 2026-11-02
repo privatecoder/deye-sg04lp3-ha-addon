@@ -1,4 +1,4 @@
-"""The 38 write descriptors: encoding, boundaries, gates, ordering, masks, model limits."""
+"""The 41 write descriptors: encoding, boundaries, gates, ordering, masks, model limits."""
 
 from __future__ import annotations
 
@@ -30,14 +30,20 @@ def rated(watts: int) -> tuple[int, int]:
 
 def test_exactly_the_released_descriptors() -> None:
     registers = [d.register for d in DESCRIPTORS]
-    assert len(OPERATION_KEYS) == len(set(OPERATION_KEYS)) == len(set(registers)) == 38
+    assert len(OPERATION_KEYS) == len(set(OPERATION_KEYS))
     assert set(registers) == {
-        108, 109, 115, 116, 117, 125, 127, 128, 130, 134, 135, 136, 137, 146,
-        *range(148, 160), *range(166, 178),
+        108, 109, 115, 116, 117, 125, 127, 128, 130, 134, 135, 136, 137, 140, 146,
+        99, 100, 101, 102, 103, 105, 106, 107, 112, 113, 114, 118, 119, 120, 126,
+        121, 122, 123, 124, 129, 131, 132, 133, 104, 142, 143, 145, 190, 191, 340,
+        35, 180, 181, 347, 237, 259, 260, 141,
+        *range(148, 160), *range(160, 178), 178, 179, 341,
     }  # fmt: skip
     for d in DESCRIPTORS:
         assert d.risk.de and d.risk.en and d.name.de and d.name.en and d.source
-        assert d.group in {"battery", "grid_charge", "smart_load", "tou"}
+        assert d.group in {
+            "battery", "battery_curve", "battery_setup", "grid_charge", "gen", "smart_load", "tou",
+            "island", "signal", "pv", "export", "peak_shaving", "grid", "engineering", "ev",
+        }  # fmt: skip
         assert "test" not in d.risk.en.lower() and "Test" not in d.risk.de
 
 
@@ -133,23 +139,25 @@ def test_negative_values_do_not_fit() -> None:
 @pytest.mark.parametrize(
     ("value", "raw"),
     [
-        (38, 3800),
-        ("38.00", 3800),
+        (41, 4100),
+        ("41.00", 4100),
         (48.5, 4850),
-        ("48.55", 4855),
-        (63, 6300),
-        ("63.0", 6300),
-        (50.01, 5001),
+        ("48.50", 4850),
+        (60, 6000),
+        ("60.0", 6000),
+        (50.1, 5010),
     ],
 )
-def test_voltage_values_are_exact_hundredths(value: Any, raw: int) -> None:
+def test_voltage_values_are_exact_tenths_in_the_contract_range(value: Any, raw: int) -> None:
     d = BY_KEY["smart_load_off_voltage"]
     assert parse_value(d, value) == raw
     check_range(d, raw, None)
     assert d.display(raw) == pytest.approx(raw / 100)
 
 
-@pytest.mark.parametrize("value", ["48.555", 48.001, "37.99", "63.01", math.nan, "48.5.1", "٤٨"])
+@pytest.mark.parametrize(
+    "value", ["48.555", 48.001, "40.99", "60.01", "48.55", 50.01, math.nan, "48.5.1", "٤٨"]
+)
 def test_voltage_values_without_rounding_and_inside_the_range(value: Any) -> None:
     d = BY_KEY["smart_load_on_voltage"]
     try:
@@ -162,9 +170,9 @@ def test_voltage_values_without_rounding_and_inside_the_range(value: Any) -> Non
 
 def test_voltage_boundaries() -> None:
     d = BY_KEY["smart_load_on_voltage"]
-    check_range(d, 3800, None)
-    check_range(d, 6300, None)
-    for raw in (3799, 6301, 0, -1, 0x10000):
+    check_range(d, 4100, None)
+    check_range(d, 6000, None)
+    for raw in (4090, 6010, 4105, 0, -1, 0x10000):
         with pytest.raises(Refused):
             check_range(d, raw, None)
 
@@ -219,19 +227,28 @@ def test_full_word_descriptors_replace_the_whole_scalar() -> None:
 
 def test_excluded_registers_have_no_descriptor() -> None:
     registers = {d.register for d in DESCRIPTORS}
-    excluded = {80, 81, 91, 92, 22, 23, 24, 98, 111, 336, 341, 141, 142, 147, 133}
-    excluded |= set(range(160, 166)) | set(range(1100, 1122))
+    excluded = {80, 81, 91, 92, 22, 23, 24, 98, 111, 336, 147}
+    excluded |= set(range(1100, 1122))
     assert not registers & excluded
 
 
 def test_smart_load_descriptors_pair_up_with_ordering() -> None:
-    assert BY_KEY["smart_load_off_voltage"].below == ("smart_load_on_voltage",)
-    assert BY_KEY["smart_load_on_voltage"].above == ("smart_load_off_voltage",)
-    assert BY_KEY["smart_load_off_soc"].below == ("smart_load_on_soc",)
-    assert BY_KEY["smart_load_on_soc"].above == ("smart_load_off_soc",)
-    smart = [k for k in OPERATION_KEYS if k.startswith("smart_load")]
-    assert all(BY_KEY[k].needs_smart_load for k in smart)
-    assert not any(BY_KEY[k].needs_smart_load for k in OPERATION_KEYS if k not in smart)
+    for key, companion, margin, on in (
+        ("smart_load_off_voltage", "smart_load_on_voltage", 50, False),
+        ("smart_load_on_voltage", "smart_load_off_voltage", 50, True),
+        ("smart_load_off_soc", "smart_load_on_soc", 5, False),
+        ("smart_load_on_soc", "smart_load_off_soc", 5, True),
+    ):
+        order = BY_KEY[key].mode_order
+        assert order is not None
+        assert (order.companion, order.margin, order.on_member) == (companion, margin, on)
+    smart = [k for k in OPERATION_KEYS if k.startswith("smart_load") and k != "smart_load_force"]
+    # the threshold pairs are usable with Smart Load (R133 = 1) and AC coupling (R133 = 2)
+    assert all(
+        any(g.register == 133 and g.allowed == frozenset({1, 2}) for g in BY_KEY[k].gates)
+        for k in smart
+    )
+    assert BY_KEY["smart_load_force"].needs_smart_load
     # voltage controls need R111 == 0, SOC controls R111 == 1
     assert {k: BY_KEY[k].requires_r111 for k in smart} == {
         "smart_load_off_voltage": 0,
@@ -250,18 +267,28 @@ def test_r111_gates_are_declared_on_every_soc_setting() -> None:
         "grid_charge_start_soc",
         "smart_load_off_soc",
         "smart_load_on_soc",
+        "generator_charge_soc",
+        "ev_offgrid_soc",
         *[f"tou_slot{n}_soc" for n in range(1, 7)],
     }
     assert {d.key for d in DESCRIPTORS if d.requires_r111 == 0} == {
+        *[f"tou_slot{n}_voltage" for n in range(1, 7)],
         "smart_load_off_voltage",
         "smart_load_on_voltage",
+        "battery_shutdown_voltage",
+        "battery_low_voltage",
+        "battery_restart_voltage",
+        "grid_charge_start_voltage",
+        "generator_charge_start_voltage",
     }
 
 
 def test_every_tou_setting_is_gated_on_spain_mode() -> None:
     tou = {d.key for d in DESCRIPTORS if d.tou}
-    assert tou == {d.key for d in DESCRIPTORS if d.group == "tou"}
-    assert len(tou) == 25 and "tou_enable" in tou
+    assert "tou_enable" in tou and "tou_spain_mode" not in tou  # the Spain switch must stay usable
+    spain_bits = {d.key for d in DESCRIPTORS if "_spain_" in d.key and d.key != "tou_spain_mode"}
+    assert len(spain_bits) == 18 and not spain_bits & tou  # usable only WITH Spain mode
+    assert {d.key for d in DESCRIPTORS if d.group == "tou"} == tou | spain_bits | {"tou_spain_mode"}
     assert not any(d.tou for d in DESCRIPTORS if d.group != "tou")
 
 
@@ -463,5 +490,6 @@ def test_every_ordered_group_is_chained_in_ascending_order() -> None:
         "battery_restart_soc",
     )
     assert BY_KEY["tou_slot3_start"].chain == tuple(f"tou_slot{n}_start" for n in range(1, 7))
-    assert BY_KEY["smart_load_on_soc"].chain == ("smart_load_off_soc", "smart_load_on_soc")
+    assert BY_KEY["smart_load_on_soc"].chain == ()  # the pair follows R133, see ``mode_order``
+    assert BY_KEY["smart_load_on_soc"].related == ("smart_load_off_soc",)
     assert set(BY_KEY["battery_shutdown_soc"].related) == {"battery_low_soc", "battery_restart_soc"}

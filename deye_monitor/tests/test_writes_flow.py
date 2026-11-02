@@ -13,10 +13,11 @@ from typing import Any
 
 import pytest
 
-from deye_monitor.write_ops import OPERATION_KEYS
+from deye_monitor.write_ops import BY_KEY, OPERATION_KEYS
 from deye_monitor.writes import AUDIT_FILE, AuditLog, WriteService, WriteSettings
 from tests.fakes.servers import Behavior
 from tests.plant_helpers import A, plant_rig
+from tests.test_review30_b2 import PER_UNIT
 from tests.write_helpers import (
     ALL,
     FAST,
@@ -126,6 +127,7 @@ async def test_full_flow_for_one_write(tmp_path: Path, monkeypatch: pytest.Monke
             "field": 20,
             "value": 20,
             "cap": 185,
+            "range": [0, 100],  # the fresh R108 limits R128
         }
         assert rows["grid_charge_enable"]["word"] == 0 and rows["grid_charge_enable"]["field"] == 0
         assert rows["smart_load_off_voltage"]["value"] == 45.0
@@ -185,9 +187,25 @@ async def test_full_flow_for_one_write(tmp_path: Path, monkeypatch: pytest.Monke
         assert body["operation"]["status"] == "readback_confirmed"
 
 
+def _weekday_cases() -> tuple[list[tuple[str, Any, int, int, int]], int]:
+    """Six days off in turn, Monday on again, then Saturday off (never an empty mask)."""
+    word = 0x00FF  # after tou_enable: bit 0 set, all seven weekday bits set
+    cases: list[tuple[str, Any, int, int, int]] = []
+    steps = [(d, 0) for d in ("sun", "mon", "tue", "wed", "thu", "fri")] + [("mon", 1), ("sat", 0)]
+    index = {d: i for i, d in enumerate(("mon", "tue", "wed", "thu", "fri", "sat", "sun"))}
+    for day, value in steps:
+        bit = 1 << (index[day] + 1)
+        new = word | bit if value else word & ~bit
+        cases.append((f"tou_weekday_{day}", value, 146, word, new))
+        word = new
+    return cases, word
+
+
+WEEKDAY_CASES, WEEKDAY_END = _weekday_cases()
+
 # (key, value, register, word before, word after)
 SOC_MODE_CASES: list[tuple[str, Any, int, int, int]] = [
-    ("battery_charge_current", 80, 108, 50, 80),
+    ("battery_charge_current", 120, 108, 100, 120),
     ("battery_discharge_current", 70, 109, 60, 70),
     ("battery_shutdown_soc", 20, 115, 25, 20),
     ("battery_low_soc", 40, 117, 35, 40),
@@ -199,6 +217,24 @@ SOC_MODE_CASES: list[tuple[str, Any, int, int, int]] = [
     ("smart_load_off_soc", 25, 135, 20, 25),
     ("smart_load_on_soc", 70, 137, 60, 70),
     ("tou_enable", 1, 146, 0x00FE, 0x00FF),
+    ("force_off_grid", 1, 179, 0, 1),
+    ("signal_island_mode", 1, 178, 0x2AAA, 0x2BAA),  # only the pair of bits 8-9 changes
+    ("mppt_scan", 1, 341, 0x0060, 0x0064),  # bits 5-6 stay
+    ("bypass_fan_minimum_request", 1, 341, 0x0064, 0x0074),
+    ("ev_location", "load", 259, 0x32DD, 0x32ED),  # the charger is described on the LOAD port
+    ("ev_free_work", 1, 259, 0x32ED, 0x32EE),
+    ("ev_offgrid_soc", 70, 259, 0x32EE, 0x46EE),
+    ("ev_max_power", 7000, 260, 3000, 7000),
+    ("unbalanced_load", 1, 237, 0, 1),
+    ("afci_enable", 0, 181, 1, 0),
+    ("afci_enable", 1, 181, 0, 1),
+    ("afci_clear_fault", "press", 181, 1, 2),  # one-shot command; the fake keeps the word
+    ("low_noise", 1, 35, 0, 1),  # the two-word special command, the second word fixed
+    ("microinverter_export_cutoff", 1, 178, 0x2BAA, 0x2BAB),  # after the island pair
+    ("on_grid_smart_load_always_on", 1, 178, 0x2BAB, 0x2BEB),
+    ("drm_enable", 1, 178, 0x2BEB, 0x3BEB),
+    ("external_signal", "grid", 140, 0x0000, 0x0001),
+    ("energy_pattern", "load_first", 141, 0, 1),
     *[
         case
         for n in range(1, 7)
@@ -215,21 +251,147 @@ SOC_MODE_CASES: list[tuple[str, Any, int, int, int]] = [
             (f"tou_slot{n}_grid_charge", 1, 171 + n, 0x0002, 0x0003),
         )
     ],
+    *WEEKDAY_CASES,
+    ("tou_spain_mode", 1, 146, WEEKDAY_END, WEEKDAY_END | 0x0100),  # last: it closes the others
 ]
 VOLTAGE_MODE_CASES: list[tuple[str, Any, int, int, int]] = [
     ("smart_load_off_voltage", "46.5", 134, 4500, 4650),
     ("smart_load_on_voltage", 52, 136, 5000, 5200),
+    ("battery_float_voltage", "53.5", 101, 5300, 5350),
+    ("battery_absorption_voltage", 55, 100, 5400, 5500),
+    ("battery_equalization_voltage", "56.0", 99, 5500, 5600),
+    ("battery_capacity", 250, 102, 200, 250),
+    ("battery_empty_voltage", "46.0", 103, 4500, 4600),
+    ("battery_equalization_interval", 31, 105, 30, 31),
+    ("battery_equalization_duration", "3.5", 106, 6, 7),
+    ("battery_temperature_compensation", -6, 107, 5, 6),
+    ("battery_activation", 1, 112, 0, 1),
+    ("battery_internal_resistance", 25, 113, 20, 25),
+    ("battery_charge_efficiency", "98.0", 114, 983, 980),
+    ("battery_shutdown_voltage", "44.0", 118, 4500, 4400),
+    ("battery_restart_voltage", "52.5", 119, 5200, 5250),
+    ("battery_low_voltage", "48.5", 120, 4800, 4850),
+    ("grid_charge_start_voltage", "49.0", 126, 4800, 4900),
+    *[(f"tou_slot{n}_voltage", "49.5", 159 + n, 5000, 4950) for n in range(1, 7)],
+]
+
+
+# plants with another GEN port role: (R111, extra registers, description update, cases)
+GEN_PLANTS: list[
+    tuple[int, dict[str, int], dict[str, Any], list[tuple[str, Any, int, int, int]]]
+] = [
+    (
+        0,
+        {"r133": 0},
+        {"gen_port_mode": "generator"},
+        [
+            ("generator_max_run_time", "6.5", 121, 60, 65),
+            ("generator_cooling_time", 2, 122, 10, 20),
+            ("generator_charge_start_voltage", "49.5", 123, 4800, 4950),
+            ("generator_charge_enable", 1, 129, 0, 1),
+        ],
+    ),
+    (
+        1,
+        {"r133": 0},
+        {"gen_port_mode": "generator"},
+        [
+            ("generator_charge_soc", 55, 124, 40, 55),
+            *[(f"tou_slot{n}_gen_charge", 0, 171 + n, 0x0002, 0x0000) for n in range(1, 7)],
+        ],
+    ),
+    (  # export allowed, both peak-shaving pairs on (R178 pairs 2-3 and 4-5 = 11)
+        1,
+        {"r178": 0x2ABE, "r133": 0, "r98": 1},
+        {
+            "utility_grid": True,
+            "export_policy": "export_allowed",
+            "bms": True,
+            "gen_port_mode": "generator",
+        },
+        [
+            ("export_max_power", 3500, 143, 3000, 3500),
+            ("pv_sale_max_power", 6000, 340, 5000, 6000),
+            ("generator_peak_shaving_power", 6000, 190, 5000, 6000),
+            ("grid_peak_shaving_power", 4000, 191, 5000, 4000),
+            ("generator_peak_shaving", 0, 178, 0x2ABE, 0x2ABA),
+            ("grid_peak_shaving", 0, 178, 0x2ABA, 0x2AAA),
+            ("bms_loss_fault", 1, 178, 0x2AAA, 0x2EAA),
+            ("external_ct_ratio", 3000, 347, 2000, 3000),
+            ("grid_reconnection_time", 300, 180, 600, 300),
+        ],
+    ),
+    (  # internal zero-export described: the bias first (needs a zero-export mode), then the mode
+        1,
+        {"r142": 2},
+        {"utility_grid": True, "export_policy": "zero_export_load"},
+        [
+            ("zero_export_bias", 150, 104, 100, 150),
+            (
+                "pv_sale_enable",
+                1,
+                145,
+                0,
+                1,
+            ),  # Solar Sell: R142 in {1, 2}, R143 valid within the limit
+            ("export_mode", "internal_zero", 142, 2, 1),
+        ],
+    ),
+    (  # Spain mode on: the Spain sub-mode bits of every slot, then the mode off again
+        1,
+        {"r146": 0x01FE},
+        {},
+        [
+            *[
+                (f"tou_slot{n}_spain_{tag}", 1, 171 + n, before, before | 1 << bit)
+                for n in range(1, 7)
+                for tag, bit, before in (
+                    ("gm", 2, 0x0002),
+                    ("bu", 3, 0x0006),
+                    ("ch", 4, 0x000E),
+                )
+            ],
+            ("tou_spain_mode", 0, 146, 0x01FE, 0x00FE),
+        ],
+    ),
+    (
+        0,
+        {"r133": 2, "r183": 0},
+        {"gen_port_mode": "unused"},
+        [("ac_coupling_upper_frequency", "52.5", 131, 5100, 5250)],
+    ),
+    (
+        0,
+        {"r133": 1},
+        {"gen_port_mode": "generator"},
+        [("smart_load_force", 1, 132, 0, 1), ("gen_port_usage", "generator", 133, 1, 0)],
+    ),
 ]
 
 
 async def test_every_released_operation_round_trips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert {c[0] for c in SOC_MODE_CASES + VOLTAGE_MODE_CASES} == set(OPERATION_KEYS)
-    assert len(OPERATION_KEYS) == 38
-    for mode, cases in ((1, SOC_MODE_CASES), (0, VOLTAGE_MODE_CASES)):
-        async with plant_rig(tmp_path / f"m{mode}", monkeypatch) as rig:
-            await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r111": mode}})
+    gen_keys = {c[0] for _, _, _, cases in GEN_PLANTS for c in cases}
+    assert {c[0] for c in SOC_MODE_CASES + VOLTAGE_MODE_CASES} | gen_keys == set(OPERATION_KEYS)
+    assert len(OPERATION_KEYS) == len(set(OPERATION_KEYS))
+    plants: list[tuple[int, dict[str, int], dict[str, Any], Any]] = [
+        (1, {}, {}, SOC_MODE_CASES),
+        (0, {}, {}, VOLTAGE_MODE_CASES),
+        *GEN_PLANTS,
+    ]
+    for n, (mode, extra, described, cases) in enumerate(plants):
+        async with plant_rig(tmp_path / f"m{n}", monkeypatch) as rig:
+            regs = {"r111": mode, "r178": 0x2AAA, "r179": 0, "r341": 0x0060, **extra}
+            await build_plant(rig, inverters=("deye1",), regs={"deye1": regs})
+            inv = svc_of(rig).runtime.inverters["deye1"]
+            update = {
+                "bms": False,
+                "external_signal_use": "other",
+                "ev_charger": "load_port",
+                **described,
+            }  # lead / internal curve
+            inv.features = inv.features.model_copy(update=update)
             server = rig.servers["gw1"]
             for key, value, register, before, after in cases:
                 assert server.responder.regs[register] == before, key
@@ -826,21 +988,22 @@ async def test_smart_load_needs_the_gen_port_to_be_smart_load(
             0,
             (
                 ("smart_load_off_voltage", 50),  # OFF equal to ON (50.00 V)
-                ("smart_load_off_voltage", 55),
+                ("smart_load_off_voltage", 49.6),  # less than 0.5 V below ON
                 ("smart_load_on_voltage", 45),  # ON equal to OFF
-                ("smart_load_on_voltage", 40),
+                ("smart_load_on_voltage", 45.4),  # less than 0.5 V above OFF
+                ("smart_load_on_voltage", 41),
             ),
-            (("smart_load_off_voltage", 49.99), ("smart_load_on_voltage", 45.01)),
+            (("smart_load_off_voltage", 49.5), ("smart_load_on_voltage", 45.5)),
         ),
         (
             1,
             (
-                ("smart_load_off_soc", 60),
+                ("smart_load_off_soc", 56),
                 ("smart_load_off_soc", 99),
-                ("smart_load_on_soc", 20),
+                ("smart_load_on_soc", 24),
                 ("smart_load_on_soc", 5),
             ),
-            (("smart_load_off_soc", 59), ("smart_load_on_soc", 21)),
+            (("smart_load_off_soc", 55), ("smart_load_on_soc", 25)),
         ),
     ],
 )
@@ -866,6 +1029,42 @@ async def test_smart_load_threshold_ordering(
             assert (status, err(body)) == (422, "invalid_value")
 
 
+@pytest.mark.parametrize(
+    ("mode", "rejected", "accepted"),
+    [
+        (
+            0,  # AC coupling reverses the order: OFF at least 0.5 V above ON
+            (("smart_load_off_voltage", 50.4), ("smart_load_on_voltage", 44.6)),
+            (("smart_load_off_voltage", 50.5), ("smart_load_on_voltage", 44.5)),
+        ),
+        (
+            1,
+            (("smart_load_off_soc", 64), ("smart_load_on_soc", 16)),
+            (("smart_load_off_soc", 65), ("smart_load_on_soc", 15)),
+        ),
+    ],
+)
+async def test_ac_coupling_reverses_the_threshold_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: int,
+    rejected: tuple[tuple[str, Any], ...],
+    accepted: tuple[tuple[str, Any], ...],
+) -> None:
+    """R133 = 2: R134 >= R136 + 0.5 V and R135 >= R137 + 5 (incumbent pair is still the Smart
+    Load order, so every edit is judged against the reversed rule, the other member is kept)."""
+    regs = {"r111": mode, "r133": 2}
+    async with plant_rig(tmp_path, monkeypatch) as rig:
+        await build_plant(rig, inverters=("deye1",), regs={"deye1": regs})
+        for key, value in rejected:
+            status, body = await preview(rig, "deye1", key, value)
+            assert (status, err(body)) == (422, "threshold_order"), (key, value)
+        for key, number in accepted:
+            status, body = await preview(rig, "deye1", key, number)
+            assert status == 200, (key, number, body)
+        assert rig.servers["gw1"].responder.writes == []
+
+
 async def test_unknown_operations_and_shapes_are_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -874,8 +1073,8 @@ async def test_unknown_operations_and_shapes_are_refused(
         for operation in (
             "work_mode",
             "tou_slot7_start",
-            "tou_slot1_voltage",
-            "tou_slot1_gen_charge",
+            "tou_slot7_voltage",
+            "tou_slot1_gen_charge_x",
             "r80",
             "108",
             "../x",
@@ -1263,7 +1462,10 @@ async def test_a_slave_is_locked_for_preview_and_for_the_rows(
         assert status == 409 and err(body) == "parallel_slave"
         status, body = await rig.call("POST", "/api/inverters/deye1/writes/current", {})
         assert status == 200
-        assert {(r["state"], r["reason"]) for r in body["operations"]} == {
+        rows = {r["key"]: r for r in body["operations"]}
+        per_unit = {k for k in rows if not BY_KEY[k].synchronized}
+        assert per_unit == PER_UNIT and rows["low_noise"]["state"] == "ready"
+        assert {(r["state"], r["reason"]) for k, r in rows.items() if k not in per_unit} == {
             ("locked", "parallel_slave")
         }
         assert fc16(rig.servers["gw1"]) == [] and rig.servers["gw1"].responder.writes == []

@@ -1,10 +1,13 @@
 {
  "alarm_fan": false,
- "alarm_word_1": 0,
+ "alarm_fan_attributes": null,
+ "alarm_word_1": null,
+ "alarm_word_1_attributes": null,
  "battery_soc": null,
  "cycle_id": 7,
  "energy_generation": 0,
  "energy_series": "g0",
- "operating_state": "Normal",
+ "operating_state": null,
+ "operating_state_attributes": null,
  "timestamp": "2023-11-14T22:13:20Z"
 }

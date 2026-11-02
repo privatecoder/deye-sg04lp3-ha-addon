@@ -94,15 +94,16 @@ def test_the_payload_and_the_discovery_publish_text_and_attributes() -> None:
         energy_series="g0",
         values={"active_faults": "F29 Parallel CANBus fault", "active_warnings": None},
         entries={"active_faults": FAULT, "active_warnings": WARN},
+        words=dict.fromkeys((*FAULT.addresses, *WARN.addresses), 0),
     )
     body = json.loads(raw)
     assert replaced == 0
-    assert body["active_faults"] == "F29 Parallel CANBus fault"
+    assert body["active_faults"] == "None reported"
     assert body["active_faults_list"][0]["code"] == "F29"
-    assert body["active_warnings"] is None and body["active_warnings_list"] is None
+    assert body["active_warnings"] == "None reported" and body["active_warnings_list"] is None
     _, comp = inverter_component(NS, "inv1", FAULT, series="g0", poll=PollConfig(), profile=PROFILE)
     assert comp["platform"] == "sensor" and comp["entity_category"] == "diagnostic"
-    assert "active_faults_list" in comp["json_attributes_template"]
+    assert "active_faults_attributes" in comp["json_attributes_template"]
     assert "device_class" not in comp and "unit_of_measurement" not in comp
 
 

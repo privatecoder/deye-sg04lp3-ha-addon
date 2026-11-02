@@ -13,6 +13,8 @@
    "default_entity_id": "binary_sensor.deye_ab12cd34_deye1_alarm_fan",
    "entity_category": "diagnostic",
    "expire_after": 30,
+   "json_attributes_template": "{{ value_json.get('alarm_fan_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/status",
    "name": "Fan warning",
    "payload_off": "OFF",
    "payload_on": "ON",
@@ -383,14 +385,17 @@
    "device_class": "enum",
    "entity_category": "diagnostic",
    "expire_after": 30,
+   "json_attributes_template": "{{ value_json.get('operating_state_attributes') | tojson }}",
+   "json_attributes_topic": "deye/ab12cd34/deye1/status",
    "name": "Operating state",
    "options": [
     "Standby",
     "Self-check",
-    "Normal",
-    "Alarm",
-    "Fault",
-    "Activating"
+    "Normal (reported)",
+    "Alarm (reported)",
+    "Fault (reported)",
+    "Activating (build-dependent)",
+    "Unknown"
    ],
    "platform": "sensor",
    "state_topic": "deye/ab12cd34/deye1/status",
@@ -447,6 +452,6 @@
  },
  "origin": {
   "name": "Deye SG04LP3 Monitor",
-  "sw_version": "0.4.1"
+  "sw_version": "0.5.0"
  }
 }

@@ -22,6 +22,7 @@ from deye_monitor.mqtt_settings import SettingsPlane
 from deye_monitor.store import JsonStore
 from tests.fakes.mqtt import FakeBroker, FakeConnection, settle
 from tests.plant_helpers import PlantRig, plant_rig
+from tests.test_review30_b2 import PER_UNIT
 from tests.write_helpers import audit_lines, build_plant, fast, fc16
 
 NS = Namespace("ab12cd34", "homeassistant", "deye")
@@ -111,7 +112,7 @@ async def test_a_command_ends_in_one_guarded_write_with_a_confirmed_event(
         await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r336": MASTER}})
         fast(rig)
         async with attach(rig) as bridge:
-            assert bridge.state()["battery_charge_current"] == 50
+            assert bridge.state()["battery_charge_current"] == 100
             bridge.send("battery_charge_current", "40")
             await settle(lambda: len(bridge.events()) == 1)
             event = bridge.events()[0]
@@ -178,7 +179,7 @@ async def test_a_refused_command_publishes_the_value_the_unit_holds(
             ]
             assert rig.servers["gw1"].responder.writes == [] and audit_lines(rig) == []
             state = bridge.state()
-            assert state["tou_slot2_start"] == "05:00:00" and state["battery_charge_current"] == 50
+            assert state["tou_slot2_start"] == "05:00:00" and state["battery_charge_current"] == 100
             assert state["battery_low_soc"] == 35
 
 
@@ -217,9 +218,10 @@ async def test_only_the_master_of_a_parallel_system_has_entities(
         async with attach(rig) as bridge:
             assert "set_battery_charge_current" in bridge.components("deye1")
             await bridge.refresh("deye2")
-            assert not [k for k in bridge.components("deye2") if k.startswith("set_")]
-            assert "write_result" not in bridge.components("deye2")
-            assert all("deye2" not in t for t in bridge.plane.topics())
+            # a slave only has the per-unit registers the master does not copy (R35 ...)
+            assert {k for k in bridge.components("deye2") if k.startswith("set_")} == {
+                f"set_{k}" for k in PER_UNIT
+            }
             # the master loses its role: its entities go through the cleanup ledger
             rig.servers["gw1"].responder.regs[336] = SLAVE
             await bridge.refresh("deye1")

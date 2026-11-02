@@ -95,24 +95,23 @@ async def test_nothing_changes_without_the_require_choice_policy(
         await expect(s.page.locator(".awaiting")).to_have_count(0)
 
 
-async def test_the_template_is_accepted_with_the_prefilled_answers(
+async def test_the_template_is_accepted_without_the_device_hints(
     browser: Browser, tmp_path: Any
 ) -> None:
-    # the device suggests "no battery" (R111 = 2): the answer is shown pre-filled and counts as
-    # unsaved, yet accepting the template unchanged must be possible and take the answer along
+    # the device suggests "no battery" (R111 = 2): a comparison hint only. Accepting the template
+    # unchanged saves the description's own answers, never the hint
     async with ui_stack(tmp_path, require_choice=True) as stack:
         s = await open_ui(browser, stack)
         await open_setup(s)
         page = s.page
-        await expect(page.locator(".prefilled").first).to_be_visible()
+        await expect(page.locator(".prefilled")).to_have_count(0)
         button = page.get_by_role("button", name="Vorlage unverändert übernehmen")
         await expect(button).to_be_enabled()
         await button.click()
         await expect(page.locator(".toast.ok")).to_be_visible()
         sel = stack.plant.manager.selection("deye1")
         assert sel.chosen and not sel.added and not sel.removed
-        assert sel.features.battery is False  # the displayed answer was saved ...
-        assert "battery" in sel.confirmed  # ... as confirmed
+        assert sel.features.battery is True  # the description, not the R111 hint
         await expect(page.locator(".banner.awaiting")).to_be_hidden()
         await s.check()
 

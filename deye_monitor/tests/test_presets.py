@@ -10,6 +10,7 @@ from deye_monitor.profiles.features import FEATURE_VALUES, Features
 from deye_monitor.profiles.hardware import HardwareProfile, load_hardware
 from deye_monitor.profiles.plan import template_selection
 from deye_monitor.profiles.schema import Profile, load_profile
+from deye_monitor.profiles.setting_presets import suggested_operations
 
 RAW_WORDS = {
     "alarm_word_1",
@@ -51,8 +52,12 @@ def hw() -> HardwareProfile:
     return load_hardware("sg04lp3_eu")
 
 
+BASE_FEATURES = tuple(list(FEATURE_VALUES)[:8])  # the 0.4 plant features; the 0.5.0 questions
+# (export policy, measurement, signal use, control basis, ToU) have their own tests below
+
+
 def combinations() -> list[Features]:
-    names = list(FEATURE_VALUES)
+    names = list(BASE_FEATURES)
     return [
         Features.model_validate(dict(zip((n.value for n in names), values, strict=True)))
         for values in itertools.product(*(FEATURE_VALUES[n] for n in names))
@@ -132,3 +137,30 @@ def test_the_raw_words_are_off_but_the_alarm_bits_and_decoded_views_stay(
     for key in ("bms_offgrid_charge_limit", "bms_offgrid_discharge_limit_raw", "load_frequency"):
         assert not p.entry(key).selectable  # firmware placeholders and duplicates: not offered
     assert not p.entry("temp_dc_transformer").selectable
+
+
+def _ops(**kw: object) -> set[str]:
+    base: dict[str, object] = {"battery": True, "battery_control_basis": "soc"}
+    return set(suggested_operations(Features(**{**base, **kw})))  # type: ignore[arg-type]
+
+
+def test_a_generator_on_the_grid_terminal_suggests_the_grid_terminal_charging_settings() -> None:
+    ops = _ops(utility_grid=False, grid_port_use="generator", gen_port_mode="unused")
+    assert {"grid_charge_enable", "grid_charge_current", "grid_charge_start_soc"} <= ops
+    assert "generator_charge_current" not in ops
+
+
+def test_a_generator_on_the_gen_terminal_suggests_r125_only() -> None:
+    ops = _ops(utility_grid=False, grid_port_use="unused", gen_port_mode="generator")
+    assert "generator_charge_current" in ops
+    assert not ops & {"grid_charge_enable", "grid_charge_current", "grid_charge_start_soc"}
+
+
+def test_no_ac_source_suggests_no_charging_source_settings() -> None:
+    ops = _ops(utility_grid=False, grid_port_use="unused", gen_port_mode="unused")
+    assert not ops & {
+        "grid_charge_enable",
+        "grid_charge_current",
+        "grid_charge_start_soc",
+        "generator_charge_current",
+    }

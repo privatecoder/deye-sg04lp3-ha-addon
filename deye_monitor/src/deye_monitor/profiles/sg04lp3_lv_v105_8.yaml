@@ -265,8 +265,8 @@ entries:
   mandatory: true
 - key: id_gap_r12
   name:
-    de: Identitätslücke R12 (intern)
-    en: Identity gap R12 (internal)
+    de: AFCI-Modulantwort (intern)
+    en: AFCI module response (internal)
   addr: 12
   type: raw
   entity_category: diagnostic
@@ -286,8 +286,8 @@ entries:
   mandatory: true
 - key: id_gap_r13
   name:
-    de: Identitätslücke R13 (intern)
-    en: Identity gap R13 (internal)
+    de: Identitätslücke B (intern)
+    en: Identity gap B (internal)
   addr: 13
   type: raw
   entity_category: diagnostic
@@ -307,8 +307,8 @@ entries:
   mandatory: true
 - key: id_gap_r16
   name:
-    de: Identitätslücke R16 (intern)
-    en: Identity gap R16 (internal)
+    de: Identitätslücke C (intern)
+    en: Identity gap C (internal)
   addr: 16
   type: raw
   entity_category: diagnostic
@@ -1017,8 +1017,8 @@ entries:
     de: Relais Netz
     en: Grid relay
   description:
-    de: "Softwarezustand des Relais (Netzanschluss); keine mechanische Rückmeldung."
-    en: "Software state of the grid connection relay; not mechanical feedback."
+    de: "Softwarezustand des Relais (Netzanschluss); keine mechanische Rückmeldung. 0 = das Display des Wechselrichters zeigt „Off grid“ (Software-Flag, keine physische Trennung)."
+    en: "Software state of the grid connection relay; not mechanical feedback. 0 = the inverter display shows 'Off grid' (software flag, not physical isolation)."
   addr: 552
   type: bitfield
   mask: 4
@@ -1066,8 +1066,8 @@ entries:
   notes: Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded.
 - key: relay_grid_supply
   name:
-    de: Relais Netzversorgung
-    en: Grid supply relay
+    de: "Relais „Grid give power“ (Zuordnung unbestätigt)"
+    en: "“Grid give power” relay (mapping unconfirmed)"
   description:
     de: "Softwarezustand von „grid give power to relay“ (V105.8, Bit 4). Ob LOAD-Versorgung oder zweites Netzrelais, ist nicht belegt; keine mechanische Rückmeldung."
     en: "Software state of “grid give power to relay” (V105.8, bit 4). Whether it is the LOAD-port supply or the second series grid relay is not proven; not mechanical feedback."
@@ -1144,8 +1144,8 @@ entries:
   notes: Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded.
 - key: relay_state_raw
   name:
-    de: Relaiszustände roh
-    en: Relay state raw
+    de: Relaiszustände
+    en: Relay state
   description:
     de: "Zustand aller internen Relais und Kontakte in einer Zahl, für Fachleute."
     en: "State of all internal relays and contacts as one number, for experts."
@@ -1729,8 +1729,8 @@ entries:
   notes: SOC is never summed across inverters.
 - key: battery_power_raw
   name:
-    de: Batterieleistung roh
-    en: Battery power raw
+    de: Batterieleistung
+    en: Battery power
   description:
     de: "Batterieleistung als Rohzahl; Einheit und Lade-/Entladerichtung sind nicht bestätigt."
     en: "Battery power as a raw number; unit and charge/discharge direction are not confirmed."
@@ -2494,19 +2494,26 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
+    all_of:
+    - any_of:
+      - feature: utility_grid
+        equals: true
+      - feature: grid_port_use
+        in:
+        - generator
+    - feature: external_measurement
       in:
-      - generator
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R613 (TXT 3684-3691)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: Physical polarity not established.
 - key: grid_internal_current_b
   name:
@@ -2558,19 +2565,26 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
+    all_of:
+    - any_of:
+      - feature: utility_grid
+        equals: true
+      - feature: grid_port_use
+        in:
+        - generator
+    - feature: external_measurement
       in:
-      - generator
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R614 (TXT 3691-3698)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: Physical polarity not established.
 - key: grid_internal_current_c
   name:
@@ -2622,19 +2636,26 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
+    all_of:
+    - any_of:
+      - feature: utility_grid
+        equals: true
+      - feature: grid_port_use
+        in:
+        - generator
+    - feature: external_measurement
       in:
-      - generator
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R615 (TXT 3698-3705)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: Physical polarity not established.
 - key: grid_internal_power_a
   name:
@@ -2787,19 +2808,26 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
+    all_of:
+    - any_of:
+      - feature: utility_grid
+        equals: true
+      - feature: grid_port_use
+        in:
+        - generator
+    - feature: external_measurement
       in:
-      - generator
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: confirmed
   source: "V105.8 registers.json inverter: R616 (TXT 3705-3706), R705 (TXT 3981-3982)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_external_power_b
@@ -2821,19 +2849,26 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
+    all_of:
+    - any_of:
+      - feature: utility_grid
+        equals: true
+      - feature: grid_port_use
+        in:
+        - generator
+    - feature: external_measurement
       in:
-      - generator
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: confirmed
   source: "V105.8 registers.json inverter: R617 (TXT 3706-3707), R706 (TXT 3982-3983)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_external_power_c
@@ -2855,19 +2890,26 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
+    all_of:
+    - any_of:
+      - feature: utility_grid
+        equals: true
+      - feature: grid_port_use
+        in:
+        - generator
+    - feature: external_measurement
       in:
-      - generator
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: confirmed
   source: "V105.8 registers.json inverter: R618 (TXT 3707-3708), R707 (TXT 3983-3984)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_external_power_total
@@ -2889,19 +2931,26 @@ entries:
   group: ac
   tags: []
   requires:
-    any_of:
-    - feature: utility_grid
-      equals: true
-    - feature: grid_port_use
+    all_of:
+    - any_of:
+      - feature: utility_grid
+        equals: true
+      - feature: grid_port_use
+        in:
+        - generator
+    - feature: external_measurement
       in:
-      - generator
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: confirmed
   source: "V105.8 registers.json inverter: R619 (TXT 3708-3709), R708 (TXT 3984-3985)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_selected_power_a
@@ -4081,20 +4130,23 @@ entries:
   default_enabled: true
 - key: gen_power_raw_a
   name:
-    de: GEN-Port Leistung Phase A (roh)
-    en: GEN port power phase A (raw)
+    de: GEN-Anschlussleistung A
+    en: GEN port power A
   description:
-    de: "Leistung am GEN-Anschluss, Phase A, als Rohzahl; Einheit nicht bestätigt."
-    en: "Power at the GEN port, phase A, as a raw number; unit not confirmed."
+    de: "Leistung am GEN-Anschluss, Phase A, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
+    en: "Power at the GEN port, phase A, signed, in W; the direction (import/export) is not interpreted."
   low: 664
   high: 668
   type: s32
+  scale: 1.0
+  unit: W
+  device_class: power
+  state_class: measurement
   category: power
   point: gen_port
   group: ac
   tags:
   - gen_port
-  - raw
   requires:
     feature: gen_port_mode
     in:
@@ -4104,27 +4156,30 @@ entries:
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: unresolved
+  release: profile_dependent
   source: "V105.8 registers.json inverter: R664 (TXT 3832-3834), R668 (TXT 3840-3842)"
-  confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
-  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
+  confidence: firmware_1175_variable_32bit_producer;C070_signed_W_display;polarity_unproved
+  default_enabled: true
+  notes: "Signed 32-bit word pair (low word first), W without division (MCU2 1175 producer, C070 display). With GEN port use Smart Load (R133 = 1) the producer applies a software negation (proved); the electrical import/export orientation and the ADC calibration are still unproved, so no flow direction is claimed and the decoded value is not inverted again."
 - key: gen_power_raw_b
   name:
-    de: GEN-Port Leistung Phase B (roh)
-    en: GEN port power phase B (raw)
+    de: GEN-Anschlussleistung B
+    en: GEN port power B
   description:
-    de: "Leistung am GEN-Anschluss, Phase B, als Rohzahl; Einheit nicht bestätigt."
-    en: "Power at the GEN port, phase B, as a raw number; unit not confirmed."
+    de: "Leistung am GEN-Anschluss, Phase B, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
+    en: "Power at the GEN port, phase B, signed, in W; the direction (import/export) is not interpreted."
   low: 665
   high: 669
   type: s32
+  scale: 1.0
+  unit: W
+  device_class: power
+  state_class: measurement
   category: power
   point: gen_port
   group: ac
   tags:
   - gen_port
-  - raw
   requires:
     feature: gen_port_mode
     in:
@@ -4134,27 +4189,30 @@ entries:
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: unresolved
+  release: profile_dependent
   source: "V105.8 registers.json inverter: R665 (TXT 3834-3836), R669 (TXT 3842-3844)"
-  confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
-  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
+  confidence: firmware_1175_variable_32bit_producer;C070_signed_W_display;polarity_unproved
+  default_enabled: true
+  notes: "Signed 32-bit word pair (low word first), W without division (MCU2 1175 producer, C070 display). With GEN port use Smart Load (R133 = 1) the producer applies a software negation (proved); the electrical import/export orientation and the ADC calibration are still unproved, so no flow direction is claimed and the decoded value is not inverted again."
 - key: gen_power_raw_c
   name:
-    de: GEN-Port Leistung Phase C (roh)
-    en: GEN port power phase C (raw)
+    de: GEN-Anschlussleistung C
+    en: GEN port power C
   description:
-    de: "Leistung am GEN-Anschluss, Phase C, als Rohzahl; Einheit nicht bestätigt."
-    en: "Power at the GEN port, phase C, as a raw number; unit not confirmed."
+    de: "Leistung am GEN-Anschluss, Phase C, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
+    en: "Power at the GEN port, phase C, signed, in W; the direction (import/export) is not interpreted."
   low: 666
   high: 670
   type: s32
+  scale: 1.0
+  unit: W
+  device_class: power
+  state_class: measurement
   category: power
   point: gen_port
   group: ac
   tags:
   - gen_port
-  - raw
   requires:
     feature: gen_port_mode
     in:
@@ -4164,27 +4222,30 @@ entries:
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: unresolved
+  release: profile_dependent
   source: "V105.8 registers.json inverter: R666 (TXT 3836-3838), R670 (TXT 3844-3846)"
-  confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
-  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
+  confidence: firmware_1175_variable_32bit_producer;C070_signed_W_display;polarity_unproved
+  default_enabled: true
+  notes: "Signed 32-bit word pair (low word first), W without division (MCU2 1175 producer, C070 display). With GEN port use Smart Load (R133 = 1) the producer applies a software negation (proved); the electrical import/export orientation and the ADC calibration are still unproved, so no flow direction is claimed and the decoded value is not inverted again."
 - key: gen_power_raw_total
   name:
-    de: GEN-Port Leistung gesamt (roh)
-    en: GEN port power total (raw)
+    de: GEN-Anschlussleistung gesamt
+    en: GEN port power total
   description:
-    de: "Gesamtleistung am GEN-Anschluss als Rohzahl; Einheit nicht bestätigt."
-    en: "Total power at the GEN port as a raw number; unit not confirmed."
+    de: "Leistung am GEN-Anschluss, gesamt, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
+    en: "Power at the GEN port, total, signed, in W; the direction (import/export) is not interpreted."
   low: 667
   high: 671
   type: s32
+  scale: 1.0
+  unit: W
+  device_class: power
+  state_class: measurement
   category: power
   point: gen_port
   group: ac
   tags:
   - gen_port
-  - raw
   requires:
     feature: gen_port_mode
     in:
@@ -4194,18 +4255,18 @@ entries:
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: unresolved
+  release: profile_dependent
   source: "V105.8 registers.json inverter: R667 (TXT 3838-3840), R671 (TXT 3846-3848)"
-  confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
-  notes: "Word pair (low word first) decoded as signed 32 bit (V105.8 high words; community reports show 65 kW jumps when decoded unsigned). Polarity and unit are unresolved: raw value only, no unit."
+  confidence: firmware_1175_variable_32bit_producer;C070_signed_W_display;polarity_unproved
+  default_enabled: true
+  notes: "Signed 32-bit word pair (low word first), W without division (MCU2 1175 producer, C070 display). With GEN port use Smart Load (R133 = 1) the producer applies a software negation (proved); the electrical import/export orientation and the ADC calibration are still unproved, so no flow direction is claimed and the decoded value is not inverted again."
 - key: ac_solar_power_raw_a
   name:
-    de: AC-Solar Leistung Phase A (roh)
-    en: AC solar power phase A (raw)
+    de: "AC-Solar-Leistung A (Messzuordnung unbestätigt)"
+    en: "AC solar power A (measurement mapping unconfirmed)"
   description:
-    de: "Leistung einer AC-gekoppelten PV-Anlage am GEN-Anschluss, Phase A, als Rohzahl."
-    en: "Power of an AC-coupled PV system at the GEN port, phase A, as a raw number."
+    de: "AC-gekoppelte PV, Phase A: vorzeichenlose Rohzahl, 10 W pro Zähler. Messort (GEN-Anschluss, Last oder Zusatzzähler) ungeklärt."
+    en: "Reported power of an AC-coupled PV system, phase A: unsigned magnitude, 10 W per count (raw number). Whether it is measured at the GEN port, the load or an extra meter is unresolved."
   addr: 684
   type: u16
   category: power
@@ -4222,17 +4283,16 @@ entries:
   support_status: unverified
   release: unresolved
   source: "V105.8 registers.json inverter: R684 (TXT 3936-3942)"
-  confidence: document_only
+  confidence: unsigned_magnitude_10W_per_count_contracts-1;location_and_freshness_unresolved
   default_enabled: false
-  notes: "V105.8 states 10 W per count but signedness and source path are unresolved and no producer evidence exists: raw\
-    \ only."
+  notes: "Unsigned absolute magnitude, 10 W per count (contracts-1). Kept as a raw diagnostic only because the measuring location (GEN / LOAD / extra meter) and the freshness are unresolved; it is not a verified GEN-port input."
 - key: ac_solar_power_raw_b
   name:
-    de: AC-Solar Leistung Phase B (roh)
-    en: AC solar power phase B (raw)
+    de: "AC-Solar-Leistung B (Messzuordnung unbestätigt)"
+    en: "AC solar power B (measurement mapping unconfirmed)"
   description:
-    de: "Leistung einer AC-gekoppelten PV-Anlage am GEN-Anschluss, Phase B, als Rohzahl."
-    en: "Power of an AC-coupled PV system at the GEN port, phase B, as a raw number."
+    de: "AC-gekoppelte PV, Phase B: vorzeichenlose Rohzahl, 10 W pro Zähler. Messort (GEN-Anschluss, Last oder Zusatzzähler) ungeklärt."
+    en: "Reported power of an AC-coupled PV system, phase B: unsigned magnitude, 10 W per count (raw number). Whether it is measured at the GEN port, the load or an extra meter is unresolved."
   addr: 685
   type: u16
   category: power
@@ -4249,17 +4309,16 @@ entries:
   support_status: unverified
   release: unresolved
   source: "V105.8 registers.json inverter: R685 (TXT 3942-3948)"
-  confidence: document_only
+  confidence: unsigned_magnitude_10W_per_count_contracts-1;location_and_freshness_unresolved
   default_enabled: false
-  notes: "V105.8 states 10 W per count but signedness and source path are unresolved and no producer evidence exists: raw\
-    \ only."
+  notes: "Unsigned absolute magnitude, 10 W per count (contracts-1). Kept as a raw diagnostic only because the measuring location (GEN / LOAD / extra meter) and the freshness are unresolved; it is not a verified GEN-port input."
 - key: ac_solar_power_raw_c
   name:
-    de: AC-Solar Leistung Phase C (roh)
-    en: AC solar power phase C (raw)
+    de: "AC-Solar-Leistung C (Messzuordnung unbestätigt)"
+    en: "AC solar power C (measurement mapping unconfirmed)"
   description:
-    de: "Leistung einer AC-gekoppelten PV-Anlage am GEN-Anschluss, Phase C, als Rohzahl."
-    en: "Power of an AC-coupled PV system at the GEN port, phase C, as a raw number."
+    de: "AC-gekoppelte PV, Phase C: vorzeichenlose Rohzahl, 10 W pro Zähler. Messort (GEN-Anschluss, Last oder Zusatzzähler) ungeklärt."
+    en: "Reported power of an AC-coupled PV system, phase C: unsigned magnitude, 10 W per count (raw number). Whether it is measured at the GEN port, the load or an extra meter is unresolved."
   addr: 686
   type: u16
   category: power
@@ -4276,10 +4335,9 @@ entries:
   support_status: unverified
   release: unresolved
   source: "V105.8 registers.json inverter: R686 (TXT 3948-3954)"
-  confidence: document_only
+  confidence: unsigned_magnitude_10W_per_count_contracts-1;location_and_freshness_unresolved
   default_enabled: false
-  notes: "V105.8 states 10 W per count but signedness and source path are unresolved and no producer evidence exists: raw\
-    \ only."
+  notes: "Unsigned absolute magnitude, 10 W per count (contracts-1). Kept as a raw diagnostic only because the measuring location (GEN / LOAD / extra meter) and the freshness are unresolved; it is not a verified GEN-port input."
 - key: ev_charge_power_r709
   name:
     de: EV-Ladeleistung
@@ -5022,8 +5080,8 @@ entries:
   notes: Zero-filled in the local builder; no voltage producer.
 - key: pv_ext_r722
   name:
-    de: "R722: PV8 voltage (roh)"
-    en: "R722: PV8 voltage (raw)"
+    de: "PV8-Spannung (unbestätigt)"
+    en: "“PV8 voltage” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV8 voltage); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV8 voltage); for experts only."
@@ -5047,8 +5105,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r723
   name:
-    de: "R723: PV5 current (roh)"
-    en: "R723: PV5 current (raw)"
+    de: "PV5-Strom (unbestätigt)"
+    en: "“PV5 current” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV5 current); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV5 current); for experts only."
@@ -5072,8 +5130,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r724
   name:
-    de: "R724: PV6 current (roh)"
-    en: "R724: PV6 current (raw)"
+    de: "PV6-Strom (unbestätigt)"
+    en: "“PV6 current” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV6 current); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV6 current); for experts only."
@@ -5097,8 +5155,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r725
   name:
-    de: "R725: PV7 current (roh)"
-    en: "R725: PV7 current (raw)"
+    de: "PV7-Strom (unbestätigt)"
+    en: "“PV7 current” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV7 current); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV7 current); for experts only."
@@ -5122,8 +5180,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r726
   name:
-    de: "R726: PV8 current (roh)"
-    en: "R726: PV8 current (raw)"
+    de: "PV8-Strom (unbestätigt)"
+    en: "“PV8 current” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV8 current); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV8 current); for experts only."
@@ -5147,8 +5205,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r727
   name:
-    de: "R727: PV5 power (roh)"
-    en: "R727: PV5 power (raw)"
+    de: "PV5-Leistung (unbestätigt)"
+    en: "“PV5 power” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV5 power); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV5 power); for experts only."
@@ -5172,8 +5230,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r728
   name:
-    de: "R728: PV6 power (roh)"
-    en: "R728: PV6 power (raw)"
+    de: "PV6-Leistung (unbestätigt)"
+    en: "“PV6 power” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV6 power); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV6 power); for experts only."
@@ -5197,8 +5255,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r729
   name:
-    de: "R729: PV7 power (roh)"
-    en: "R729: PV7 power (raw)"
+    de: "PV7-Leistung (unbestätigt)"
+    en: "“PV7 power” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV7 power); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV7 power); for experts only."
@@ -5222,8 +5280,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r730
   name:
-    de: "R730: PV8 power (roh)"
-    en: "R730: PV8 power (raw)"
+    de: "PV8-Leistung (unbestätigt)"
+    en: "“PV8 power” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV8 power); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV8 power); for experts only."
@@ -5247,8 +5305,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r731
   name:
-    de: "R731: PV9 voltage (roh)"
-    en: "R731: PV9 voltage (raw)"
+    de: "PV9-Spannung (unbestätigt)"
+    en: "“PV9 voltage” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV9 voltage); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV9 voltage); for experts only."
@@ -5272,8 +5330,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r732
   name:
-    de: "R732: PV10 voltage (roh)"
-    en: "R732: PV10 voltage (raw)"
+    de: "PV10-Spannung (unbestätigt)"
+    en: "“PV10 voltage” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV10 voltage); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV10 voltage); for experts only."
@@ -5297,8 +5355,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r733
   name:
-    de: "R733: PV9 current (roh)"
-    en: "R733: PV9 current (raw)"
+    de: "PV9-Strom (unbestätigt)"
+    en: "“PV9 current” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV9 current); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV9 current); for experts only."
@@ -5322,8 +5380,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r734
   name:
-    de: "R734: PV10 current (roh)"
-    en: "R734: PV10 current (raw)"
+    de: "PV10-Strom (unbestätigt)"
+    en: "“PV10 current” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV10 current); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV10 current); for experts only."
@@ -5347,8 +5405,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r735
   name:
-    de: "R735: PV9 power (roh)"
-    en: "R735: PV9 power (raw)"
+    de: "PV9-Leistung (unbestätigt)"
+    en: "“PV9 power” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV9 power); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV9 power); for experts only."
@@ -5372,8 +5430,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r736
   name:
-    de: "R736: PV10 power (roh)"
-    en: "R736: PV10 power (raw)"
+    de: "PV10-Leistung (unbestätigt)"
+    en: "“PV10 power” (unconfirmed)"
   description:
     de: "Unbestätigter Rohwert eines nicht vorhandenen oder ungeklärten PV-Kanals (PV10 power); nur für Fachleute."
     en: "Unconfirmed raw value of a PV channel that may not exist (PV10 power); for experts only."
@@ -5397,8 +5455,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r737
   name:
-    de: "R737: AI arc detection threshold (roh)"
-    en: "R737: AI arc detection threshold (raw)"
+    de: "„AI arc detection threshold“ (unbestätigt)"
+    en: "“AI arc detection threshold” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5422,8 +5480,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r738
   name:
-    de: "R738: AI arc detection count (roh)"
-    en: "R738: AI arc detection count (raw)"
+    de: "„AI arc detection count“ (unbestätigt)"
+    en: "“AI arc detection count” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5447,8 +5505,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r739
   name:
-    de: "R739: AI arc PV1 recognition rate (roh)"
-    en: "R739: AI arc PV1 recognition rate (raw)"
+    de: "„AI arc PV1 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV1 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5472,8 +5530,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r740
   name:
-    de: "R740: AI arc PV2 recognition rate (roh)"
-    en: "R740: AI arc PV2 recognition rate (raw)"
+    de: "„AI arc PV2 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV2 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5497,8 +5555,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r741
   name:
-    de: "R741: AI arc PV3 recognition rate (roh)"
-    en: "R741: AI arc PV3 recognition rate (raw)"
+    de: "„AI arc PV3 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV3 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5522,8 +5580,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r742
   name:
-    de: "R742: AI arc PV4 recognition rate (roh)"
-    en: "R742: AI arc PV4 recognition rate (raw)"
+    de: "„AI arc PV4 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV4 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5547,8 +5605,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r743
   name:
-    de: "R743: AI arc PV5 recognition rate (roh)"
-    en: "R743: AI arc PV5 recognition rate (raw)"
+    de: "„AI arc PV5 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV5 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5572,8 +5630,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r744
   name:
-    de: "R744: AI arc PV6 recognition rate (roh)"
-    en: "R744: AI arc PV6 recognition rate (raw)"
+    de: "„AI arc PV6 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV6 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5597,8 +5655,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r745
   name:
-    de: "R745: AI arc PV7 recognition rate (roh)"
-    en: "R745: AI arc PV7 recognition rate (raw)"
+    de: "„AI arc PV7 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV7 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5622,8 +5680,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r746
   name:
-    de: "R746: AI arc PV8 recognition rate (roh)"
-    en: "R746: AI arc PV8 recognition rate (raw)"
+    de: "„AI arc PV8 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV8 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5647,8 +5705,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r747
   name:
-    de: "R747: AI arc PV9 recognition rate (roh)"
-    en: "R747: AI arc PV9 recognition rate (raw)"
+    de: "„AI arc PV9 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV9 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -5672,8 +5730,8 @@ entries:
     word only, never enabled by default; does not imply extra MPPT channels.
 - key: pv_ext_r748
   name:
-    de: "R748: AI arc PV10 recognition rate (roh)"
-    en: "R748: AI arc PV10 recognition rate (raw)"
+    de: "„AI arc PV10 recognition rate“ (unbestätigt)"
+    en: "“AI arc PV10 recognition rate” (unconfirmed)"
   description:
     de: "Ungeklärter Erweiterungs-/Lichtbogen-Diagnoserohwert; Bedeutung für dieses Modell nicht belegt und kein Nachweis eines zusätzlichen PV-Eingangs."
     en: "Unresolved extension/arc-diagnostic raw value; its meaning on this model is unproven and it does not establish another PV input."
@@ -6059,8 +6117,8 @@ entries:
   notes: Single 32-bit entity (unsigned), low/high roles from the catalog group. Resolution from R65 once the device is identified.
 - key: grid_side_energy_today_r501
   name:
-    de: Netzseitige Tagesenergie (roh)
-    en: Grid-side energy today (raw)
+    de: Netzseitige Tagesenergie
+    en: Grid-side energy today
   description:
     de: "Netzseitige Tagesenergie als Rohzahl; Bedeutung nicht bestätigt."
     en: "Grid-side daily energy as a raw number; meaning not confirmed."
@@ -6084,8 +6142,8 @@ entries:
   notes: "Separate decision pending: signed 16 bit, not automatically monotonic and not part of the R65 whitelist. Raw only."
 - key: grid_connected_time_today
   name:
-    de: Netzparallelzeit heute (roh)
-    en: Grid-connected time today (raw)
+    de: Netzparallelzeit heute
+    en: Grid-connected time today
   description:
     de: "Heutige Dauer der Netzverbindung als Rohzahl (laut Hersteller in Sekunden)."
     en: "Time connected to the grid today as a raw number (seconds according to the manufacturer)."
@@ -6109,33 +6167,35 @@ entries:
   notes: Seconds per document; not an energy counter.
 - key: gen_energy_today_r536
   name:
-    de: GEN-Energie heute (roh)
-    en: Generator energy today (raw)
+    de: Generatorenergie heute
+    en: Generator energy today
   description:
-    de: "Heute vom Generator gelieferte Energie als Rohzahl."
-    en: "Energy delivered by the generator today as a raw number."
+    de: "Heute vom Generator-Anschluss gelieferte Energie in kWh (Anzeige des Wechselrichters: Rohwert / 10)."
+    en: "Energy delivered through the generator port today in kWh (inverter display: raw value / 10)."
   addr: 536
   type: u16
+  scale: 0.1
+  unit: kWh
+  device_class: energy
+  state_class: total_increasing
   category: diagnostic
   point: gen_port
   group: energy
-  tags:
-  - raw
   requires:
     feature: gen_port_mode
     equals: generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
-  release: unresolved
+  release: profile_dependent
   source: "V105.8 registers.json inverter: R536 (TXT 3306-3312)"
-  confidence: document_only
-  default_enabled: false
-  notes: GEN energy is a separate catalog decision and is not R65-scaled by default.
+  confidence: document_unit;C070_lcd_display_anchor
+  default_enabled: true
+  notes: "0.1 kWh per count: V105.8 unit plus the C070 GEN page (R536 / 10). Whether a generator on the GRID port shares this counter, and the reset behaviour, are open; independent of R65."
 - key: gen_energy_total_r537
   name:
-    de: GEN-Energie gesamt (roh)
-    en: Generator energy total (raw)
+    de: GEN-Energie gesamt
+    en: Generator energy total
   description:
     de: "Insgesamt vom Generator gelieferte Energie als Rohzahl."
     en: "Total energy delivered by the generator as a raw number."
@@ -6160,8 +6220,8 @@ entries:
   notes: "Documented as bytes but behaves as a word pair; resolution unresolved: raw only."
 - key: gen_runtime_total_r512
   name:
-    de: GEN-Laufzeit gesamt (roh)
-    en: Generator runtime total (raw)
+    de: GEN-Laufzeit gesamt
+    en: Generator runtime total
   description:
     de: "Gesamte Laufzeit des Generators als Rohzahl."
     en: "Total generator run time as a raw number."
@@ -6186,8 +6246,8 @@ entries:
   notes: Runtime, not energy; byte-vs-word labelling unresolved.
 - key: gen_runtime_today_r539
   name:
-    de: GEN-Laufzeit heute (roh)
-    en: Generator runtime today (raw)
+    de: GEN-Laufzeit heute
+    en: Generator runtime today
   description:
     de: "Heutige Laufzeit des Generators als Rohzahl."
     en: "Generator run time today as a raw number."
@@ -6386,11 +6446,11 @@ entries:
   default_enabled: false
 - key: parallel_balancing_stop_soc_raw
   name:
-    de: Off-Grid-Balancing-Stopp-SOC (roh)
-    en: Off-grid balancing stop SOC (raw)
+    de: Off-Grid-Balancing-Stopp-SOC
+    en: Off-grid balancing stop SOC
   description:
-    de: "Ladestand, bei dem der Ausgleich im Inselbetrieb endet, als Rohzahl."
-    en: "State of charge at which balancing ends in island operation, as a raw number."
+    de: "Dokumentiert als Ladezustandswort für das Ende des Ausgleichs im Inselbetrieb, als Rohzahl; Wirkung ungeklärt."
+    en: "Documented as an off-grid balancing-stop SOC word, as a raw number; effect unresolved."
   addr: 335
   type: raw
   entity_category: diagnostic
@@ -6413,8 +6473,8 @@ entries:
   notes: No unit or range printed.
 - key: parallel_config_2_raw
   name:
-    de: Parallel-Konfiguration 2 (roh)
-    en: Parallel configuration 2 (raw)
+    de: Parallel-Konfiguration 2
+    en: Parallel configuration 2
   description:
     de: "Zweite Parallel-Einstellung als Rohzahl; Bedeutung nicht bestätigt."
     en: "Second parallel setting as a raw number; meaning not confirmed."
@@ -6456,15 +6516,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R146 (TXT 1177-1191)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_weekdays
   name:
     de: ToU Wochentage
@@ -6483,15 +6546,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R146 (TXT 1177-1191)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: Bits 1..7 = Monday..Sunday.
 - key: tou_spain_mode
   name:
@@ -6511,15 +6577,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R146 (TXT 1177-1191)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot1_start
   name:
     de: ToU Slot 1 Start
@@ -6536,15 +6605,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R148 (TXT 1199-1207)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot1_power
   name:
     de: ToU Slot 1 Leistung
@@ -6565,15 +6637,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R154 (TXT 1232-1239)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: "LV profile: 1 W per count (document: LV 1 W / HV 10 W)."
 - key: tou_slot1_voltage
   name:
@@ -6595,19 +6670,22 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R160 (TXT 1264-1270)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot1_soc_raw
   name:
-    de: ToU Slot 1 SOC (roh)
-    en: ToU slot 1 SOC (raw)
+    de: ToU Slot 1 SOC
+    en: ToU slot 1 SOC
   description:
     de: "Ziel-Ladestand im 1. Zeitfenster als Rohzahl."
     en: "Target state of charge in time-of-use slot 1 as a raw number."
@@ -6632,8 +6710,8 @@ entries:
   notes: "Low/high byte split (grid/generator SOC) is plausible but not a universal consumer proof: raw word only."
 - key: tou_slot1_flags_raw
   name:
-    de: ToU Slot 1 Flags (roh)
-    en: ToU slot 1 flags (raw)
+    de: ToU Slot 1 Flags
+    en: ToU slot 1 flags
   description:
     de: "Weitere Einstellungen des 1. Zeitfensters als Rohzahl."
     en: "Further settings of time-of-use slot 1 as a raw number."
@@ -6672,15 +6750,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R149 (TXT 1207-1212)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot2_power
   name:
     de: ToU Slot 2 Leistung
@@ -6701,15 +6782,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R155 (TXT 1239-1244)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: "LV profile: 1 W per count (document: LV 1 W / HV 10 W)."
 - key: tou_slot2_voltage
   name:
@@ -6731,19 +6815,22 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R161 (TXT 1270-1275)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot2_soc_raw
   name:
-    de: ToU Slot 2 SOC (roh)
-    en: ToU slot 2 SOC (raw)
+    de: ToU Slot 2 SOC
+    en: ToU slot 2 SOC
   description:
     de: "Ziel-Ladestand im 2. Zeitfenster als Rohzahl."
     en: "Target state of charge in time-of-use slot 2 as a raw number."
@@ -6768,8 +6855,8 @@ entries:
   notes: "Low/high byte split (grid/generator SOC) is plausible but not a universal consumer proof: raw word only."
 - key: tou_slot2_flags_raw
   name:
-    de: ToU Slot 2 Flags (roh)
-    en: ToU slot 2 flags (raw)
+    de: ToU Slot 2 Flags
+    en: ToU slot 2 flags
   description:
     de: "Weitere Einstellungen des 2. Zeitfensters als Rohzahl."
     en: "Further settings of time-of-use slot 2 as a raw number."
@@ -6808,15 +6895,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R150 (TXT 1212-1217)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot3_power
   name:
     de: ToU Slot 3 Leistung
@@ -6837,15 +6927,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R156 (TXT 1244-1249)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: "LV profile: 1 W per count (document: LV 1 W / HV 10 W)."
 - key: tou_slot3_voltage
   name:
@@ -6867,19 +6960,22 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R162 (TXT 1275-1280)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot3_soc_raw
   name:
-    de: ToU Slot 3 SOC (roh)
-    en: ToU slot 3 SOC (raw)
+    de: ToU Slot 3 SOC
+    en: ToU slot 3 SOC
   description:
     de: "Ziel-Ladestand im 3. Zeitfenster als Rohzahl."
     en: "Target state of charge in time-of-use slot 3 as a raw number."
@@ -6904,8 +7000,8 @@ entries:
   notes: "Low/high byte split (grid/generator SOC) is plausible but not a universal consumer proof: raw word only."
 - key: tou_slot3_flags_raw
   name:
-    de: ToU Slot 3 Flags (roh)
-    en: ToU slot 3 flags (raw)
+    de: ToU Slot 3 Flags
+    en: ToU slot 3 flags
   description:
     de: "Weitere Einstellungen des 3. Zeitfensters als Rohzahl."
     en: "Further settings of time-of-use slot 3 as a raw number."
@@ -6944,15 +7040,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R151 (TXT 1217-1222)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot4_power
   name:
     de: ToU Slot 4 Leistung
@@ -6973,15 +7072,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R157 (TXT 1249-1254)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: "LV profile: 1 W per count (document: LV 1 W / HV 10 W)."
 - key: tou_slot4_voltage
   name:
@@ -7003,19 +7105,22 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R163 (TXT 1280-1285)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot4_soc_raw
   name:
-    de: ToU Slot 4 SOC (roh)
-    en: ToU slot 4 SOC (raw)
+    de: ToU Slot 4 SOC
+    en: ToU slot 4 SOC
   description:
     de: "Ziel-Ladestand im 4. Zeitfenster als Rohzahl."
     en: "Target state of charge in time-of-use slot 4 as a raw number."
@@ -7040,8 +7145,8 @@ entries:
   notes: "Low/high byte split (grid/generator SOC) is plausible but not a universal consumer proof: raw word only."
 - key: tou_slot4_flags_raw
   name:
-    de: ToU Slot 4 Flags (roh)
-    en: ToU slot 4 flags (raw)
+    de: ToU Slot 4 Flags
+    en: ToU slot 4 flags
   description:
     de: "Weitere Einstellungen des 4. Zeitfensters als Rohzahl."
     en: "Further settings of time-of-use slot 4 as a raw number."
@@ -7080,15 +7185,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R152 (TXT 1222-1227)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot5_power
   name:
     de: ToU Slot 5 Leistung
@@ -7109,15 +7217,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R158 (TXT 1254-1259)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: "LV profile: 1 W per count (document: LV 1 W / HV 10 W)."
 - key: tou_slot5_voltage
   name:
@@ -7139,19 +7250,22 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R164 (TXT 1285-1290)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot5_soc_raw
   name:
-    de: ToU Slot 5 SOC (roh)
-    en: ToU slot 5 SOC (raw)
+    de: ToU Slot 5 SOC
+    en: ToU slot 5 SOC
   description:
     de: "Ziel-Ladestand im 5. Zeitfenster als Rohzahl."
     en: "Target state of charge in time-of-use slot 5 as a raw number."
@@ -7176,8 +7290,8 @@ entries:
   notes: "Low/high byte split (grid/generator SOC) is plausible but not a universal consumer proof: raw word only."
 - key: tou_slot5_flags_raw
   name:
-    de: ToU Slot 5 Flags (roh)
-    en: ToU slot 5 flags (raw)
+    de: ToU Slot 5 Flags
+    en: ToU slot 5 flags
   description:
     de: "Weitere Einstellungen des 5. Zeitfensters als Rohzahl."
     en: "Further settings of time-of-use slot 5 as a raw number."
@@ -7216,15 +7330,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R153 (TXT 1227-1232)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot6_power
   name:
     de: ToU Slot 6 Leistung
@@ -7245,15 +7362,18 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R159 (TXT 1259-1264)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: "LV profile: 1 W per count (document: LV 1 W / HV 10 W)."
 - key: tou_slot6_voltage
   name:
@@ -7275,19 +7395,22 @@ entries:
   tags:
   - tou
   requires:
-    feature: battery
-    equals: true
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: tou_used
+      equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R165 (TXT 1290-1295)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
 - key: tou_slot6_soc_raw
   name:
-    de: ToU Slot 6 SOC (roh)
-    en: ToU slot 6 SOC (raw)
+    de: ToU Slot 6 SOC
+    en: ToU slot 6 SOC
   description:
     de: "Ziel-Ladestand im 6. Zeitfenster als Rohzahl."
     en: "Target state of charge in time-of-use slot 6 as a raw number."
@@ -7312,8 +7435,8 @@ entries:
   notes: "Low/high byte split (grid/generator SOC) is plausible but not a universal consumer proof: raw word only."
 - key: tou_slot6_flags_raw
   name:
-    de: ToU Slot 6 Flags (roh)
-    en: ToU slot 6 flags (raw)
+    de: ToU Slot 6 Flags
+    en: ToU slot 6 flags
   description:
     de: "Weitere Einstellungen des 6. Zeitfensters als Rohzahl."
     en: "Further settings of time-of-use slot 6 as a raw number."
@@ -7336,3 +7459,1694 @@ entries:
   confidence: document_only
   default_enabled: false
   notes: "Grid/generator charge and Spain/sell flags; source ranges incomplete: raw word only."
+- key: external_signal_reported
+  name:
+    de: "Grid/Gen Signal (Einstellung)"
+    en: "Grid/Gen Signal (setting)"
+  description:
+    de: "Eingestellte Signal-Anforderung (Aus, Netz-Signal, Gen-Signal oder beide); beide Signale teilen sich einen Ausgang. Sagt nichts über den Zustand eines angeschlossenen Schützes."
+    en: "Configured signal request (off, Grid Signal, Gen Signal or both); both signals share one output. Says nothing about the state of a connected contactor."
+  addr: 140
+  mask: 3
+  type: enum
+  enum:
+    0: "off"
+    1: grid
+    2: gen
+    3: both
+  enum_labels:
+    'off': 'off'
+    'grid': 'grid'
+    'gen': 'gen'
+    'both': 'both'
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  category: settings
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R140; coverage-1 sensors.json (add_decoded); contracts-1 (one shared latch)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Configured signal request (R140 bits 0-1); both flags drive one shared output (GEN branch tested first, GRID
+    fallback). Says nothing about the state of a connected contactor.'
+- key: bms_alarm_word
+  name:
+    de: BMS-Alarmwort
+    en: BMS alarm word
+  description:
+    de: Alarmwort der Batterie-BMS-Meldung (Rohwort). 0 beweist keine gesunde Batterie.
+    en: Alarm word reported by the battery BMS (raw word). Zero does not prove a healthy battery.
+  addr: 220
+  type: bitfield
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R220; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Alarm word reported by the battery BMS (raw word). Zero does not prove a healthy battery. Evidence:
+    document mapping public copy.'
+- key: bms_fault_word
+  name:
+    de: BMS-Fehlerwort
+    en: BMS fault word
+  description:
+    de: Fehlerwort der Batterie-BMS-Meldung (Rohwort). 0 beweist keine gesunde Batterie.
+    en: Fault word reported by the battery BMS (raw word). Zero does not prove a healthy battery.
+  addr: 221
+  type: bitfield
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R221; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Fault word reported by the battery BMS (raw word). Zero does not prove a healthy battery. Evidence:
+    document mapping public copy.'
+- key: bms_force_charge
+  name:
+    de: BMS-Zwangsladeanforderung
+    en: BMS force-charge flag
+  description:
+    de: Das BMS meldet Zwangsladung.
+    en: The BMS reports force charge.
+  addr: 222
+  mask: 2
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R222; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'The BMS reports force charge (R222 bit 1). Evidence: document mapping public copy.'
+- key: bms_sleep
+  name:
+    de: BMS-Schlafflag
+    en: BMS sleep flag
+  description:
+    de: Das BMS meldet Schlafmodus.
+    en: The BMS reports sleep.
+  addr: 222
+  mask: 8
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R222; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'The BMS reports sleep (R222 bit 3). Evidence: document mapping public copy.'
+- key: bms_flags_raw
+  name:
+    de: BMS-Statusflags
+    en: BMS flags
+  description:
+    de: BMS-Statusbits als Rohwort.
+    en: BMS status flags as a raw word.
+  addr: 222
+  type: bitfield
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R222; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'BMS status flags (R222) as a raw word. Evidence: document mapping public copy.'
+- key: bms_protocol_reported
+  name:
+    de: Gemeldete BMS-Protokollkennung
+    en: BMS protocol identifier
+  description:
+    de: Gemeldete BMS-Protokollkennung; beweist keine aktive BMS-Verbindung.
+    en: Reported BMS protocol identifier; does not prove an active BMS link.
+  addr: 223
+  type: raw
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R223; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Reported BMS protocol identifier (R223); does not prove an active BMS link. Evidence: document
+    mapping public copy.'
+- key: bms_soh_raw
+  name:
+    de: "BMS SoH"
+    en: "BMS SoH"
+  description:
+    de: BMS-Gesundheitszustand als Rohwert; Einheit nicht bestätigt.
+    en: BMS state of health as a raw value; unit not confirmed.
+  addr: 224
+  type: raw
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R224; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'BMS state of health (R224) as a raw value; unit not confirmed. Evidence: document mapping public
+    copy.'
+- key: bms_software_version
+  name:
+    de: BMS-Softwareversion
+    en: BMS software version
+  description:
+    de: BMS-Softwarestand als Rohwert.
+    en: BMS software version as a raw value.
+  addr: 225
+  type: raw
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R225; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'BMS software version (R225) as a raw value. Evidence: document mapping public copy.'
+- key: bms_capacity_reported
+  name:
+    de: Gemeldete BMS-Nennkapazität
+    en: BMS rated capacity reported
+  description:
+    de: Vom BMS gemeldete Nennkapazität als Rohwert; Einheit nicht bestätigt.
+    en: Rated capacity reported by the BMS as a raw value; unit not confirmed.
+  addr: 226
+  type: raw
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R226; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Rated capacity reported by the BMS (R226) as a raw value; unit not confirmed. Evidence: document
+    mapping public copy.'
+- key: bms_hardware_version
+  name:
+    de: BMS-Hardwareversion
+    en: BMS hardware version
+  description:
+    de: BMS-Hardwarestand als Rohwert.
+    en: BMS hardware version as a raw value.
+  addr: 227
+  type: raw
+  entity_category: diagnostic
+  category: battery
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R227; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'BMS hardware version (R227) as a raw value. Evidence: document mapping public copy.'
+- key: drm_status_raw
+  name:
+    de: DRM-Eingangsstatus
+    en: DRM input status
+  description:
+    de: Eingangszustand der DRM-Anschlüsse als Rohwort.
+    en: State of the DRM inputs as a raw word.
+  addr: 544
+  type: bitfield
+  entity_category: diagnostic
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'State of the DRM inputs (R544) as a raw word. Evidence: document mapping public copy.'
+- key: drm0_reported
+  name:
+    de: DRM0-Eingang gemeldet
+    en: DRM0 input reported
+  description:
+    de: DRM-Eingang 0 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 0 reported active; says nothing about wiring.
+  addr: 544
+  mask: 1
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 0 reported active (R544 bit 1); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm1_reported
+  name:
+    de: DRM1-Eingang gemeldet
+    en: DRM1 input reported
+  description:
+    de: DRM-Eingang 1 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 1 reported active; says nothing about wiring.
+  addr: 544
+  mask: 2
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 1 reported active (R544 bit 2); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm2_reported
+  name:
+    de: DRM2-Eingang gemeldet
+    en: DRM2 input reported
+  description:
+    de: DRM-Eingang 2 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 2 reported active; says nothing about wiring.
+  addr: 544
+  mask: 4
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 2 reported active (R544 bit 3); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm3_reported
+  name:
+    de: DRM3-Eingang gemeldet
+    en: DRM3 input reported
+  description:
+    de: DRM-Eingang 3 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 3 reported active; says nothing about wiring.
+  addr: 544
+  mask: 8
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 3 reported active (R544 bit 4); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm4_reported
+  name:
+    de: DRM4-Eingang gemeldet
+    en: DRM4 input reported
+  description:
+    de: DRM-Eingang 4 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 4 reported active; says nothing about wiring.
+  addr: 544
+  mask: 16
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 4 reported active (R544 bit 5); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm5_reported
+  name:
+    de: DRM5-Eingang gemeldet
+    en: DRM5 input reported
+  description:
+    de: DRM-Eingang 5 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 5 reported active; says nothing about wiring.
+  addr: 544
+  mask: 32
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 5 reported active (R544 bit 6); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm6_reported
+  name:
+    de: DRM6-Eingang gemeldet
+    en: DRM6 input reported
+  description:
+    de: DRM-Eingang 6 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 6 reported active; says nothing about wiring.
+  addr: 544
+  mask: 64
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 6 reported active (R544 bit 7); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm7_reported
+  name:
+    de: DRM7-Eingang gemeldet
+    en: DRM7 input reported
+  description:
+    de: DRM-Eingang 7 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 7 reported active; says nothing about wiring.
+  addr: 544
+  mask: 128
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 7 reported active (R544 bit 8); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: drm8_reported
+  name:
+    de: DRM8-Eingang gemeldet
+    en: DRM8 input reported
+  description:
+    de: DRM-Eingang 8 meldet aktiv; keine Aussage über die Verdrahtung.
+    en: DRM input 8 reported active; says nothing about wiring.
+  addr: 544
+  mask: 256
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: status
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'DRM input 8 reported active (R544 bit 9); says nothing about wiring. Evidence: document mapping
+    public copy.'
+- key: ct_selfcheck_result_raw
+  name:
+    de: CT-Selbsttestergebnis
+    en: CT self-check result
+  description:
+    de: Ergebnis der CT-Selbstprüfung als Rohwort. Ohne abgeschlossene Prüfung unbekannt, nicht
+      „in Ordnung“.
+    en: CT self-check result as a raw word. Unknown unless a check has completed, never “healthy”.
+  addr: 597
+  type: bitfield
+  entity_category: diagnostic
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - ct
+      - ct_and_second_meter
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'CT self-check result (R597) as a raw word. Unknown unless a check has completed, never “healthy”.
+    Evidence: document mapping public copy.'
+- key: ct_a_selfcheck_success
+  name:
+    de: CT A Selbsttest erfolgreich
+    en: CT A self-check success
+  description:
+    de: 'CT A: Selbstprüfung als erfolgreich gemeldet. Ohne abgeschlossene Prüfung unbekannt.'
+    en: 'CT A: self-check reported successful. Unknown unless a check has completed.'
+  addr: 597
+  mask: 1
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - ct
+      - ct_and_second_meter
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'CT A: self-check reported successful (R597). Unknown unless a check has completed. Evidence:
+    document mapping public copy.'
+- key: ct_b_selfcheck_success
+  name:
+    de: CT B Selbsttest erfolgreich
+    en: CT B self-check success
+  description:
+    de: 'CT B: Selbstprüfung als erfolgreich gemeldet. Ohne abgeschlossene Prüfung unbekannt.'
+    en: 'CT B: self-check reported successful. Unknown unless a check has completed.'
+  addr: 597
+  mask: 2
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - ct
+      - ct_and_second_meter
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'CT B: self-check reported successful (R597). Unknown unless a check has completed. Evidence:
+    document mapping public copy.'
+- key: ct_c_selfcheck_success
+  name:
+    de: CT C Selbsttest erfolgreich
+    en: CT C self-check success
+  description:
+    de: 'CT C: Selbstprüfung als erfolgreich gemeldet. Ohne abgeschlossene Prüfung unbekannt.'
+    en: 'CT C: self-check reported successful. Unknown unless a check has completed.'
+  addr: 597
+  mask: 4
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - ct
+      - ct_and_second_meter
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'CT C: self-check reported successful (R597). Unknown unless a check has completed. Evidence:
+    document mapping public copy.'
+- key: ct_phase_sequence_result
+  name:
+    de: CT-Phasenfolgeergebnis
+    en: CT phase sequence result
+  description:
+    de: Ergebnis der CT-Phasenfolge als Zahl.
+    en: CT phase sequence result as a number.
+  addr: 597
+  mask: 56
+  shift: 3
+  type: raw
+  entity_category: diagnostic
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - ct
+      - ct_and_second_meter
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'CT phase sequence result (R597 bits 3–5) as a number. Evidence: document mapping public copy.'
+- key: ct_a_direction_reversed
+  name:
+    de: CT A Ergebnis Gegenrichtung
+    en: CT A reverse-direction result
+  description:
+    de: 'CT A: Richtung als vertauscht gemeldet.'
+    en: CT A reported as reversed.
+  addr: 597
+  mask: 64
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - ct
+      - ct_and_second_meter
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'CT A reported as reversed (R597 bit 6). Evidence: document mapping public copy.'
+- key: ct_direction_bit7_raw
+  name:
+    de: "CT-Richtungsbit 7 (Bedeutung unbestätigt)"
+    en: "CT direction bit 7 (meaning unconfirmed)"
+  description:
+    de: CT-Richtungsbit 7, Bedeutung nicht bestätigt.
+    en: CT direction bit 7, meaning not confirmed.
+  addr: 597
+  mask: 128
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'CT direction bit 7 (R597), meaning not confirmed. Evidence: document mapping public copy.'
+- key: ct_direction_bit8_raw
+  name:
+    de: "CT-Richtungsbit 8 (Bedeutung unbestätigt)"
+    en: "CT direction bit 8 (meaning unconfirmed)"
+  description:
+    de: CT-Richtungsbit 8, Bedeutung nicht bestätigt.
+    en: CT direction bit 8, meaning not confirmed.
+  addr: 597
+  mask: 256
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: grid
+  point: grid_terminal
+  group: status
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'CT direction bit 8 (R597), meaning not confirmed. Evidence: document mapping public copy.'
+- key: grid_reactive_power_a_raw
+  name:
+    de: Netzblindleistung A
+    en: Grid reactive power A
+  description:
+    de: Netz-Blindleistung Phase A als Rohwert; Einheit und Vorzeichen nicht bestätigt.
+    en: Grid reactive power phase A as a raw value; unit and sign not confirmed.
+  addr: 710
+  type: raw
+  entity_category: diagnostic
+  category: power
+  point: grid_terminal
+  group: ac
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R710; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Grid reactive power phase A as a raw value; unit and sign not confirmed. Evidence: document
+    mapping public copy.'
+- key: grid_reactive_power_b_raw
+  name:
+    de: Netzblindleistung B
+    en: Grid reactive power B
+  description:
+    de: Netz-Blindleistung Phase B als Rohwert; Einheit und Vorzeichen nicht bestätigt.
+    en: Grid reactive power phase B as a raw value; unit and sign not confirmed.
+  addr: 711
+  type: raw
+  entity_category: diagnostic
+  category: power
+  point: grid_terminal
+  group: ac
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R711; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Grid reactive power phase B as a raw value; unit and sign not confirmed. Evidence: document
+    mapping public copy.'
+- key: grid_reactive_power_c_raw
+  name:
+    de: Netzblindleistung C
+    en: Grid reactive power C
+  description:
+    de: Netz-Blindleistung Phase C als Rohwert; Einheit und Vorzeichen nicht bestätigt.
+    en: Grid reactive power phase C as a raw value; unit and sign not confirmed.
+  addr: 712
+  type: raw
+  entity_category: diagnostic
+  category: power
+  point: grid_terminal
+  group: ac
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R712; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Grid reactive power phase C as a raw value; unit and sign not confirmed. Evidence: document
+    mapping public copy.'
+- key: inverter_reactive_power_a_raw
+  name:
+    de: Wechselrichter-Blindleistung A
+    en: Inverter reactive power A
+  description:
+    de: Wechselrichter-Blindleistung Phase A als Rohwert; Einheit und Vorzeichen nicht bestätigt.
+    en: Inverter reactive power phase A as a raw value; unit and sign not confirmed.
+  addr: 713
+  type: raw
+  entity_category: diagnostic
+  category: power
+  point: inverter_output
+  group: ac
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R713; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Inverter reactive power phase A as a raw value; unit and sign not confirmed. Evidence: document
+    mapping public copy.'
+- key: inverter_reactive_power_b_raw
+  name:
+    de: Wechselrichter-Blindleistung B
+    en: Inverter reactive power B
+  description:
+    de: Wechselrichter-Blindleistung Phase B als Rohwert; Einheit und Vorzeichen nicht bestätigt.
+    en: Inverter reactive power phase B as a raw value; unit and sign not confirmed.
+  addr: 714
+  type: raw
+  entity_category: diagnostic
+  category: power
+  point: inverter_output
+  group: ac
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R714; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Inverter reactive power phase B as a raw value; unit and sign not confirmed. Evidence: document
+    mapping public copy.'
+- key: inverter_reactive_power_c_raw
+  name:
+    de: Wechselrichter-Blindleistung C
+    en: Inverter reactive power C
+  description:
+    de: Wechselrichter-Blindleistung Phase C als Rohwert; Einheit und Vorzeichen nicht bestätigt.
+    en: Inverter reactive power phase C as a raw value; unit and sign not confirmed.
+  addr: 715
+  type: raw
+  entity_category: diagnostic
+  category: power
+  point: inverter_output
+  group: ac
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R715; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Inverter reactive power phase C as a raw value; unit and sign not confirmed. Evidence: document
+    mapping public copy.'
+- key: dsp_operating_hours_raw
+  name:
+    de: DSP-Betriebsstunden
+    en: DSP operating hours
+  description:
+    de: Betriebsstunden des DSP als Rohwert; Einheit nicht bestätigt.
+    en: DSP operating hours as a raw value; unit not confirmed.
+  addr: 716
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: status
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R716; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'DSP operating hours (R716) as a raw value; unit not confirmed. Evidence: document mapping public
+    copy.'
+- key: reported_comm_version_r8
+  name:
+    de: Gemeldete Kommunikationsversion
+    en: Reported communications version
+  description:
+    de: Gemeldete Kommunikationsversion als Rohwert (Diagnose).
+    en: Reported communications version as a raw value (diagnostics).
+  addr: 8
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R8; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Reported communications version as a raw value (diagnostics). Evidence: document mapping
+    public copy.'
+- key: grid_standard_version
+  name:
+    de: Netznormversion
+    en: Grid-standard version
+  description:
+    de: Netznormversion als Rohwert (Diagnose).
+    en: Grid-standard version as a raw value (diagnostics).
+  addr: 10
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R10; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Grid-standard version as a raw value (diagnostics). Evidence: document mapping public copy.'
+- key: safety_type_raw
+  name:
+    de: Sicherheits-Typcode
+    en: Safety type code
+  description:
+    de: Sicherheits-Typcode als Rohwert (Diagnose).
+    en: Safety type code as a raw value (diagnostics).
+  addr: 19
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R19; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Safety type code as a raw value (diagnostics). Evidence: document mapping public copy.'
+- key: inverter_series_raw
+  name:
+    de: Baureihencode
+    en: Inverter series code
+  description:
+    de: Baureihencode als Rohwert (Diagnose).
+    en: Inverter series code as a raw value (diagnostics).
+  addr: 29
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R29; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Inverter series code as a raw value (diagnostics). Evidence: document mapping public copy.'
+- key: rtc_source_raw
+  name:
+    de: RTC-Quellcode
+    en: RTC source code
+  description:
+    de: RTC-Quellcode als Rohwert (Diagnose).
+    en: RTC source code as a raw value (diagnostics).
+  addr: 30
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R30; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'RTC source code as a raw value (diagnostics). Evidence: document mapping public copy.'
+- key: lcd_mcu_type_raw
+  name:
+    de: LCD-MCU-Typcode
+    en: LCD MCU type code
+  description:
+    de: LCD-MCU-Typcode als Rohwert (Diagnose).
+    en: LCD MCU type code as a raw value (diagnostics).
+  addr: 31
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R31; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'LCD MCU type code as a raw value (diagnostics). Evidence: document mapping public copy.'
+- key: control_mcu_type_raw
+  name:
+    de: Regelungs-MCU-Typcode
+    en: Control MCU type code
+  description:
+    de: Regelungs-MCU-Typcode als Rohwert (Diagnose).
+    en: Control MCU type code as a raw value (diagnostics).
+  addr: 32
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R32; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Control MCU type code as a raw value (diagnostics). Evidence: document mapping public copy.'
+- key: communication_address_r74
+  name:
+    de: Kommunikationsadresse
+    en: Communication address
+  description:
+    de: Kommunikationsadresse als Rohwert (Diagnose).
+    en: Communication address as a raw value (diagnostics).
+  addr: 74
+  type: raw
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: identity
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R74; coverage-1 sensors.json (add_raw_diagnostic)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Communication address as a raw value (diagnostics). Evidence: document mapping public copy.'
+- key: grid_monitoring_source
+  name:
+    de: "CT/Meter / Grid Tie Meter2 (Einstellung)"
+    en: "CT/Meter / Grid Tie Meter2 (setting)"
+  description:
+    de: 'Konfigurierte Netzerfassung: Bit 0 CT/Zähler, Bit 1–2 weitere Zählernutzung.'
+    en: 'Configured grid sensing source: bit 0 CT/meter, bits 1–2 extra-meter uses.'
+  addr: 344
+  type: raw
+  entity_category: diagnostic
+  category: settings
+  point: diagnostic
+  group: settings
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R344; coverage-1 sensors.json (settings_readback_only)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Configured grid sensing source (R344 raw word): bit 0 CT/meter, bits 1–2 extra-meter uses. Evidence:
+    document mapping public copy.'
+- key: meter_manufacturer_reported
+  name:
+    de: "Meter Select (Einstellung)"
+    en: "Meter Select (setting)"
+  description:
+    de: Konfigurierter Zählerhersteller.
+    en: Configured meter manufacturer.
+  addr: 345
+  type: raw
+  entity_category: diagnostic
+  category: settings
+  point: diagnostic
+  group: settings
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R345; coverage-1 sensors.json (settings_readback_only)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Configured meter manufacturer (R345, raw). Evidence: document mapping public copy.'
+- key: ct_ratio_reported
+  name:
+    de: "CT Ratio (Einstellung)"
+    en: "CT Ratio (setting)"
+  description:
+    de: Konfiguriertes externes CT-Verhältnis; Verbraucher in der Firmware unbekannt.
+    en: Configured external CT ratio; firmware consumer unknown.
+  addr: 347
+  type: raw
+  entity_category: diagnostic
+  category: settings
+  point: diagnostic
+  group: settings
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: 'V105.8 registers.json inverter: R347; coverage-1 sensors.json (settings_readback_only)'
+  confidence: document_mapping_public_copy
+  default_enabled: false
+  notes: 'Configured external CT ratio (R347, raw); firmware consumer unknown. Evidence: document mapping
+    public copy.'
+- key: dc_input_power_total
+  name:
+    de: DC-Eingangsleistung gesamt
+    en: DC input power total
+  description:
+    de: Summe der DC-Eingangsleistung der in der Anlagenbeschreibung genutzten Eingänge dieses Wechselrichters.
+    en: Sum of the DC input power of this inverter’s inputs the installation description marks as used.
+  type: derived
+  derive:
+    op: sum
+    terms:
+    - addr: 672
+      requires:
+        feature: mppt1_used
+        equals: true
+    - addr: 673
+      requires:
+        feature: mppt2_used
+        equals: true
+  unit: W
+  device_class: power
+  state_class: measurement
+  category: power
+  point: pv
+  group: pv
+  requires:
+    any_of:
+    - feature: mppt1_used
+      equals: true
+    - feature: mppt2_used
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R672; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Sum of the DC input power of this inverter’s inputs the installation description marks as used.
+    Evidence: document mapping public copy.'
+- key: battery_power_derived
+  name:
+    de: Batterieleistung (U × I)
+    en: Battery power (V × I)
+  description:
+    de: Batterieleistung aus Spannung × Strom; die Richtung wird nicht gedeutet.
+    en: Battery power from voltage × current; the direction is not interpreted.
+  type: derived
+  derive:
+    op: product
+    terms:
+    - addr: 587
+      scale: 0.01
+    - addr: 591
+      signed: true
+      scale: 0.01
+  unit: W
+  device_class: power
+  state_class: measurement
+  category: power
+  point: battery
+  group: battery
+  requires:
+    feature: battery
+    equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R587; coverage-1 sensors.json (add_decoded)'
+  confidence: reported_value_arithmetic_plus_app_sign_policy;firmware_sign_proof_gap
+  default_enabled: true
+  notes: 'Battery power from voltage × current; the direction is not interpreted. Evidence: reported value
+    arithmetic plus app sign policy;firmware sign proof gap.'
+- key: bms_power_derived
+  name:
+    de: BMS-Batterieleistung (U × I)
+    en: BMS battery power (V × I)
+  description:
+    de: BMS-Batterieleistung als negiertes Produkt aus Spannung × BMS-Strom (Laden ergibt bei positivem
+      BMS-Strom negative Leistung); die physikalische Richtung wird nicht gedeutet.
+    en: BMS battery power as the negated product of voltage × BMS current (charging gives negative power
+      when the BMS current is positive); the physical direction is not interpreted.
+  type: derived
+  derive:
+    op: neg_product
+    terms:
+    - addr: 215
+      scale: 0.01
+    - addr: 216
+      signed: true
+  unit: W
+  device_class: power
+  state_class: measurement
+  category: power
+  point: bms
+  group: settings
+  requires:
+    all_of:
+    - feature: battery
+      equals: true
+    - feature: bms
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R215; coverage-1 sensors.json (add_decoded)'
+  confidence: reported_value_arithmetic_plus_app_sign_policy;firmware_sign_proof_gap
+  default_enabled: true
+  notes: 'BMS battery power from voltage × current (sign by this app’s convention); the direction is not
+    interpreted. Evidence: reported value arithmetic plus app sign policy;firmware sign proof gap.'
+- key: force_off_grid_reported
+  name:
+    de: "Force Off-Grid (Anforderung)"
+    en: "Force Off-Grid (request)"
+  description:
+    de: 'Anforderung Inselbetrieb: 0 = Auto, 1 = erzwungen; kein Netzzustand.'
+    en: 'Force off-grid request: 0 = Auto, 1 = forced; not the grid state.'
+  addr: 179
+  type: enum
+  enum:
+    0: auto
+    1: force_off_grid
+  undefined_not_reported: true
+  enum_labels:
+    auto: auto
+    force_off_grid: force_off_grid
+  entity_category: diagnostic
+  category: settings
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R179; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Force off-grid request (R179): 0 = Auto, 1 = forced; not the grid state. Evidence: document
+    mapping public copy.'
+- key: signal_island_mode_reported
+  name:
+    de: Signal Island Mode
+    en: Signal Island Mode
+  description:
+    de: 'Eingestellter Signal Island Mode: ein, aus oder unbekannt; keine Rückmeldung eines
+      Kontakts oder einer N–PE-Verbindung.'
+    en: 'Configured Signal Island Mode: on, off or unknown; no feedback of a contact or
+      an N–PE bond.'
+  addr: 178
+  mask: 768
+  shift: 8
+  type: enum
+  enum:
+    2: 'off'
+    3: 'on'
+  undefined_not_reported: true
+  enum_labels:
+    'off': 'off'
+    'on': 'on'
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  category: settings
+  point: diagnostic
+  group: settings
+  requires:
+    any_of:
+    - feature: battery
+      equals: true
+    - feature: utility_grid
+      equals: false
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R178; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Configured Signal Island Mode (R178 bits 8–9): on, off or unknown; no feedback of a contact
+    or an N–PE bond. Evidence: document mapping public copy.'
+- key: mppt_scanning_reported
+  name:
+    de: "MPPT Scan (Einstellung)"
+    en: "MPPT Scan (setting)"
+  description:
+    de: Eingestellter MPPT-Mehrpunkt-Scan.
+    en: Configured MPPT multi-point scanning.
+  addr: 341
+  mask: 4
+  type: bitfield
+  not_reported:
+  - 65535
+  entity_category: diagnostic
+  platform: binary_sensor
+  category: settings
+  point: diagnostic
+  group: settings
+  requires:
+    any_of:
+    - feature: mppt1_used
+      equals: true
+    - feature: mppt2_used
+      equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: 'V105.8 registers.json inverter: R341; coverage-1 sensors.json (add_decoded)'
+  confidence: document_mapping_public_copy
+  default_enabled: true
+  notes: 'Configured MPPT multi-point scanning (R341 bit 2). Evidence: document mapping public copy.'
+- key: export_mode_setting
+  name:
+    de: "System Work Mode (Einstellung)"
+    en: "System Work Mode (setting)"
+  description:
+    de: "Eingestellter System Work Mode: Selling First, Zero Export to Load oder Zero Export to CT; kein Nachweis einer Einspeiseerlaubnis."
+    en: "Configured System Work Mode: Selling First, Zero Export to Load or Zero Export to CT; no proof of permission to export."
+  addr: 142
+  type: enum
+  enum:
+    0: sales_enabled
+    1: internal_zero_export
+    2: external_zero_export
+  undefined_not_reported: true
+  enum_labels:
+    sales_enabled: sales_enabled
+    internal_zero_export: internal_zero_export
+    external_zero_export: external_zero_export
+  entity_category: diagnostic
+  category: settings
+  point: diagnostic
+  group: settings
+  requires:
+    feature: utility_grid
+    equals: true
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: profile_dependent
+  source: "V105.8 registers.json inverter: R142; coverage-1 settings.json (export-limit mode selector), consistency source for the installation question export_policy"
+  confidence: document_enum_recovered_in_firmware
+  default_enabled: false
+  notes: Read for the installation description consistency hint only; never selected by default and never chooses an answer.
+- key: self_check_time_setting
+  name:
+    de: "Selbsttest-Zeit (Einstellung)"
+    en: "Self-check time (setting)"
+  description:
+    de: "Rohwert des Selbsttest-Zeit-Worts; Bedeutung bei Platzhalterwerten ungeklärt."
+    en: "Raw self-check time word; its meaning is unresolved for a placeholder value."
+  addr: 82
+  type: raw
+  display: hex
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: "V105.8 registers.json inverter: R82; KB ffff-1 (C070/1175 firmware study)"
+  confidence: document_text_plus_firmware_consumer_study
+  default_enabled: false
+  notes: Raw diagnostic, never a protection-health state. In the synchronized range, so slaves are expected to show the master's value.
+- key: anti_islanding_enable_raw
+  name:
+    de: "Anti-Island Mode"
+    en: "Anti-Island Mode"
+  description:
+    de: "Rohwert des Freigabeworts der Inselerkennung; keine Aussage über den gesamten Netzschutz."
+    en: "Raw anti-islanding enable word; no statement about the whole grid protection."
+  addr: 83
+  type: raw
+  display: hex
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: "V105.8 registers.json inverter: R83; KB ffff-1 (C070/1175 firmware study)"
+  confidence: document_text_plus_firmware_consumer_study
+  default_enabled: false
+  notes: Raw diagnostic, never a protection-health state. In the synchronized range, so slaves are expected to show the master's value.
+- key: reactive_pf_option_raw
+  name:
+    de: "Blindleistung/PF (Einstellung)"
+    en: "Reactive/PF (setting)"
+  description:
+    de: "Rohwert der Blindleistungs-/PF-Option; wirksamer Modus bei Platzhalterwerten ungeklärt."
+    en: "Raw reactive/PF option word; the effective mode is unresolved for placeholder values."
+  addr: 84
+  type: raw
+  display: hex
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: "V105.8 registers.json inverter: R84; KB ffff-1 (C070/1175 firmware study)"
+  confidence: document_text_plus_firmware_consumer_study
+  default_enabled: false
+  notes: Raw diagnostic, never a protection-health state. In the synchronized range, so slaves are expected to show the master's value.
+- key: rcd_enable_raw
+  name:
+    de: "Interner RCD"
+    en: "Internal RCD"
+  description:
+    de: "Rohwert des Interner RCDs; kein Nachweis einer funktionierenden Fehlerstromüberwachung."
+    en: "Raw RCD enable word; no proof of a working residual-current monitor."
+  addr: 86
+  type: raw
+  display: hex
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: "V105.8 registers.json inverter: R86; KB ffff-1 (C070/1175 firmware study)"
+  confidence: document_text_plus_firmware_consumer_study
+  default_enabled: false
+  notes: Raw diagnostic, never a protection-health state. In the synchronized range, so slaves are expected to show the master's value.
+- key: riso_enable_raw
+  name:
+    de: "RISO (Einstellung)"
+    en: "RISO (setting)"
+  description:
+    de: "Rohwert der Isolationsüberwachungs-Option; wirksames Verhalten bei Platzhalterwerten ungeklärt."
+    en: "Raw insulation-monitoring option word; the effective behaviour is unresolved for placeholder values."
+  addr: 87
+  type: raw
+  display: hex
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: "V105.8 registers.json inverter: R87; KB ffff-1 (C070/1175 firmware study)"
+  confidence: document_text_plus_firmware_consumer_study
+  default_enabled: false
+  notes: Raw diagnostic, never a protection-health state. In the synchronized range, so slaves are expected to show the master's value.
+- key: track_grid_phase_raw
+  name:
+    de: "Track Grid-Phase"
+    en: "Track Grid-Phase"
+  description:
+    de: "Rohwert der automatischen Phasenfolge-Korrektur; 0 bedeutet aus (Standard)."
+    en: "Raw automatic phase-sequence correction word; 0 means off (default)."
+  addr: 235
+  type: raw
+  display: hex
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: "V105.8 registers.json inverter: R235; KB ffff-1 (C070/1175 firmware study)"
+  confidence: document_text_plus_firmware_consumer_study
+  default_enabled: false
+  notes: Raw diagnostic, never a protection-health state. Outside the synchronized registers (65-209, 339-429); the value is shown as read per unit, no master copy is assumed.
+- key: it_system_raw
+  name:
+    de: "IT-System (Einstellung)"
+    en: "IT system (setting)"
+  description:
+    de: "Rohwert der Einstellung IT-System; beweist nicht die tatsächliche Erdung."
+    en: "Raw IT system setting word; does not prove the physical earthing."
+  addr: 236
+  type: raw
+  display: hex
+  entity_category: diagnostic
+  category: diagnostic
+  point: diagnostic
+  group: settings
+  requires: {}
+  supported_on:
+  - sg04lp3_eu
+  support_status: supported
+  release: unresolved
+  source: "V105.8 registers.json inverter: R236; KB ffff-1 (C070/1175 firmware study)"
+  confidence: document_text_plus_firmware_consumer_study
+  default_enabled: false
+  notes: Raw diagnostic, never a protection-health state. Outside the synchronized registers (65-209, 339-429); the value is shown as read per unit, no master copy is assumed.

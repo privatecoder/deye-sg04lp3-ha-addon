@@ -174,7 +174,9 @@ async def test_spain_mode_closes_every_tou_setting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, word: int
 ) -> None:
     async with plant_rig(tmp_path, monkeypatch) as rig:
-        await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r146": word}})
+        await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r146": word, "r133": 0}})
+        inv = svc_of(rig).runtime.inverters["deye1"]  # a generator on the GEN port: flag exists
+        inv.features = inv.features.model_copy(update={"gen_port_mode": "generator"})
         table = await rows(rig)
         for key in TOU:
             assert (table[key]["state"], table[key]["reason"]) == ("locked", "spain_mode"), key
@@ -543,7 +545,7 @@ async def test_submit_voltage_gate_is_decided_again_at_the_send_point(
     async with plant_rig(tmp_path, monkeypatch) as rig:
         await build_plant(rig, inverters=("deye1",), regs={"deye1": {"r111": 0}})
         svc = await ready(rig)
-        permit, _, _ = await prepare_direct(svc, "smart_load_off_voltage", 40)
+        permit, _, _ = await prepare_direct(svc, "smart_load_off_voltage", 44)
         rig.servers["gw1"].responder.regs[111] = 1
         op = await svc._run(permit)
         assert (op["status"], op["reason"]) == ("rejected", "voltage_mode_required")

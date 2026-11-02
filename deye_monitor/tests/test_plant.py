@@ -16,6 +16,7 @@ from deye_monitor.config import PlantConfig, parse_config, plant_problems
 from deye_monitor.device import InverterState
 from deye_monitor.plant import PlantStore, SwitchError
 from deye_monitor.store import LoadStatus
+from deye_monitor.write_ops import OPERATION_KEYS
 from tests.fakes.servers import SERIAL, Behavior, FakePty, Kind
 from tests.plant_helpers import A, B, PlantRig, plant_rig, serial_symlink
 from tests.transport_helpers import assert_wire_clean
@@ -260,8 +261,15 @@ async def test_inverters_cannot_enable_writes_or_reference_unknown_connections(
         status, body = await rig.call("POST", post, {**INV, "id": "deye2", "name": "second"})
         assert status == 422 and body["error"]["params"]["problems"][0]["code"] == "unit_conflict"
         status, body = await rig.call("GET", "/api/plant")
-        assert body["writes"]["inverters"] == {"deye1": {"allow_writes": False, "operations": []}}
-        assert len(body["writes"]["operations"]) == 38
+        assert body["writes"]["inverters"] == {
+            "deye1": {
+                "allow_writes": False,
+                "operations": [],
+                # a never answered description: raw defaults are no answers, so nothing is suggested
+                "suggested_operations": [],
+            }
+        }
+        assert len(body["writes"]["operations"]) == len(OPERATION_KEYS)
         assert not {"allow_writes", "enabled_write_operations", "profile"} & set(
             body["inverters"][0]
         )

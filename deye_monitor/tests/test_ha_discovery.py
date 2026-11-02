@@ -67,6 +67,32 @@ def inverter_doc(series: str = "g0", serial: str | None = "2401234567") -> dict[
     return device_document(NS, meta, components)
 
 
+NEW_SENSORS = (
+    "gen_power_raw_total",
+    "gen_energy_today_r536",
+    "external_signal_reported",
+    "signal_island_mode_reported",
+    "force_off_grid_reported",
+    "mppt_scanning_reported",
+    "bms_alarm_word",
+    "bms_force_charge",
+    "bms_power_derived",
+    "battery_power_derived",
+    "dc_input_power_total",
+    "drm3_reported",
+    "ct_phase_sequence_result",
+    "ct_a_selfcheck_success",
+    "grid_monitoring_source",
+    "relay_grid",
+)
+
+
+def new_sensors_doc() -> dict[str, Any]:
+    components = dict(comp(k) for k in NEW_SENSORS)
+    meta = DeviceMeta(NS.inverter_device_id("deye1"), "Deye 1", "inverter", "deye1", "2401234567")
+    return device_document(NS, meta, components)
+
+
 def golden(name: str, doc: Any) -> None:
     path = GOLDEN / name
     text = json.dumps(doc, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
@@ -77,6 +103,24 @@ def golden(name: str, doc: Any) -> None:
 
 def test_inverter_document_golden() -> None:
     golden("discovery_inverter.json", inverter_doc())
+
+
+def test_new_sensor_document_golden() -> None:
+    doc = new_sensors_doc()
+    golden("discovery_inverter_sensors_050.json", doc)
+    by_key = doc["components"]
+    assert by_key["signal_island_mode_reported"]["device_class"] == "enum"
+    assert by_key["signal_island_mode_reported"]["options"] == ["Off", "On", "Unknown"]
+    assert by_key["external_signal_reported"]["options"] == [
+        "Off",
+        "Grid Signal",
+        "Gen Signal",
+        "Both requests",
+        "Unknown",
+    ]
+    assert by_key["bms_power_derived"]["unit_of_measurement"] == "W"
+    assert by_key["gen_power_raw_total"]["device_class"] == "power"
+    assert by_key["gen_energy_today_r536"]["state_class"] == "total_increasing"
 
 
 def test_app_document_golden() -> None:
@@ -177,7 +221,8 @@ def test_expire_after_is_three_group_intervals() -> None:
 def test_enum_sensor_has_a_complete_option_list_and_no_unit_or_state_class() -> None:
     _, c = comp("operating_state")
     assert c["device_class"] == "enum"
-    assert c["options"] == ["Standby", "Self-check", "Normal", "Alarm", "Fault", "Activating"]
+    assert c["options"][:3] == ["Standby", "Self-check", "Normal (reported)"]
+    assert "Unknown" in c["options"]
     assert not {"unit_of_measurement", "state_class"} & set(c)
 
 
@@ -219,9 +264,7 @@ def _bad(mutate: Any) -> dict[str, Any]:
         lambda d: d["components"]["battery_soc"].update(command_topic="x/set"),
         lambda d: d["components"]["battery_soc"].update(cmd_t="x/set"),
         lambda d: d["components"]["battery_soc"].update(command_template="{{ x }}"),
-        lambda d: d["components"]["alarm_fan"].update(
-            json_attributes_topic="x"
-        ),  # binary sensors: no attributes
+        lambda d: d["components"]["alarm_fan"].update(unit_of_measurement="W"),
         lambda d: d["components"]["battery_soc"].update(object_id="x"),
         lambda d: d["components"]["battery_soc"].update(obj_id="x"),
         lambda d: d["components"]["battery_soc"].update(unique_id=None),
@@ -431,7 +474,7 @@ def writes_doc() -> dict[str, Any]:
 
 def test_write_document_golden() -> None:
     doc = writes_doc()
-    assert len(doc["components"]) == 39
+    assert len(doc["components"]) == len(DESCRIPTORS) + 1
     golden("discovery_inverter_writes.json", doc)
 
 
@@ -453,10 +496,19 @@ def test_write_cleanup_replay_golden() -> None:
 def test_write_components_follow_the_guarded_shape() -> None:
     comps = writes_doc()["components"]
     kinds = {c["platform"] for c in comps.values()}
-    assert kinds == {"number", "switch", "time", "event"}
+    assert kinds == {"number", "switch", "time", "select", "button", "event"}
     for key, c in comps.items():
         if c["platform"] == "event":
             assert "command_topic" not in c
+            continue
+        if c["platform"] == "button":  # a command only: no state, nothing optimistic
+            assert (c["retain"], c["entity_category"], c["payload_press"]) == (
+                False,
+                "config",
+                "PRESS",
+            )
+            assert not {"state_topic", "value_template", "optimistic"} & set(c)
+            assert c["command_topic"].startswith("deye/ab12cd34/deye1/write/set/t1/")
             continue
         assert (c["retain"], c["optimistic"], c["entity_category"]) == (False, False, "config")
         assert c["command_topic"].startswith("deye/ab12cd34/deye1/write/set/t1/")
@@ -469,9 +521,13 @@ def test_write_components_follow_the_guarded_shape() -> None:
     for key, desc_key in (("set_battery_charge_current", "battery_charge_current"),
                           ("set_tou_slot1_power", "tou_slot1_power")):  # fmt: skip
         assert comps[key]["mode"] == "box" and comps[key]["step"] == 1, desc_key
-    assert comps["set_smart_load_on_voltage"]["step"] == 0.01
-    assert comps["set_smart_load_on_voltage"]["min"] == 38.0
+    assert comps["set_smart_load_on_voltage"]["step"] == 0.1
+    assert comps["set_smart_load_on_voltage"]["min"] == 41.0
     assert comps["set_tou_slot1_grid_charge"]["platform"] == "switch"
+    signal = comps["set_external_signal"]
+    assert signal["platform"] == "select"
+    assert signal["options"] == ["Off", "Grid Signal", "Gen Signal", "Both (shared output)"]
+    assert "min" not in signal and "unit_of_measurement" not in signal
     assert comps["write_result"]["event_types"] == list(EVENT_TYPES)
 
 
