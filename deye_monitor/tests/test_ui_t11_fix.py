@@ -55,25 +55,6 @@ class Gate:
 # -- R7-01 ----------------------------------------------------------------------------------
 
 
-async def test_pending_energy_change_keeps_the_overview_renderable(
-    browser: Browser, tmp_path: Any
-) -> None:
-    async with ui_stack(tmp_path) as stack:
-        inv = stack.plant.rig.inv("deye1")
-        inv._observe_energy(0x0104, A, inv.clock())
-        inv._observe_energy(0x0104, A, inv.clock())
-        inv._observe_energy(0x0105, A, inv.clock())
-        snap = inv.energy.snapshot()
-        assert isinstance(snap["pending_change"], float)
-        s = await open_ui(browser, stack)
-        card = s.page.locator("article.inverter").first
-        await expect(card).to_contain_text("Neue Energieauflösung")
-        await expect(card).to_contain_text("nicht verfügbar")
-        await expect(card).not_to_contain_text("bleiben die Energiewerte unverändert")
-        await expect(s.page.locator("article.inverter")).to_have_count(2)
-        await s.check()
-
-
 async def test_blocked_energy_keeps_the_overview_renderable(
     browser: Browser, tmp_path: Any
 ) -> None:

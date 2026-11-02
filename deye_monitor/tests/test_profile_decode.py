@@ -4,7 +4,7 @@ import pytest
 
 from deye_monitor.config import EnergyResolution
 from deye_monitor.profiles.decode import decode
-from deye_monitor.profiles.energy import effective_resolution, resolution_from_r65
+from deye_monitor.profiles.energy import effective_resolution
 from deye_monitor.profiles.schema import Entry, Profile, load_profile
 
 
@@ -247,27 +247,11 @@ def test_every_entry_decodes_to_something_for_zero_words(p: Profile) -> None:
             assert value is None
 
 
-def test_r65_resolution_and_overrides() -> None:
-    assert resolution_from_r65(0x0000) is None  # not a protocol version: nothing is derived
-    assert resolution_from_r65(0x0103) == 0.1
-    assert resolution_from_r65(0x0104) == 0.1
-    assert resolution_from_r65(0x0105) == 1.0
-    assert resolution_from_r65(0x0001) == 0.1
-    assert resolution_from_r65(0xFFFE) == 1.0
-    assert resolution_from_r65(0xFFFF) is None
-    for bad in (-1, 0x10000):
-        with pytest.raises(ValueError):
-            resolution_from_r65(bad)
-    auto = EnergyResolution.AUTO
-    assert effective_resolution(auto, None) is None  # missing/timeout is not R65=0
-    assert effective_resolution(auto, 0x0104) == 0.1
-    assert effective_resolution(auto, 0x0105) == 1.0
-    assert effective_resolution(auto, 0xFFFF) is None and effective_resolution(auto, 0) is None
-    assert effective_resolution(EnergyResolution.TENTH, 0xFFFF) == 0.1  # an override wins
-    assert effective_resolution(EnergyResolution.TENTH, 0x0105) == 0.1
-    assert effective_resolution(EnergyResolution.ONE, 0x0100) == 1.0
-    assert effective_resolution(EnergyResolution.TENTH, None) == 0.1
-    assert effective_resolution(EnergyResolution.ONE, None) == 1.0
+def test_energy_resolution_override_wins_and_automatic_is_the_profile_default() -> None:
+    # 0.5.1 (Codex r65-1): MCU2 1151, 1175 and 1185 count 0.1 kWh; R65 never selects the factor
+    assert effective_resolution(EnergyResolution.AUTO) == 0.1
+    assert effective_resolution(EnergyResolution.TENTH) == 0.1
+    assert effective_resolution(EnergyResolution.ONE) == 1.0
 
 
 def test_decode_is_independent_of_entry_object_identity(p: Profile) -> None:

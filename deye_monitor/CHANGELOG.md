@@ -1,18 +1,25 @@
 # Changelog
 
 ## 0.5.1 — 2026-11-02
-Field report: a plant showed energy counters 10× too high (factor 1 instead of 0.1 kWh). A diff of 0.4.1..0.5.0
-found no regression (energy tracker, config, decode and discovery are unchanged for energy values); the
-automatic rule (R65 ≤ 0x0104 → 0.1 kWh, otherwise 1 kWh) is unchanged, kept in `profiles/energy.py:resolution_from_r65`
-so it can be swapped once MCU2 1151 is analysed.
+Field report: a plant showed energy counters 10× too high (factor 1 instead of 0.1 kWh). A diff of
+0.4.1..0.5.0 found no regression; the cause was the automatic rule (R65 > 0x0104 → 1 kWh), which
+firmware analysis (Codex r65-1) shows is wrong: MCU2 1151, 1175 and 1185 all count 0.1 kWh and none has
+an R65 resolution selector.
 
-- **Diagnosable without remote access:** the web status now carries R65 raw, the resolution source
-  (automatic from R65 / your choice) and the effective factor, shown as an information line per inverter.
-- **Plausibility hint:** the daily PV counter is compared with the PV power integrated over the same time
-  (`energy_check.py`, in memory, reset by a counter restart or a new energy series, gaps over 5 min are not
-  bridged). A ratio of about 10× either way shows a hint with a button for the other factor; nothing is ever changed
-  automatically.
-- DOCS: FAQ "energy values 10× too high or too low".
+- **Automatic energy resolution = 0.1 kWh (profile default) on every firmware.** R65 is shown only as
+  a diagnostic, never selects 1 kWh and never holds the energy values back (no more "choose the
+  resolution" step for R65 = 0xFFFF). An explicit override still wins. Existing series: the stored
+  source "r65" becomes "profile"; a series counted at 1 kWh from the old rule continues as a new series
+  at 0.1 kWh (the old one is never continued with another factor). The rule is one function,
+  `profiles/energy.py:effective_resolution`.
+- **Diagnosable without remote access:** the web status shows R65 raw, the resolution source
+  ("profile default 0.1 kWh" / "your choice") and the effective factor as an information line per
+  inverter.
+- **Plausibility hint:** the daily PV counter is compared with the PV power integrated over the same
+  time (`energy_check.py`, in memory, reset by a counter restart or a new energy series, gaps over 5 min
+  are not bridged). A ratio of about 10× either way shows a hint with a button for the other factor;
+  nothing is ever changed automatically.
+- DOCS: FAQ "energy values 10× too high or too low"; the energy-resolution section is rewritten.
 
 ## 0.5.0 — 2026-11-02
 Scope: the app aims to serve every SUN-5...12K-SG04LP3 installation (grid-tied/export, zero-export, off-grid,

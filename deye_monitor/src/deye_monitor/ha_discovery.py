@@ -402,7 +402,11 @@ R65_DIAGNOSTICS: Final = (
     InverterDiagnostic("r65_raw", "Energy resolution raw word", "number"),
     InverterDiagnostic("r65_status", "Energy resolution last reading"),
 )
-ENERGY_SOURCES: Final = {"override": "user choice", "r65": "R65"}
+ENERGY_SOURCES: Final = {
+    "override": "user choice",
+    "r65": "R65 (before 0.5.1)",  # a record written by an older version
+    "profile": "profile default 0.1 kWh",
+}
 CONFLICT_LIST_KEY: Final = "capability_conflict_list"
 ALARM_LIST_SUFFIX: Final = "_list"
 _TEXT_LIMIT: Final = 120
@@ -467,13 +471,9 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     out["energy_resolution"] = _number(energy.get("effective_resolution"))
     source = _text(energy.get("source"))
     out["energy_source"] = ENERGY_SOURCES.get(source, source) if source else None
-    blocked, pending = _text(energy.get("blocked")), energy.get("pending_change")
+    blocked = _text(energy.get("blocked"))
     if blocked:
         out["energy_status"] = f"blocked: {blocked}"
-    elif energy.get("needs_choice") is True:
-        out["energy_status"] = "r65_invalid"
-    elif pending is not None:
-        out["energy_status"] = "change_pending"
     elif out["energy_resolution"] is not None:
         out["energy_status"] = "confirmed"
     series = _text(energy.get("series"))

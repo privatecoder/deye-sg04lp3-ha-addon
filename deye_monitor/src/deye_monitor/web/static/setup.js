@@ -558,7 +558,7 @@ export function setupView(invId) {
         h('span', {}, hint.text),
         live.has(hint.key) && canEdit() ? h('button', { class: 'btn small', type: 'button', onClick: () => setKey(hint.key, false) }, t('setup.deselect')) : null))));
     }
-    const device = hintsOf(base).filter((x) => x.kind === 'energy' || x.kind === 'info');
+    const device = hintsOf(base, { diagnostics: true }).filter((x) => x.kind === 'energy' || x.kind === 'info');
     if (device.length) {
       refs.hints.append(h('ul', { class: 'hints' }, device.map((hint) => h('li', { class: `hint ${hint.kind}` }, hintBody(hint)))));
     }

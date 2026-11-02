@@ -122,7 +122,7 @@ export function hintBody(hint) {
     actions.length ? h('span', { class: 'hint-actions' }, actions) : null);
 }
 
-// The device reports no usable R65: the user picks the energy resolution (a plant change).
+// A plant change of the energy resolution, made only when the user clicks a button.
 function energyChoice(inv) {
   const choose = (value) => async () => {
     const { chooseEnergyResolution } = await import('./plantforms.js');
@@ -134,8 +134,9 @@ function energyChoice(inv) {
     : [];
 }
 
-// Hints for one inverter: capability conflicts, observations and energy migration.
-export function hintsOf(inv) {
+// Hints for one inverter: capability conflicts, observations and energy migration. The energy
+// resolution line (factor, source, R65 raw) is a diagnostic: only the sensor page asks for it.
+export function hintsOf(inv, { diagnostics = false } = {}) {
   const s = inv.status;
   const out = [];
   for (const conflict of s.capability_conflicts || []) {
@@ -143,14 +144,11 @@ export function hintsOf(inv) {
   }
   const hardware = hardwareHint(s.identity || {});
   if (hardware) out.push({ kind: 'info', text: hardware });
-  if (s.energy && s.energy.needs_choice) {
-    out.push({ kind: 'energy', text: t('hint.energy.r65_invalid'), actions: energyChoice(inv) });
-  }
   const energyNow = s.energy || {};
-  if (energyNow.effective_resolution != null || energyNow.needs_choice) {
+  if (diagnostics && energyNow.effective_resolution != null) {
     const r65 = s.r65 && s.r65.raw != null ? `0x${Number(s.r65.raw).toString(16).toUpperCase().padStart(4, '0')}` : t('hint.energy.r65_none');
-    const source = t(`hint.energy.source.${{ r65: 'auto', override: 'override' }[energyNow.source] || 'unknown'}`);
-    out.push({ kind: 'info', text: t('hint.energy.diag', { factor: energyNow.effective_resolution ?? '?', source, r65 }) });
+    const source = t(`hint.energy.source.${{ profile: 'profile', override: 'override' }[energyNow.source] || 'profile'}`);
+    out.push({ kind: 'info', text: t('hint.energy.diag', { factor: energyNow.effective_resolution, source, r65 }) });
   }
   const check = energyNow.plausibility || {};
   if (check.state === 'counter_too_high' || check.state === 'counter_too_low') {
@@ -173,10 +171,6 @@ export function hintsOf(inv) {
     });
   }
   const energy = s.energy || {};
-  // `pending_change` is the candidate resolution (a number) while a change is being confirmed.
-  if (typeof energy.pending_change === 'number') {
-    out.push({ kind: 'energy', text: t('hint.energy.pending', { value: energy.pending_change }) });
-  }
   if (energy.blocked) out.push({ kind: 'energy', text: t('hint.energy.blocked') });
   // warnings (real problems) first, then information, then observations
   return out.map((hint, i) => ({ hint, i })).sort((a, b) => HINT_RANK(a.hint) - HINT_RANK(b.hint) || a.i - b.i).map((x) => x.hint);

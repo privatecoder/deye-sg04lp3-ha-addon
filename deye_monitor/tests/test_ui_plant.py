@@ -368,7 +368,7 @@ async def test_without_a_home_assistant_user_the_plant_is_read_only(
         await s.check()
 
 
-async def test_an_unusable_r65_asks_for_the_energy_resolution_and_the_choice_is_saved(
+async def test_an_unusable_r65_asks_for_nothing_and_unreported_hardware_is_no_conflict(
     browser: Browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async with plant_ui(tmp_path, monkeypatch) as (rig, url):
@@ -391,7 +391,9 @@ async def test_an_unusable_r65_asks_for_the_energy_resolution_and_the_choice_is_
         await rig.wait_state("deye1", InverterState.RUNNING)
         s = await open_page(browser, url)
         card = s.page.locator("article.inverter").first
-        await expect(card).to_contain_text("keine gültige Energieauflösung")
+        await expect(card).not_to_contain_text(
+            "keine gültige Energieauflösung"
+        )  # 0.5.1: R65 is a diagnostic
         await expect(card).to_contain_text("Hardwareangaben vom Gerät nicht gemeldet")
         await expect(card.locator(".hint-detail")).to_have_count(0)  # not reported is no conflict
         # the connection check does not show the raw 0xFFFF as 255 MPPT / 255 phases
@@ -408,10 +410,6 @@ async def test_an_unusable_r65_asks_for_the_energy_resolution_and_the_choice_is_
         )
         await expect(result).not_to_contain_text("255")
         await s.page.locator("dialog .modal-body > .actions .btn").click()
-        await s.page.locator("a.brand").click()
-        await card.get_by_role("button", name="0,1 kWh wählen").click()
-        await expect(s.page.locator(".toast.ok")).to_be_visible()
-        assert rig.service.plant.inverters[0].energy_resolution.value == "0.1"
 
 
 async def test_the_identifier_of_an_existing_connection_and_inverter_is_visibly_locked(

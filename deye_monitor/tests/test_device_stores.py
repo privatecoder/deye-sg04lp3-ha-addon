@@ -322,11 +322,11 @@ def test_energy_documents_are_type_checked() -> None:
 def test_tracker_without_high_water_and_blocked_store(tmp_path: Path) -> None:
     store = JsonStore(tmp_path / "e.json", validate=valid_energy_document)
     tracker = EnergyTracker(store, "a", EnergyResolution.AUTO)
-    assert tracker.blocked is None and tracker.observe(0x0104, A)[0].kind == "initialised"
+    assert tracker.blocked is None and tracker.observe(A)[0].kind == "initialised"
     write(tmp_path / "bad.json", "{x")
     blocked = EnergyTracker(JsonStore(tmp_path / "bad.json"), "a", EnergyResolution.AUTO)
     assert blocked.blocked == "energy_store_corrupt"
-    assert blocked.observe(0x0104, A) == [] and blocked.resolution is None
+    assert blocked.observe(A) == [] and blocked.resolution is None
 
 
 # -- capability cache (a cache: rebuilt, never fatal) ------------------------------------

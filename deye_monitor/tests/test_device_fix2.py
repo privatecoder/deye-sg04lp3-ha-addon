@@ -71,22 +71,22 @@ async def test_missing_main_and_corrupt_history_do_not_reuse_g0(tmp_path: Path) 
 def test_only_both_files_missing_is_a_first_installation(tmp_path: Path) -> None:
     (tracker,) = trackers(tmp_path, "i")
     assert tracker.blocked is None
-    tracker.observe(None, A)
+    tracker.observe(A)
     assert tracker.series == "g0" and SERIES_RE.match(tracker.series)
 
 
 @pytest.mark.parametrize("damaged", ["main", "history"])
 def test_either_damaged_file_blocks_every_combination(tmp_path: Path, damaged: str) -> None:
     (first,) = trackers(tmp_path, "i")
-    first.observe(None, A)
+    first.observe(A)
     (tmp_path / ("energy.json" if damaged == "main" else "energy-generations.json")).write_text("{")
     (second,) = trackers(tmp_path, "i")
-    assert second.blocked == "energy_store_corrupt" and second.observe(None, A) == []
+    assert second.blocked == "energy_store_corrupt" and second.observe(A) == []
 
 
 def test_inconsistent_history_blocks(tmp_path: Path) -> None:
     (first,) = trackers(tmp_path, "i")
-    first.observe(None, A)
+    first.observe(A)
     hist = tmp_path / "energy-generations.json"
     for entry in (
         {"namespace": "", "high_water": -1, "pending": None},  # record above the high-water mark
@@ -95,7 +95,7 @@ def test_inconsistent_history_blocks(tmp_path: Path) -> None:
         hist.write_text(json.dumps({"schema_version": 1, "data": {"i": entry}}))
         (blocked,) = trackers(tmp_path, "i")
         assert blocked.blocked == "energy_history_inconsistent"
-        assert blocked.observe(None, A) == []
+        assert blocked.observe(A) == []
 
 
 def test_two_history_loss_resets_get_different_namespaces(tmp_path: Path) -> None:
@@ -105,7 +105,7 @@ def test_two_history_loss_resets_get_different_namespaces(tmp_path: Path) -> Non
         (tmp_path / "energy-generations.json").write_text("{lost")
         (tracker,) = trackers(tmp_path, "i")
         tracker.reset()
-        tracker.observe(None, A)
+        tracker.observe(A)
         series.append(tracker.series)
     assert series[0] != series[1]
     for item in series:
@@ -118,7 +118,7 @@ def test_clock_is_irrelevant_and_a_repeated_token_is_redrawn(tmp_path: Path) -> 
     (tmp_path / "energy-generations.json").write_text("{lost")
     (tracker,) = trackers(tmp_path, "i", tokens=lambda: next(draws))
     assert tracker.reset() == "aaaaaaaag0"
-    tracker.observe(None, A)
+    tracker.observe(A)
     # history lost again: the source offers the namespace in use first, it is not accepted
     (tmp_path / "energy.json").write_text("{lost")
     (tmp_path / "energy-generations.json").write_text("{lost")
@@ -130,9 +130,9 @@ def test_reset_with_intact_history_continues_the_namespace_above_the_high_water(
     tmp_path: Path,
 ) -> None:
     (t,) = trackers(tmp_path, "i")
-    t.observe(None, A)
+    t.observe(A)
     t._override = EnergyResolution.TENTH
-    t.observe(None, A)  # generation 1
+    t.observe(A)  # generation 1
     assert t.series == "g1"
     (tmp_path / "energy.json").write_text("{lost")
     (t2,) = trackers(tmp_path, "i")
@@ -162,15 +162,15 @@ def test_reset_repeated_after_a_crash_keeps_the_token(tmp_path: Path) -> None:
 
 def test_record_rolled_back_below_the_high_water_never_reuses_a_generation(tmp_path: Path) -> None:
     (t,) = trackers(tmp_path, "i")
-    t.observe(None, A)
+    t.observe(A)
     old = (tmp_path / "energy.json").read_bytes()
     t._override = EnergyResolution.TENTH
-    t.observe(None, A)
+    t.observe(A)
     assert t.series == "g1"
     (tmp_path / "energy.json").write_bytes(old)  # valid, but older than the history
     (t2,) = trackers(tmp_path, "i")
     assert t2.blocked is None and t2.series == "g0"
-    t2.observe(None, B)  # a new inverter at the old factor
+    t2.observe(B)  # a new inverter at the old factor
     assert t2.series == "g2"  # above the high-water mark 1, not g1 again
 
 
@@ -178,39 +178,39 @@ def test_crash_between_history_and_record_continues_with_the_same_generation(
     tmp_path: Path,
 ) -> None:
     (t,) = trackers(tmp_path, "i")
-    t.observe(None, A)
+    t.observe(A)
     t._override = EnergyResolution.TENTH
     t._store.commit = lambda _d: (_ for _ in ()).throw(OSError("crash"))  # type: ignore[method-assign,assignment]
-    t.observe(None, A)  # history says generation 1 (reserved), the record stays at 0
+    t.observe(A)  # history says generation 1 (reserved), the record stays at 0
     assert t.blocked == "energy_store_unwritable"
     assert history(tmp_path)["high_water"] == 1 and history(tmp_path)["pending"]["generation"] == 1
     (t2,) = trackers(tmp_path, "i", override=EnergyResolution.TENTH)
     assert t2.series == "g0" and t2.blocked is None
-    t2.observe(None, A)
+    t2.observe(A)
     assert t2.series == "g1"  # the reserved generation, not g2
     (t3,) = trackers(tmp_path, "i", override=EnergyResolution.TENTH)
-    t3.observe(None, A)
+    t3.observe(A)
     assert t3.series == "g1" and history(tmp_path)["high_water"] == 1
 
 
 def test_crash_before_the_history_commit_loses_nothing(tmp_path: Path) -> None:
     (t,) = trackers(tmp_path, "i")
-    t.observe(None, A)
+    t.observe(A)
     t._override = EnergyResolution.TENTH
     t._hw.commit = lambda _d: (_ for _ in ()).throw(OSError("crash"))  # type: ignore[union-attr,method-assign]
-    t.observe(None, A)
+    t.observe(A)
     assert t.blocked == "energy_store_unwritable"
     (t2,) = trackers(tmp_path, "i", override=EnergyResolution.TENTH)
-    t2.observe(None, A)
+    t2.observe(A)
     assert t2.series == "g1"
 
 
 def test_several_inverters_keep_separate_series(tmp_path: Path) -> None:
     a, b = trackers(tmp_path, "a", "b")
-    a.observe(None, A)
-    b.observe(None, B)
+    a.observe(A)
+    b.observe(B)
     a._override = EnergyResolution.TENTH
-    a.observe(None, A)
+    a.observe(A)
     assert (a.series, b.series) == ("g1", "g0")
     (tmp_path / "energy.json").write_text("{lost")
     a2, b2 = trackers(tmp_path, "a", "b")
@@ -226,7 +226,7 @@ def test_legacy_integer_history_is_accepted(tmp_path: Path) -> None:
     )
     (t,) = trackers(tmp_path, "i")
     assert t.blocked is None
-    t.observe(None, A)
+    t.observe(A)
     assert t.series == "g5"
 
 
@@ -376,19 +376,6 @@ async def test_reconnect_immediately_invalidates_runtime_release(tmp_path: Path)
         assert r.sink.availability[-1] == ("i", InverterState.OFFLINE, "connection changed")
         await inv.step()  # immediate identification, online again only after data release
         assert inv.state is InverterState.RUNNING and not inv.needs_identity
-
-
-async def test_reconnect_during_the_confirming_read_uses_the_same_transition(
-    tmp_path: Path,
-) -> None:
-    async with rig([ep("g")], [inverter("i", "g")], {"g": device_regs(A)}, tmp_path) as r:
-        inv = r.inv("i")
-        await inv.step()
-        epoch = inv.lifecycle_epoch
-        await inv.route.transport.close()
-        await inv._confirm_r65()
-        assert inv.lifecycle_epoch > epoch and inv.needs_identity
-        assert inv.state is InverterState.OFFLINE
 
 
 async def test_reconnect_by_a_peer_on_a_shared_endpoint_invalidates_both(tmp_path: Path) -> None:

@@ -182,12 +182,11 @@ class RuntimeSettings:
     failback_probe_s: float = 300.0  # how often the primary path is probed while on fallback
     identify_retry_s: float = 30.0  # retry of a failed identification
     quarantine_retry_s: float = 60.0  # re-identification of a quarantined inverter
-    r65_confirm_s: float = 60.0  # delay of the confirming R65 read after a pending change
 
     def __post_init__(self) -> None:
         if self.failover_after < 1:
             raise ValueError("failover_after must be >= 1")
-        for name in ("failback_probe_s", "identify_retry_s", "quarantine_retry_s", "r65_confirm_s"):
+        for name in ("failback_probe_s", "identify_retry_s", "quarantine_retry_s"):
             value = float(getattr(self, name))
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and > 0")
@@ -298,12 +297,10 @@ class InverterRuntime:
         self._due: dict[str, float] = {}
         self._next_identify_at = 0.0
         self._failback_due = 0.0
-        self._confirm_due: float | None = None
         self._announced: tuple[InverterState, str] | None = None
         self.internal_errors = 0
         self.last_internal_error: str | None = None
         self._reported_energy_block: str | None = None
-        self._reported_r65_invalid = False
         self._wake = asyncio.Event()
         self.released = asyncio.Event()  # set by a store reset: a waiting supervisor may restart
         self._energy_selected = any(profile.entry(k).scale_source for k in self.selection)
@@ -548,8 +545,6 @@ class InverterRuntime:
                 await self._identify()
             if self.state is not InverterState.RUNNING or self.needs_identity:
                 return max(0.0, self._next_identify_at - self.clock())
-        if self._confirm_due is not None and self.clock() >= self._confirm_due:
-            await self._confirm_r65()
         if self.active != 0 and self.clock() >= self._failback_due:
             await self._probe_primary()
             if self.needs_identity:
@@ -643,7 +638,7 @@ class InverterRuntime:
         self._check_capabilities(read.words, serial)
         if self._plan(route).reads_r65:
             self._note_r65(read.words.get(R65))
-        self._observe_energy(read.words.get(R65), serial, now)
+        self._observe_energy(serial, now)
         self.needs_identity = False
         self.fails = 0 if read.error is None else self.fails + 1
         first = self.state is not InverterState.RUNNING
@@ -794,28 +789,22 @@ class InverterRuntime:
             with contextlib.suppress(OSError):
                 self.capability_store.commit(doc)
 
-    def _observe_energy(self, r65: int | None, serial: str | None, now: float) -> None:
+    def _observe_energy(self, serial: str | None, now: float) -> None:
         if not self._energy_selected:
             return
         was_confirmed = self.energy.resolution is not None
-        for event in self.energy.observe(r65, serial):
+        for event in self.energy.observe(serial):
             self._diag(
                 f"energy_{event.kind}",
                 resolution=event.resolution,
                 generation=event.generation,
                 source=event.source,
             )
-        if self.energy.needs_choice and not self._reported_r65_invalid:
-            self._reported_r65_invalid = True
-            self._diag("energy_resolution_unknown", reason="r65_invalid", r65=r65)
-        elif not self.energy.needs_choice:
-            self._reported_r65_invalid = False
         if self.energy.blocked and self.energy.blocked != self._reported_energy_block:
             self._reported_energy_block = self.energy.blocked
             self._diag(self.energy.blocked)
         elif not self.energy.blocked:
             self._reported_energy_block = None
-        self._confirm_due = now + self.settings.r65_confirm_s if self.energy.pending else None
         if not was_confirmed and self.energy.resolution is not None:
             for key in self.selection:  # publish the energy values as soon as they are known
                 entry = self.profile.entry(key)
@@ -826,21 +815,6 @@ class InverterRuntime:
         self.r65_ok = value is not None
         if value is not None:
             self.r65_raw = value
-
-    async def _confirm_r65(self) -> None:
-        """The confirming (consecutive) R65 read after a pending change, on the same scheduler,
-        on the verified connection."""
-        token, route = self._token(), self.route
-        self._confirm_due = None
-        outcome, epoch = await self._read(route, R65, 1)
-        if token != self._token():
-            return
-        if epoch != route.verified_epoch:  # whatever the outcome: identify first
-            self._connection_unidentified("connection changed")
-            return
-        value = None if isinstance(outcome, Exception) else outcome[0]
-        self._note_r65(value)
-        self._observe_energy(value, self.seen_serial, self.clock())
 
     # -- data cycles --------------------------------------------------------------------------
 
@@ -1220,7 +1194,6 @@ class InverterRuntime:
         self.r65_ok = None
         self.needs_identity = True
         self.energy.invalidate()
-        self._confirm_due = None
         self._due.clear()
 
     def _detect_reconnect(self) -> None:
@@ -1237,8 +1210,6 @@ class InverterRuntime:
         times = [t for g, t in self._due.items() if g in self._groups()]
         if self.active != 0:
             times.append(self._failback_due)
-        if self._confirm_due is not None:
-            times.append(self._confirm_due)
         if self._must_identify():
             # a path switch (or any loss of the release) inside a group run: the identification is
             # due then, not at the next group or the failback probe

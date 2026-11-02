@@ -32,7 +32,7 @@ device loop and without the publisher.
 * **Identities.** Unique id `deye_<instance>_<inverter>_<key>`, suggested entity id
   `sensor.deye_<instance>_<inverter>_<key>` (`default_entity_id`). Energy counters carry a
   statistics series in all three, e.g. `..._battery_energy_charge_total_g0`. A change of the
-  effective energy resolution (R65 or override) or of the physical inverter starts a new series
+  effective energy resolution (an override change) or of the physical inverter starts a new series
   (`_g1`, ...): the old counter is removed and its statistics stay in Home Assistant; the app never
   links the series and never touches the recorder. If you named another entity like a suggested
   id, Home Assistant appends a number: the app does not rename registry entries.
@@ -79,8 +79,8 @@ device loop and without the publisher.
   like the Deye cloud (`Firmware MCU1` = `1001-C070`, communication/HMI board R17-R18, and
   `Firmware MCU2` = `2005-1175-1807`, control board R14-R15-R11; the former "Main firmware
   version" R15 is part of MCU2 and no longer a default sensor), energy resolution raw word and last reading (only while R65 is read
-  and reported), effective energy resolution and its source (`user choice` or `R65`),
-  confirmation/blocking state, current energy series, number of capability conflicts (the list is
+  and reported), effective energy resolution and its source (`profile default 0.1 kWh` or `user choice`),
+  status (confirmed or blocked), current energy series, number of capability conflicts (the list is
   an attribute), bus utilisation, transport timeouts/frame errors/resyncs, cooldown and the time
   of the last successful read. Unknown values are `unknown` (`null`); updates are throttled to
   one message per 0.5 s.
@@ -308,36 +308,36 @@ override.
 
 ### Choosing the energy resolution
 
-Some firmware/logger paths report R65 = 0xFFFF (or 0), which is not a protocol version. The app then
-derives no resolution and does not publish the energy counters; the overview and the sensor page of
-the inverter show "The inverter reports no valid energy resolution (R65)". Choose **0.1 kWh** (usual
-for the SG04LP3; compare the daily energy with the inverter display) or **1 kWh** with the button
-there, or set "Energy resolution" in the inverter's connection settings. The choice starts a new
-statistics series (the old one is never continued with another factor). Check afterwards that
-the daily PV energy matches the display.
+The SG04LP3 energy counters (R514 and up) count **0.1 kWh** per step on every firmware checked
+(MCU2 1151, 1175, 1185); none of them has an R65 resolution selector (R65 reads 0xFFFF or an
+unrelated number). `energy_resolution: auto` therefore means the profile default, 0.1 kWh, and R65 is
+shown only as a diagnostic ("Energy resolution raw word"); it never selects 1 kWh and never holds the
+energy values back. Set "Energy resolution" in the inverter's connection settings to **1 kWh** only if a
+counter really counts in whole kWh (compare the daily energy with the inverter display); an explicit
+choice always wins. A change starts a new statistics series (the old one is never continued with
+another factor). The sensor page of the inverter shows "Energy resolution: … kWh per step, source: …, R65 raw: …"; the
+source is "profile default 0.1 kWh" or "your choice (override)".
 
 ### FAQ: energy values 10× too high or too low
 
-The energy counters (R514 and up) are whole numbers; the app multiplies them by the energy resolution
-(0.1 or 1 kWh per step). A wrong factor shows as exactly 10× too high (1 chosen, counters really in
-0.1 kWh) or 10× too low. What to check:
+The energy counters are whole numbers; the app multiplies them by the energy resolution (0.1 or 1
+kWh per step). A wrong factor shows as exactly 10× too high (1 chosen, counters really in 0.1 kWh) or
+10× too low. What to check:
 
-1. **Which factor is in use?** The overview and the sensor page of the inverter show "Energy
+1. **Which factor is in use?** The sensor page of the inverter shows "Energy
    resolution: … kWh per step, source: …, R65 raw: …" (also the diagnostic entities "Energy
-   resolution", "Energy resolution source" and "Energy resolution raw word"). *Source* is "automatic
-   from R65" or "your choice (override)".
-2. **Automatic:** the app takes 0.1 kWh for R65 ≤ 0x0104 and 1 kWh above it. Some firmware reports
-   0xFFFF or 0 (no resolution is derived, see above); on other builds R65 may not be a resolution
-   selector at all. If the source is automatic and the values are off by 10×, set the override.
-3. **Compare** "PV energy today" with the inverter display or the Deye cloud. Counters of the
-   SG04LP3 usually match 0.1 kWh (a daily PV value of 70 kWh in October on a 10 kW plant is wrong).
+   resolution", "Energy resolution source" and "Energy resolution raw word"). The source is "profile
+   default 0.1 kWh" (automatic) or "your choice (override)".
+2. **Automatic is 0.1 kWh.** R65 does not choose the factor. If the values are 10× too high, the
+   override is probably set to 1 kWh: set "Energy resolution" back to automatic or 0.1 kWh.
+3. **Compare** "PV energy today" with the inverter display or the Deye cloud. A daily PV value of
+   70 kWh in October on a 10 kW plant is wrong.
 4. **The plausibility hint:** the app adds up the PV power since it started and compares it with the
    rise of the daily PV counter. When the two differ by about 10× the overview shows a hint (after
    roughly 2 kWh of PV energy). It only advises: nothing is changed automatically.
 5. **Change it** under "Energy resolution" in the inverter's connection settings (or with the button
-   in the hint). The change starts a new statistics series; the old one is not continued with
-   another factor. Open an issue with the R65 raw value shown in step 1 so the automatic rule can be
-   checked for your firmware.
+   in the hint). The change starts a new statistics series. If the values are still off, open an
+   issue with the R65 raw value from step 1 and the MCU2 firmware.
 
 ## Installation description and what it selects
 

@@ -170,9 +170,8 @@ def full_diag(**over: Any) -> dict[str, Any]:
         "r65": {"raw": 0x0104, "last_read_ok": True},
         "energy": {
             "effective_resolution": 0.1,
-            "source": "r65",
+            "source": "profile",
             "blocked": None,
-            "pending_change": None,
             "series": "x7k2m9q4g0",
         },
         "capability_conflicts": [{"code": "mppt_count", "detail": "R22 reports 1 MPPT"}],
@@ -190,7 +189,7 @@ def test_every_contract_field_is_derived_and_unknown_is_null() -> None:
     assert v["firmware_mcu1"] == "1000-0070" and v["firmware_mcu2"] == "????-1001-????"
     assert "role" not in v
     assert v["r65_raw"] == 0x0104 and v["r65_status"] == "ok"
-    assert v["energy_resolution"] == 0.1 and v["energy_source"] == "R65"
+    assert v["energy_resolution"] == 0.1 and v["energy_source"] == "profile default 0.1 kWh"
     assert v["energy_status"] == "confirmed" and v["energy_series"] == "x7k2m9q4g0"
     assert v["capability_conflicts"] == 1
     assert v[CONFLICT_LIST_KEY] == [{"code": "mppt_count", "detail": "R22 reports 1 MPPT"}]
@@ -210,14 +209,10 @@ def test_every_contract_field_is_derived_and_unknown_is_null() -> None:
     )
 
 
-def test_energy_status_shows_blocking_and_pending_changes() -> None:
+def test_energy_status_shows_blocking() -> None:
     blocked = inverter_diagnostic_values(full_diag(energy={"blocked": "energy_store_corrupt"}))
     assert blocked["energy_status"] == "blocked: energy_store_corrupt"
     assert blocked["energy_resolution"] is None  # unknown stays null, never 0
-    pending = inverter_diagnostic_values(
-        full_diag(energy={"effective_resolution": 1.0, "pending_change": 0.1})
-    )
-    assert pending["energy_status"] == "change_pending"
     failed = inverter_diagnostic_values(full_diag(r65={"raw": 0x0104, "last_read_ok": False}))
     assert failed["r65_status"] == "failed" and failed["r65_raw"] == 0x0104  # last VALID reading
 
@@ -307,7 +302,7 @@ async def test_required_energy_diagnostics_are_not_discarded(tmp_path: Path) -> 
         body = conn.last(topic).json()
         assert body["r65_raw"] == 0x0104
         assert body["energy_resolution"] == 0.1
-        assert body["energy_source"] == "R65"
+        assert body["energy_source"] == "profile default 0.1 kWh"
         assert body["energy_series"] == "x7k2m9q4g0"
         assert body["capability_conflicts"] == 1
         assert body["bus_utilisation"] == 0.123

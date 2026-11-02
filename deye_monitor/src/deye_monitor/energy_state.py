@@ -36,16 +36,15 @@ from typing import Any
 
 from deye_monitor.config import EnergyResolution
 from deye_monitor.identity import valid_serial
-from deye_monitor.profiles.energy import R65_INVALID, effective_resolution
+from deye_monitor.profiles.energy import effective_resolution
 from deye_monitor.store import JsonStore
 
-CONFIRMATIONS_FOR_CHANGE = 2
 PROBLEM_CORRUPT = "energy_store_corrupt"
 PROBLEM_INCONSISTENT = "energy_history_inconsistent"
 PROBLEM_HISTORY_MISSING = "energy_history_missing"
 PROBLEM_UNWRITABLE = "energy_store_unwritable"
 _FACTORS = (0.1, 1.0)
-_SOURCES = ("r65", "override")
+_SOURCES = ("r65", "override", "profile")  # "r65": records written before 0.5.1
 _NAMESPACE_RE = re.compile(r"^([a-z0-9]{8})?$")
 SERIES_RE = re.compile(r"^([a-z0-9]{8})?g[0-9]+$")
 _TOKEN_ALPHABET = string.ascii_lowercase + string.digits
@@ -124,7 +123,7 @@ def series_name(namespace: str, generation: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class EnergyEvent:
-    kind: str  # "initialised" | "generation_changed" | "change_pending"
+    kind: str  # "initialised" | "generation_changed"
     resolution: float | None
     generation: int
     source: str
@@ -146,8 +145,6 @@ class EnergyTracker:
         self._override = override
         self._namespace_source = namespace_source
         self._confirmed: float | None = None
-        self._pending: tuple[float, int] | None = None
-        self.r65_invalid = False  # the latest R65 reading is not a usable version (auto mode)
         self.blocked: str | None = self._evaluate()
 
     def _evaluate(self) -> str | None:
@@ -173,15 +170,6 @@ class EnergyTracker:
     def resolution(self) -> float | None:
         """kWh per count once confirmed for the current identified device, else ``None``."""
         return None if self.blocked else self._confirmed
-
-    @property
-    def needs_choice(self) -> bool:
-        """Automatic resolution, but the device reports no usable R65: the user has to choose."""
-        return self._override is EnergyResolution.AUTO and self.r65_invalid
-
-    @property
-    def pending(self) -> bool:
-        return self._pending is not None
 
     @property
     def generation(self) -> int:
@@ -212,13 +200,10 @@ class EnergyTracker:
         return {
             "effective_resolution": self.resolution,
             "persisted_resolution": rec.get("effective_resolution"),
-            "source": "unknown" if self.needs_choice else rec.get("source"),
-            "unknown_reason": "r65_invalid" if self.needs_choice else None,
-            "needs_choice": self.needs_choice,
+            "source": rec.get("source"),
             "serial_epoch": rec.get("serial") is not None,
             "generation": self.generation,
             "series": self.series,
-            "pending_change": self._pending[0] if self._pending else None,
             "blocked": self.blocked,
         }
 
@@ -236,41 +221,14 @@ class EnergyTracker:
     def invalidate(self) -> None:
         """New identity/path/rebind: the factor must be confirmed again for this device."""
         self._confirmed = None
-        self._pending = None
-        self.r65_invalid = False
 
-    def observe(self, r65: int | None, serial: str | None = None) -> list[EnergyEvent]:
-        """Feed the latest R65 reading (``None`` = not read / failed, never treated as 0) for the
-        identified device with ``serial``."""
+    def observe(self, serial: str | None = None) -> list[EnergyEvent]:
+        """Take the factor for the identified device with ``serial`` (an override, else the profile
+        default): it is fixed, so there is nothing to confirm and it is committed at once."""
         if self.blocked:
             return []
-        candidate = effective_resolution(self._override, r65)
-        if r65 is not None:
-            self.r65_invalid = r65 in R65_INVALID
-        if candidate is None:
-            self._pending = None  # a gap breaks the *consecutive* confirmation
-            if self.needs_choice:
-                self._confirmed = None  # an earlier factor derived from R65 no longer stands
-            return []
-        source = "override" if self._override is not EnergyResolution.AUTO else "r65"
-        rec = self._record()
-        changed = rec is None or rec["effective_resolution"] != candidate or self._ended(rec)
-        new_device = (
-            rec is not None and serial is not None and rec.get("serial") not in (None, serial)
-        )
-        if not changed and not new_device:
-            return self._commit(candidate, source, serial)
-        if source == "override":
-            return self._commit(candidate, source, serial)
-        # auto mode: first record of a fresh install is taken at once, a change is confirmed
-        if rec is None and self._hist() is None:
-            return self._commit(candidate, source, serial)
-        count = self._pending[1] + 1 if self._pending and self._pending[0] == candidate else 1
-        self._pending = (candidate, count)
-        self._confirmed = None
-        if count < CONFIRMATIONS_FOR_CHANGE:
-            return [EnergyEvent("change_pending", candidate, self.generation, source)]
-        return self._commit(candidate, source, serial)
+        source = "override" if self._override is not EnergyResolution.AUTO else "profile"
+        return self._commit(effective_resolution(self._override), source, serial)
 
     def _ended(self, rec: dict[str, Any] | None) -> bool:
         """The record is not the newest series: the history knows a higher generation (restored
@@ -338,7 +296,6 @@ class EnergyTracker:
                 )
             )
         self._confirmed = candidate
-        self._pending = None
         return events
 
     def _write(self, record: dict[str, Any], *, reserve: bool) -> bool:
