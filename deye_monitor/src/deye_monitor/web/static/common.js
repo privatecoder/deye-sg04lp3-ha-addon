@@ -134,6 +134,25 @@ function energyChoice(inv) {
     : [];
 }
 
+// GRID telemetry whose "only 0" is expected while the source described for the GRID terminal is
+// disconnected or switched off (an intermittent utility, an outage, a generator that is not
+// running). An exact list, never a prefix: energy counters, CT reports and settings stay out.
+const GRID_TELEMETRY = new Set([
+  'grid_voltage_a', 'grid_voltage_b', 'grid_voltage_c', 'grid_line_voltage_ca', 'grid_frequency',
+  'grid_internal_current_a', 'grid_internal_current_b', 'grid_internal_current_c',
+  'grid_external_current_a', 'grid_external_current_b', 'grid_external_current_c',
+  'grid_internal_power_a', 'grid_internal_power_b', 'grid_internal_power_c', 'grid_internal_power_total',
+  'grid_external_power_a', 'grid_external_power_b', 'grid_external_power_c', 'grid_external_power_total',
+  'grid_selected_power_a', 'grid_selected_power_b', 'grid_selected_power_c', 'grid_selected_power_total',
+  'relay_grid',
+]);
+
+// The saved description names a source for the GRID terminal. The signal answer is not asked.
+function gridTerminalUsed(inv) {
+  const use = inv.selection?.features?.grid_port_use;
+  return use === 'utility' || use === 'generator';
+}
+
 // Hints for one inverter: capability conflicts, observations and energy migration. The energy
 // resolution line (factor, source, R65 raw) is a diagnostic: only the sensor page asks for it.
 export function hintsOf(inv, { diagnostics = false } = {}) {
@@ -163,6 +182,8 @@ export function hintsOf(inv, { diagnostics = false } = {}) {
   for (const hint of s.hints || []) {
     // a plant total needs this value: "only 0" is legitimate (the master may supply no load)
     if (hint.state === 'zero_only_inconclusive' && plantInputsOf(inv, profileOf(inv)?.byKey.get(hint.key)).length) continue;
+    // only the zero-only prompt: read errors, placeholders and conflicts of the same key stay
+    if (hint.state === 'zero_only_inconclusive' && GRID_TELEMETRY.has(hint.key) && gridTerminalUsed(inv)) continue;
     const name = sensorName(inv, hint.key);
     out.push({
       kind: 'observation',

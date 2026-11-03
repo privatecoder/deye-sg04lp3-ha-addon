@@ -156,7 +156,7 @@ async def running(stack: Stack) -> Stack:
     # the first start waits for a choice (SPEC §9.3). The fakes have no BMS cable: the inverter's
     # own battery values (SOC, temperature) are the template; the raw fault word is added by hand
     # (not in the template since 0.2.13).
-    await stack.app.choose_all(list(SERIALS), features={"bms": False}, add=["fault_word_1"])
+    await stack.app.choose_all(list(SERIALS), features={"bms": False}, add=["fault_word_1", "battery_temperature"])
 
     async def all_data() -> bool:
         from harness.devices import EXPECTED

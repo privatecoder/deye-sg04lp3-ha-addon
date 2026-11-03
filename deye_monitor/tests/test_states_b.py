@@ -28,6 +28,51 @@ def test_every_row_of_part_b_has_a_rule() -> None:
     assert all(k in STATES for k in B_KEYS)
 
 
+def _drm(word: int, r178: int | None) -> tuple[str, dict[str, object]]:
+    entry = P.entry("drm_status_raw")
+    words = {544: word} if r178 is None else {544: word, 178: r178}
+    got = present(entry, words)
+    assert got is not None
+    return got.label.en, got.attributes
+
+
+@pytest.mark.parametrize(
+    ("word", "r178", "expected"),
+    [
+        (0, 0x2FAA, "DRM: Off (setting)"),  # the owner's reading: setting Off, nothing reported
+        (0b101, 0x2FAA, "DRM: Off (setting)"),  # the discrepancy stays in the attributes
+        (0, 0x3000, "No DRM flags reported"),
+        (0b1001, 0x3000, "Reported: DRM0/DRM3"),
+        (0x200, 0x3000, "Additional DRM flags reported"),
+        (0x201, 0x3000, "Reported: DRM0 + additional flags"),
+        (
+            0xFFFF,
+            0x3000,
+            "Reported: DRM0/DRM1/DRM2/DRM3/DRM4/DRM5/DRM6/DRM7/DRM8 + additional flags",
+        ),
+        (0, 0x1000, "DRM enable state unknown"),  # pair 1 is no explicit setting
+        (0b1, None, "DRM enable state unknown"),  # R178 absent or stale
+    ],
+)
+def test_the_drm_aggregate_is_qualified_by_the_setting(
+    word: int, r178: int | None, expected: str
+) -> None:
+    text, attrs = _drm(word, r178)
+    assert text == expected
+    assert attrs["unknown_bits"] == word & 0xFE00
+    assert attrs["reported_modes"] == [f"DRM{i}" for i in range(9) if word >> i & 1]
+
+
+def test_each_drm_bit_maps_to_its_zero_based_mask() -> None:
+    for n in range(9):
+        assert P.entry(f"drm{n}_reported").mask == 1 << n
+        assert f"bit {n}," in (P.entry(f"drm{n}_reported").notes or "")
+
+
+def test_a_missing_r544_is_unavailable_not_no_drm() -> None:
+    assert present(P.entry("drm_status_raw"), {178: 0x3000}) is None
+
+
 def test_missing_word_is_unavailable_not_a_label() -> None:
     assert present(P.entry("anti_islanding_enable_raw"), {}) is None
 
@@ -157,9 +202,6 @@ def test_bms_words(key: str, word: int, expected: str) -> None:
 @pytest.mark.parametrize(
     ("key", "word", "expected"),
     [
-        ("drm_status_raw", 0, "No DRM signal reported"),
-        ("drm_status_raw", 0b101, "Reported: DRM0/DRM2"),
-        ("drm_status_raw", 0x200, "Additional DRM flags"),
         ("ct_selfcheck_result_raw", 0, "No successful check reported"),
         ("ct_selfcheck_result_raw", 0b101, "Successful check reported: L1/L3"),
         ("ct_phase_sequence_result", 8, "Unconfirmed"),

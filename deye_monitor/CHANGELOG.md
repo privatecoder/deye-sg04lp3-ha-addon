@@ -12,7 +12,29 @@ Island plant with a grid contactor for charging: the GRID answer now says it des
   not suggested at a 0 W allowance. No gate changed, no automatic write, no migration.
 - **Sensor template:** inverter output frequency (R638) stays for battery plants, grid relay (R552 bit 2)
   and internal grid power (R607+R703) are defaults for a utility or generator on GRID.
-- **EV question:** applies only to a charger the inverter controls; a third-party wallbox is "No".
+- **EV question (Codex task 42):** "These settings configure the inverter's EV charge control; a wallbox
+  connected only electrically to GRID/LOAD is not automatically controlled by them" (DE equivalent);
+  such a wallbox is answered "No". No charger model or socket is claimed.
+- **Sensor preselection audit (Codex task 43), description-only:** the catalogue defaults fall from 133
+  to 93 entries, the unconditional ones from 40 to 16. Device values never preselect.
+  - All ten DRM entities are opt-in (no installation answer describes a DRM/DRED interface). The one
+    combined "DRM status" keeps its key and now carries the DRM setting (R178) as context: "DRM: Off
+    (setting)", "No DRM flags reported", "Reported: DRM0/DRM3", "DRM enable state unknown", plus
+    attributes `reported_modes`, `unknown_bits`, `enable_setting`. Wording "DRMn reported"; notes use
+    bits 0-8 (masks unchanged).
+  - The signal report (R140) needs a described signal use; ToU voltage targets need a voltage control
+    basis, Spain mode is manual only; Meter Select needs a described meter, the sensing source and the
+    external total need a described external measurement on a used GRID terminal; parallel
+    enable/GEN usage follow the parallel and GEN answers.
+  - Optional (still selectable, nothing is removed from a saved selection): hardware counts, single
+    alarm/fault bits, per-phase external and GEN values, detailed CT and BMS bit entities, battery
+    temperature without a described probe, Force-Off-Grid request report.
+  - Default template of the reference plant: 58 sensors, 42 read blocks.
+- **Hints with an intermittent GRID source (Codex task 44):** when the saved description names a utility or
+  generator for GRID, the "only 0 – you can deselect it" prompt is no longer shown for the 24 GRID
+  telemetry keys (phase and line voltages, frequency, internal/external/selected currents and powers,
+  GRID relay), whatever the signal answer says. Presentation only: values, read errors, placeholders,
+  capability conflicts and faults stay; nothing about polling, selection or writes changes.
 
 ## 0.5.1 — 2026-11-02
 Field report: a plant showed energy counters 10× too high (factor 1 instead of 0.1 kWh). A diff of

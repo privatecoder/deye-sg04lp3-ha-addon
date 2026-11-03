@@ -26,7 +26,13 @@ def _values(r: Rig, key: str) -> list[Value]:
 
 async def test_the_live_values_give_profile_values_with_source_profile(tmp_path: Path) -> None:
     regs = device_regs(SN, **LIVE)
-    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+    async with rig(
+        [ep("gw1")],
+        [inverter("deye1", "gw1")],
+        {"gw1": regs},
+        tmp_path,
+        also={"mppt_count", "phase_count", "battery_input_code"},
+    ) as r:
         inv = r.inv("deye1")
         await inv.step()
         assert inv.state is InverterState.RUNNING
@@ -55,7 +61,11 @@ async def test_the_live_values_give_profile_values_with_source_profile(tmp_path:
 
 async def test_reported_values_come_from_the_device(tmp_path: Path) -> None:
     async with rig(
-        [ep("gw1")], [inverter("deye1", "gw1")], {"gw1": device_regs(SN)}, tmp_path
+        [ep("gw1")],
+        [inverter("deye1", "gw1")],
+        {"gw1": device_regs(SN)},
+        tmp_path,
+        also={"mppt_count", "phase_count", "battery_input_code"},
     ) as r:
         inv = r.inv("deye1")
         await inv.step()

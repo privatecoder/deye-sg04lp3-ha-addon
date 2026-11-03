@@ -41,7 +41,7 @@ async def test_the_new_questions_are_asked_and_saved(browser: Browser, tmp_path:
         tou = page.locator('fieldset[data-feature="tou_used"]')
         await tou.get_by_label("Ja, Zeitplan", exact=False).check()
         # the sensor preview follows the answers
-        await expect(page.locator('[data-key="ct_a_selfcheck_success"] input')).to_be_checked()
+        await expect(page.locator('[data-key="ct_selfcheck_result_raw"] input')).to_be_checked()
         await expect(page.locator('[data-key="tou_enable"] input')).to_be_checked()
         await page.get_by_role("button", name="Speichern", exact=True).click()
         await expect(page.locator(".toast.ok")).to_be_visible()

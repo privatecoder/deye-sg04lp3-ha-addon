@@ -232,7 +232,6 @@ DIAGNOSTICS = {
     "active_faults",
     "power_switch",
     "remote_run_enable",
-    "parallel_enable",
 }  # fw_main_version (R15) is part of the MCU2 diagnostic since 0.2.7
 
 

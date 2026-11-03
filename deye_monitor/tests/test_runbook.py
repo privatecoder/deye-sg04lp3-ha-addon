@@ -111,8 +111,8 @@ def test_the_default_template_figures_in_the_runbook(tmp_path: Path) -> None:
     cfg = plant_config()
     manager = SelectionManager(SelectionStore(tmp_path, specs_from_config(cfg)))
     plan = manager.plan("deye1")
-    assert len(plan.blocks) == 43 and plan.reads_r65
-    assert "43 read blocks" in RUNBOOK
+    assert len(plan.blocks) == 42 and plan.reads_r65
+    assert "42 read blocks" in RUNBOOK
 
 
 def test_the_documented_diagnostic_entities_exist() -> None:

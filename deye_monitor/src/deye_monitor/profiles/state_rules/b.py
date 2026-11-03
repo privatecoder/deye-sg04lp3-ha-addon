@@ -312,16 +312,37 @@ def _bms_protocol(entry: Entry, words: tuple[int, ...]) -> Label:
 # -- DRM and CT self-check ---
 
 
-@state("drm_status_raw")
-def _drm(entry: Entry, words: tuple[int, ...]) -> Label:
+_DRM_ENABLE = 178  # bits 12-13: 2 = Off, 3 = On; 0/1 establish no explicit setting
+
+
+@state("drm_status_raw", context=(_DRM_ENABLE,))
+def _drm(entry: Entry, words: tuple[int, ...]) -> tuple[Label, dict[str, object]]:
+    """The reported DRM flags (R544 bits 0-8), qualified by the DRM setting (R178) when it was
+    read with them. No statement about wiring, electrical level or an applied power limit."""
     word = words[0]
     known = [i for i in range(9) if bit(word, i)]
+    unknown_bits = word & 0xFE00
+    pair = (words[1] >> 12) & 3 if len(words) > 1 else None
+    setting = {2: "off", 3: "on"}.get(pair, "unknown") if pair is not None else "unknown"
+    extra: dict[str, object] = {
+        "reported_modes": [f"DRM{i}" for i in known],
+        "unknown_bits": unknown_bits,
+        "enable_setting": setting,
+    }
+    if setting == "off":  # the reported bits stay in the attributes
+        return Label("DRM: Aus (Einstellung)", "DRM: Off (setting)"), extra
+    if setting == "unknown":
+        return Label("DRM-Freigabe unbekannt", "DRM enable state unknown"), extra
     if known:
         names = "/".join(f"DRM{i}" for i in known)
-        return Label(f"Gemeldet: {names}", f"Reported: {names}")
-    if word >> 9:
-        return Label("Weitere DRM-Flags", "Additional DRM flags")
-    return Label("Kein DRM-Signal gemeldet", "No DRM signal reported")
+        if unknown_bits:
+            return Label(
+                f"Gemeldet: {names} + weitere Flags", f"Reported: {names} + additional flags"
+            ), extra
+        return Label(f"Gemeldet: {names}", f"Reported: {names}"), extra
+    if unknown_bits:
+        return Label("Weitere DRM-Flags gemeldet", "Additional DRM flags reported"), extra
+    return Label("Keine DRM-Flags gemeldet", "No DRM flags reported"), extra
 
 
 for _i in range(9):

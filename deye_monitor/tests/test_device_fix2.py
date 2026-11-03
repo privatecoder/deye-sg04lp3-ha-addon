@@ -273,7 +273,7 @@ async def test_shared_identity_reset_invalidates_running_peer(tmp_path: Path) ->
         await block_a(r)
         assert b.state is InverterState.RUNNING
         gate = install_gate(r, "b")
-        entered, release = gate.gate(586)
+        entered, release = gate.gate(587)
         old_epoch, before = b.lifecycle_epoch, len(r.sink.states)
         task = asyncio.create_task(b._run_group("battery"))
         await asyncio.wait_for(entered.wait(), 1)

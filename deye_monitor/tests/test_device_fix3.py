@@ -98,7 +98,7 @@ async def test_global_reset_invalidates_every_peer_despite_notification_error(
         await a.step()
         await b.step()
         proxy = install_gate(r, "b")
-        entered, release = proxy.gate(586)
+        entered, release = proxy.gate(587)
         before, epoch_a, epoch_b = len(sink.states), a.lifecycle_epoch, b.lifecycle_epoch
         task = asyncio.create_task(b._run_group("battery"))
         await asyncio.wait_for(entered.wait(), 1)

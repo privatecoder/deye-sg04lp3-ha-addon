@@ -70,10 +70,13 @@ def expected(f: Features) -> dict[str, bool]:
     battery_bms = f.battery and f.bms
     terminal = f.grid_port_use in ("utility", "generator")
     utility = f.utility_grid and f.grid_port_use == "utility"
-    out = {k: True for k in ALARM_BITS}
+    out = {k: False for k in ALARM_BITS}  # 0.5.2: covered by the named aggregates, opt-in
     out |= {k: False for k in NEVER}
     out |= {k: battery_bms for k in BMS_ON}
-    out |= {"battery_soc": battery_no_bms, "battery_temperature": battery_no_bms}
+    out |= {
+        "battery_soc": battery_no_bms,
+        "battery_temperature": False,
+    }  # no probe is described: manual only
     out |= {"battery_voltage": f.battery, "battery_current": f.battery}
     out |= {k: terminal for k in ("grid_voltage_a", "grid_voltage_b", "grid_voltage_c")}
     out["grid_frequency"] = terminal
@@ -92,7 +95,7 @@ def expected(f: Features) -> dict[str, bool]:
             "grid_energy_export_total",
         )
     }
-    out |= {"parallel_master": f.parallel, "parallel_sn": f.parallel, "parallel_enable": True}
+    out |= {"parallel_master": f.parallel, "parallel_sn": f.parallel, "parallel_enable": f.parallel}
     return out
 
 
@@ -114,7 +117,8 @@ def test_the_bms_answer_selects_one_source_for_soc_and_temperature(
     # the inverter's own measurements stay: slaves need them
     assert {"battery_voltage", "battery_current", "battery_energy_charge_total"} <= with_bms
     without = template_selection(p, hw, Features(bms=False))
-    assert {"battery_soc", "battery_temperature"} <= without and not without & BMS_ON
+    assert "battery_soc" in without and not without & BMS_ON
+    assert "battery_temperature" not in without  # opt-in until a probe can be described
 
 
 def test_the_island_selects_load_and_inverter_output_but_not_ups(
@@ -132,7 +136,7 @@ def test_the_raw_words_are_off_but_the_alarm_bits_and_decoded_views_stay(
 ) -> None:
     template = template_selection(p, hw, Features())
     assert not template & RAW_WORDS
-    assert template >= ALARM_BITS and {"active_warnings", "active_faults"} <= template
+    assert not template & ALARM_BITS and {"active_warnings", "active_faults"} <= template
     for key in RAW_WORDS | {"bms_discharge_voltage", "ups_power_total"}:
         assert p.entry(key).selectable  # still selectable by hand
     for key in ("bms_offgrid_charge_limit", "bms_offgrid_discharge_limit_raw", "load_frequency"):
@@ -233,7 +237,8 @@ def test_the_signal_answer_adds_no_sensor(p: Profile, hw: HardwareProfile) -> No
     f = Features.model_validate(CHARGING_ONLY)
     a = template_selection(p, hw, f.model_copy(update={"external_signal_use": "none"}))
     b = template_selection(p, hw, f.model_copy(update={"external_signal_use": "grid_contactor"}))
-    assert a == b
+    assert b - a == {"external_signal_reported"}  # its own report only, no GRID sensor
+    assert not a - b
 
 
 def test_the_grid_and_ev_texts_use_the_design_41_wording() -> None:
@@ -251,6 +256,6 @@ def test_the_grid_and_ev_texts_use_the_design_41_wording() -> None:
         "Nothing – GRID unused",  # noqa: RUF001
         "Was steuert der externe Signalausgang dieses Wechselrichters?",
         "Kein vom Wechselrichter gesteuerter Fahrzeuglader",
-        "directly with the inverter",
+        "EV charge control",
     ):
         assert needle in js, needle

@@ -761,7 +761,7 @@ card (totals and the status of every member).
    possible source, not the relay state; the question about the external signal output is independent
    (answer “Nothing” if the contactor is switched elsewhere, for example by Home Assistant). The
    vehicle-charger question applies only to a charger the inverter itself controls; a third-party
-   wallbox is “No”.
+   wallbox is “No”. The default sensor template is deliberately short: DRM, single alarm bits and per-phase details are optional and stay searchable in step 2.
    “GRID unused” hides all grid values, “no battery” all battery values. *Step 2 – choose sensors:* grouped by measuring point with a
    short description and unit; search, filter (all / selected / deviations); quick actions
    “Basics only” (serial number, operating state, active warnings and faults) and “Deselect all”, which are

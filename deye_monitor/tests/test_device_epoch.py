@@ -140,7 +140,7 @@ async def test_selection_revision_invalidates_inflight_group(tmp_path: Path) -> 
     ) as r:
         inv = await running(r)
         proxy = install_gate(r, "deye1")
-        entered, release = proxy.gate(586)  # the battery group is in flight under the old plan
+        entered, release = proxy.gate(587)  # the battery group is in flight under the old plan
         task = asyncio.create_task(inv.step())
         await asyncio.wait_for(entered.wait(), 2)
         before = len(r.sink.states)
@@ -167,7 +167,7 @@ async def test_deselect_and_reselect_does_not_revive_an_old_answer(tmp_path: Pat
         inv = await running(r)
         old = inv.selection
         proxy = install_gate(r, "deye1")
-        entered, release = proxy.gate(586)
+        entered, release = proxy.gate(587)
         task = asyncio.create_task(inv.step())
         await asyncio.wait_for(entered.wait(), 2)
         before = len(r.sink.states)
@@ -211,7 +211,7 @@ async def test_rebind_during_a_data_read_publishes_nothing_of_the_old_cycle(tmp_
     ) as r:
         inv = await running(r)
         proxy = install_gate(r, "deye1")
-        entered, release = proxy.gate(586)
+        entered, release = proxy.gate(587)
         task = asyncio.create_task(inv.step())
         await asyncio.wait_for(entered.wait(), 2)
         before = len(r.sink.states)

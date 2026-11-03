@@ -12,7 +12,7 @@ from tests.device_helpers import Rig, device_regs, ep, install_gate, inverter, r
 from tests.fakes.servers import Behavior
 
 A = "2401234567"
-BATTERY_ADDRS = {586, 587, 588, 591}  # what the default selection needs of the battery group
+BATTERY_ADDRS = {587, 588, 591}  # what the default selection needs of the battery group
 
 
 async def ready(r: Rig) -> None:

@@ -111,7 +111,7 @@
    "expire_after": 900,
    "json_attributes_template": "{{ value_json.get('drm3_reported_attributes') | tojson }}",
    "json_attributes_topic": "deye/ab12cd34/deye1/settings",
-   "name": "DRM3 input reported",
+   "name": "DRM3 reported",
    "payload_off": "OFF",
    "payload_on": "ON",
    "platform": "binary_sensor",

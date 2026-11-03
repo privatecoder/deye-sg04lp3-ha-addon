@@ -215,6 +215,8 @@ The five 0.5.0 features start as "unknown"/no and select nothing; the EV charger
 
 0.5.2: the signal answer (`external_signal_use`) never influences GRID eligibility, gates or sensor predicates; `_NO_GRID` is unchanged. Presets: R145 only with a confirmed positive `export_limit_w`, R143/R340 not at a 0 W allowance. Sensor template: `inverter_frequency` for `battery OR grid_port_use in {unused,generator}`, `relay_grid` (R552 bit 2) and `grid_internal_power_total` default for `grid_port_use in {utility,generator}`.
 
+0.5.2 preselection audit (task 43): 93 of 314 profile entries are `default_enabled` (16 without a predicate). Predicates: B/B0/BMS (battery, no BMS, BMS), P (parallel), G (`grid_port_use` utility or generator), U (utility), GEN, E (G and an external measurement), M (G and a meter), S (a described `external_signal_use`), T (battery and ToU), TV (T and voltage basis). All DRM entities are opt-in; `drm_status_raw` reads R544 with R178 as state context (§9.3 read plan includes the context address).
+
 `requires` uses predicates (`all_of`/`any_of`) over these features, e.g. GEN power: `gen_port_mode in [generator, smart_load, ac_coupled]`. Register mapping per measurement location according to REVIEW2 §4 (grid_terminal, battery, bms, gen_port, inverter_output, ups_load, pv, parallel, tou, diagnostic). Diagnostics (identity, R65, R80, R98/R111, R133, R336, R500, R551–R558) are **always** available, independent of features. Suggestion of the features from read settings (R111, R133, R189, R336) on first connection, user confirms.
 
 ### 9.3 Read plan

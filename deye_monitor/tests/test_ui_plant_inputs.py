@@ -113,13 +113,14 @@ async def test_only_zero_hint_is_not_shown_for_plant_total_inputs(
     async with ui_stack(tmp_path) as stack:
         stack.api.publisher = StubPublisher(VIEW)  # type: ignore[assignment]
         inv = stack.plant.rig.inv("deye1")
-        for key in ("load_power_total", "grid_voltage_a"):
+        for key in ("load_power_total", "pv1_voltage", "grid_voltage_a"):
             obs = Observation(watch_zero=True)
             for _ in range(40):
                 obs.record(0)
             inv.observations[key] = obs
         s = await open_ui(browser, stack)
         card = s.page.locator('article.inverter[data-id="deye1"], article.inverter').first
-        await expect(card).to_contain_text("Netzspannung")  # still reported for a plain sensor
+        await expect(card).to_contain_text("PV1 Spannung")  # still reported for a plain sensor
+        await expect(card).not_to_contain_text("Netzspannung")  # GRID is described: 0 is expected
         await expect(card).not_to_contain_text("Lastleistung gesamt")
         await s.check()

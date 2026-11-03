@@ -138,11 +138,16 @@ def test_no_new_sensor_exposes_a_register_number_in_its_description() -> None:
 
 def test_default_selection_of_the_always_relevant_reports() -> None:
     s = sel()
-    assert {"external_signal_reported", "force_off_grid_reported"} <= s
-    assert {f"drm{i}_reported" for i in range(9)} | {"drm_status_raw"} <= s
+    # 0.5.2 (task 43): the signal report needs a described signal use, DRM and the optional
+    # request reports are opt-in
+    assert not {"external_signal_reported", "force_off_grid_reported"} & s
+    assert not ({f"drm{i}_reported" for i in range(9)} | {"drm_status_raw"}) & s
     assert {"mppt_scanning_reported", "signal_island_mode_reported", "dc_input_power_total"} <= s
     assert {"battery_power_derived", "bms_power_derived", "bms_alarm_word", "bms_fault_word"} <= s
-    assert {"grid_monitoring_source", "meter_manufacturer_reported"} <= s
+    assert not {"grid_monitoring_source", "meter_manufacturer_reported"} & s  # need E / M
+    assert {"grid_monitoring_source"} <= sel(external_measurement="ct")
+    assert "meter_manufacturer_reported" not in sel(external_measurement="ct")
+    assert "meter_manufacturer_reported" in sel(external_measurement="meter")
     raw = {k for k in s if P.entry(k).release == "unresolved"}
     assert not raw & {"bms_soh_raw", "bms_software_version", "ct_ratio_reported"}
 
@@ -155,7 +160,7 @@ def test_signal_island_mode_follows_battery_or_off_grid() -> None:
 
 
 def test_bms_reports_need_a_battery_with_bms() -> None:
-    for key in ("bms_alarm_word", "bms_fault_word", "bms_power_derived", "bms_protocol_reported"):
+    for key in ("bms_alarm_word", "bms_fault_word", "bms_power_derived"):
         assert key in sel(battery=True, bms=True)
         assert key not in sel(battery=True, bms=False)
         assert key not in sel(battery=False)
@@ -193,23 +198,29 @@ def test_measurement_answer_selects_ct_checks_and_external_values(
     answer: str, ct: bool, external: bool
 ) -> None:
     s = sel(external_measurement=answer)
-    assert ("ct_a_selfcheck_success" in s) is ct and ("ct_phase_sequence_result" in s) is ct
+    assert ("ct_selfcheck_result_raw" in s) is ct
     assert ("grid_external_power_total" in s) is external
-    assert ("grid_external_current_a" in s) is external
+    # detailed per-phase and CT bit entities are optional (the aggregates stay default)
+    assert not {"grid_external_current_a", "ct_a_selfcheck_success", "ct_phase_sequence_result"} & s
     assert "ct_ratio_reported" not in s and "ct_direction_bit7_raw" not in s  # raw: never
 
 
 def test_measurement_answer_needs_a_grid_terminal() -> None:
     off_grid = {"utility_grid": False, "grid_port_use": "unused"}
     assert "grid_external_power_total" not in sel(external_measurement="ct", **off_grid)
-    assert "ct_a_selfcheck_success" not in sel(external_measurement="ct", **off_grid)
+    assert "ct_selfcheck_result_raw" not in sel(external_measurement="ct", **off_grid)
 
 
 def test_tou_answer_selects_the_schedule_sensors() -> None:
-    keys = {"tou_enable", "tou_weekdays", "tou_slot1_start", "tou_slot6_power", "tou_slot3_voltage"}
+    keys = {"tou_enable", "tou_weekdays", "tou_slot1_start", "tou_slot6_power"}
     assert not keys & sel()
     assert keys <= sel(tou_used=True)
     assert not keys & sel(tou_used=True, battery=False, bms=False)
+    # the voltage targets follow a described voltage control basis; Spain mode is manual only
+    assert "tou_slot3_voltage" not in sel(tou_used=True)
+    assert "tou_slot3_voltage" not in sel(tou_used=True, battery_control_basis="soc")
+    assert "tou_slot3_voltage" in sel(tou_used=True, battery_control_basis="voltage")
+    assert "tou_spain_mode" not in sel(tou_used=True, battery_control_basis="voltage")
     assert "tou_slot1_soc_raw" not in sel(tou_used=True)  # raw words stay manual
 
 
@@ -217,10 +228,36 @@ def test_other_answers_do_not_change_the_sensor_template() -> None:
     base = sel()
     for name, value in (
         ("export_policy", "zero_export_external"),
-        ("external_signal_use", "grid_contactor"),
         ("battery_control_basis", "soc"),
     ):
         assert sel(**{name: value}) == base
+
+
+def test_the_signal_report_follows_a_described_signal_use() -> None:
+    for use in ("grid_contactor", "generator_start", "shared_grid_and_generator_logic", "other"):
+        assert "external_signal_reported" in sel(external_signal_use=use)
+    for use in ("none", "unknown"):
+        assert "external_signal_reported" not in sel(external_signal_use=use)
+    # nothing but the description selects it (and the signal answer adds nothing else)
+    assert sel(external_signal_use="grid_contactor") - sel() == {"external_signal_reported"}
+
+
+def test_a_description_without_drm_selects_no_drm_entity_whatever_the_other_answers() -> None:
+    drm = {f"drm{i}_reported" for i in range(9)} | {"drm_status_raw"}
+    for kw in ({}, {"utility_grid": False, "grid_port_use": "unused"}, {"parallel": True}):
+        assert not drm & sel(**kw)
+
+
+def test_the_optional_entities_stay_selectable_and_decode() -> None:
+    from deye_monitor.profiles.plan import validate_selection
+
+    optional = {
+        "mppt_count", "phase_count", "battery_input_code", "alarm_fan", "fault_f13",
+        "drm_status_raw", "drm0_reported", "force_off_grid_reported", "battery_temperature",
+        "grid_external_current_a", "gen_power_raw_a", "bms_sleep", "ct_a_selfcheck_success",
+        "tou_spain_mode",
+    }  # fmt: skip
+    validate_selection(P, optional)
 
 
 def test_new_questions_default_to_no_preselection() -> None:
@@ -394,3 +431,24 @@ def test_protection_words_are_planned_and_stay_in_budget() -> None:
         P, sel() | BOOTSTRAP_KEYS, Features(), max_read_registers=60, energy_auto=True
     )
     assert plan.budget.utilisation >= baseline.budget.utilisation
+
+
+def test_the_grid_telemetry_of_the_zero_only_hint_policy_is_an_exact_key_set() -> None:
+    """Task 44: web/static/common.js hides the zero-only prompt for exactly these keys while GRID
+    has a described source. Only the first five are zero-watched; the rest must stay unwatched."""
+    import re
+    from pathlib import Path
+
+    js = (Path(__file__).parents[1] / "src/deye_monitor/web/static/common.js").read_text()
+    block = js[js.index("const GRID_TELEMETRY") : js.index("]);", js.index("const GRID_TELEMETRY"))]
+    keys = re.findall(r"'([a-z_]+)'", block)
+    assert len(keys) == 24 and len(set(keys)) == 24
+    watched = {
+        "grid_voltage_a",
+        "grid_voltage_b",
+        "grid_voltage_c",
+        "grid_line_voltage_ca",
+        "grid_frequency",
+    }
+    for key in keys:
+        assert P.entry(key).observes_zero is (key in watched), key

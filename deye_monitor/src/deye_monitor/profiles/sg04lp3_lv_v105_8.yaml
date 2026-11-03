@@ -482,8 +482,8 @@ entries:
     de: MPPT-Anzahl
     en: MPPT count
   description:
-    de: "Anzahl der PV-Eingänge (MPPT), die das Gerät meldet."
-    en: "Number of PV inputs (MPPT) the device reports."
+    de: "Vom Gerät gemeldete MPPT-Anzahl, nicht die Zahl der PV-String-Anschlüsse (bei 10/12 kW können sich zwei Strings einen Tracker teilen)."
+    en: "Reported MPPT count, not the number of physical PV string connectors (on 10/12 kW two strings may share one tracker)."
   addr: 22
   not_reported:
   - 65535
@@ -506,7 +506,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R22 (TXT 340-347)"
   confidence: firmware_placement_document_example_decoding
-  default_enabled: true
+  default_enabled: false
   notes: "High byte of R22. Document example 0x0503 (five MPPT) is not SG04: SG04LP3-EU expects 2. Mismatch yields capability_conflict,\
     \ never extra channels."
 - key: phase_count
@@ -537,7 +537,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R22 (TXT 340-347)"
   confidence: firmware_placement_document_example_decoding
-  default_enabled: true
+  default_enabled: false
   notes: Low byte of R22; three phases expected.
 - key: id_r22
   name:
@@ -618,7 +618,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R24 (TXT 349-358)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: "Code for the number of battery inputs; says nothing about whether a battery is connected. Every code other than 0/1/2 is undefined (V105.8 range [0,4], live code 5): not reported (no conflict, no own entity), the profile value applies. In V100.0 R24 was empty, R25-R29 were 'reserve SN byte' and R23 was the grid voltage class; R23-R34 were reassigned with V104.2. Live, FW 0x1175 returns R24=5 through logger and Waveshare gateway alike, so the value comes from the inverter; the firmware copies R22/R24 from internal sources (Codex), producer unproven. Undefined values carry no statement."
 - key: id_battery_input_code
   name:
@@ -798,7 +798,9 @@ entries:
   tags:
   - parallel
   - role
-  requires: {}
+  requires:
+    feature: parallel
+    equals: true
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -1341,7 +1343,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R553 (TXT 3451-3463)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: Documented bit 1 (FAN_WARN). A previously stored cause may persist.
 - key: alarm_grid_phase
   name:
@@ -1367,7 +1369,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R553 (TXT 3451-3463)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: Documented bit 2 (grid phase error). A previously stored cause may persist.
 - key: alarm_battery_missing
   name:
@@ -1393,7 +1395,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R554 (TXT 3463-3474)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: Bit 14 of the second alarm word is W31 \"Battery_comm_warn\" in the Deye alarm list (Wn = bit n-1). A previously stored cause may persist.
 - key: alarm_parallel_comm
   name:
@@ -1419,7 +1421,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R554 (TXT 3463-3474)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: Documented bit 15. A previously stored cause may persist.
 - key: alarm_meter_comm
   name:
@@ -1521,7 +1523,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R555 (TXT 3474-3481)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: R555 bit 12 maps to F13 (C070/1175 cause/UI link). A previously stored cause may persist.
 - key: fault_f29
   name:
@@ -1547,7 +1549,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R556 (TXT 3481-3487)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: R556 bit 12 maps to F29 (C070/1175 cause/UI link). A previously stored cause may persist.
 - key: fault_f41
   name:
@@ -1573,7 +1575,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R557 (TXT 3487-3493)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: R557 bit 8 maps to F41 (C070/1175 cause/UI link). A previously stored cause may persist.
 - key: temp_dc_transformer
   name:
@@ -1665,7 +1667,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R586 (TXT 3517-3524)"
   confidence: firmware_dependent_offset_1151_code_1175_live
-  default_enabled: true
+  default_enabled: false
   notes: "Raw 0 with an applied offset (-1000) means not available (parallel slaves report raw 0 = -100 C after the offset), never -100 C (diagnostics: identity.firmware_offsets.battery_temperature.unavailable). Community and a third-party dump (raw 1320 = 32.0 C = R217) consistently use (raw-1000)*0.1; 1151 without offset is only proven in the direct MCU2 export. Offset by main firmware (R15): 0x1151 (direct MCU2 path, own producer/exporter evidence) signed16(raw)/10 without\
     \ offset; 0x1175 (live, Logger path) (raw-1000)/10, observed raw 1176 = 17.6 C = BMS value. Another firmware: the offset is\
     \ applied only if raw/10 > 80 C and (raw-1000)/10 lies in -40..80 C (diagnostics: identity.firmware_offsets)."
@@ -2496,12 +2498,10 @@ entries:
   tags: []
   requires:
     all_of:
-    - any_of:
-      - feature: utility_grid
-        equals: true
-      - feature: grid_port_use
-        in:
-        - generator
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
     - feature: external_measurement
       in:
       - ct
@@ -2514,7 +2514,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R613 (TXT 3684-3691)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: Physical polarity not established.
 - key: grid_internal_current_b
   name:
@@ -2567,12 +2567,10 @@ entries:
   tags: []
   requires:
     all_of:
-    - any_of:
-      - feature: utility_grid
-        equals: true
-      - feature: grid_port_use
-        in:
-        - generator
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
     - feature: external_measurement
       in:
       - ct
@@ -2585,7 +2583,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R614 (TXT 3691-3698)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: Physical polarity not established.
 - key: grid_internal_current_c
   name:
@@ -2638,12 +2636,10 @@ entries:
   tags: []
   requires:
     all_of:
-    - any_of:
-      - feature: utility_grid
-        equals: true
-      - feature: grid_port_use
-        in:
-        - generator
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
     - feature: external_measurement
       in:
       - ct
@@ -2656,7 +2652,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R615 (TXT 3698-3705)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
   notes: Physical polarity not established.
 - key: grid_internal_power_a
   name:
@@ -2812,12 +2808,10 @@ entries:
   tags: []
   requires:
     all_of:
-    - any_of:
-      - feature: utility_grid
-        equals: true
-      - feature: grid_port_use
-        in:
-        - generator
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
     - feature: external_measurement
       in:
       - ct
@@ -2830,7 +2824,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R616 (TXT 3705-3706), R705 (TXT 3981-3982)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: true
+  default_enabled: false
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_external_power_b
@@ -2853,12 +2847,10 @@ entries:
   tags: []
   requires:
     all_of:
-    - any_of:
-      - feature: utility_grid
-        equals: true
-      - feature: grid_port_use
-        in:
-        - generator
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
     - feature: external_measurement
       in:
       - ct
@@ -2871,7 +2863,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R617 (TXT 3706-3707), R706 (TXT 3982-3983)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: true
+  default_enabled: false
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_external_power_c
@@ -2894,12 +2886,10 @@ entries:
   tags: []
   requires:
     all_of:
-    - any_of:
-      - feature: utility_grid
-        equals: true
-      - feature: grid_port_use
-        in:
-        - generator
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
     - feature: external_measurement
       in:
       - ct
@@ -2912,7 +2902,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R618 (TXT 3707-3708), R707 (TXT 3983-3984)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: true
+  default_enabled: false
   notes: "Signed 32 bit: (high<<16)|low, then sign, then scale; the low word is never sign-extended first. Physical polarity/measurement\
     \ boundary: document only."
 - key: grid_external_power_total
@@ -2935,12 +2925,10 @@ entries:
   tags: []
   requires:
     all_of:
-    - any_of:
-      - feature: utility_grid
-        equals: true
-      - feature: grid_port_use
-        in:
-        - generator
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
     - feature: external_measurement
       in:
       - ct
@@ -4165,7 +4153,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R664 (TXT 3832-3834), R668 (TXT 3840-3842)"
   confidence: firmware_1175_variable_32bit_producer;C070_signed_W_display;polarity_unproved
-  default_enabled: true
+  default_enabled: false
   notes: "Signed 32-bit word pair (low word first), W without division (MCU2 1175 producer, C070 display). With GEN port use Smart Load (R133 = 1) the producer applies a software negation (proved); the electrical import/export orientation and the ADC calibration are still unproved, so no flow direction is claimed and the decoded value is not inverted again."
 - key: gen_power_raw_b
   name:
@@ -4198,7 +4186,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R665 (TXT 3834-3836), R669 (TXT 3842-3844)"
   confidence: firmware_1175_variable_32bit_producer;C070_signed_W_display;polarity_unproved
-  default_enabled: true
+  default_enabled: false
   notes: "Signed 32-bit word pair (low word first), W without division (MCU2 1175 producer, C070 display). With GEN port use Smart Load (R133 = 1) the producer applies a software negation (proved); the electrical import/export orientation and the ADC calibration are still unproved, so no flow direction is claimed and the decoded value is not inverted again."
 - key: gen_power_raw_c
   name:
@@ -4231,7 +4219,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R666 (TXT 3836-3838), R670 (TXT 3844-3846)"
   confidence: firmware_1175_variable_32bit_producer;C070_signed_W_display;polarity_unproved
-  default_enabled: true
+  default_enabled: false
   notes: "Signed 32-bit word pair (low word first), W without division (MCU2 1175 producer, C070 display). With GEN port use Smart Load (R133 = 1) the producer applies a software negation (proved); the electrical import/export orientation and the ADC calibration are still unproved, so no flow direction is claimed and the decoded value is not inverted again."
 - key: gen_power_raw_total
   name:
@@ -6381,7 +6369,12 @@ entries:
   group: settings
   tags:
   - gen_port
-  requires: {}
+  requires:
+    feature: gen_port_mode
+    in:
+    - generator
+    - smart_load
+    - ac_coupled
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -6594,7 +6587,7 @@ entries:
   release: profile_dependent
   source: "V105.8 registers.json inverter: R146 (TXT 1177-1191)"
   confidence: document_only
-  default_enabled: true
+  default_enabled: false
 - key: tou_slot1_start
   name:
     de: ToU Slot 1 Start
@@ -6681,6 +6674,8 @@ entries:
       equals: true
     - feature: tou_used
       equals: true
+    - feature: battery_control_basis
+      equals: voltage
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -6826,6 +6821,8 @@ entries:
       equals: true
     - feature: tou_used
       equals: true
+    - feature: battery_control_basis
+      equals: voltage
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -6971,6 +6968,8 @@ entries:
       equals: true
     - feature: tou_used
       equals: true
+    - feature: battery_control_basis
+      equals: voltage
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -7116,6 +7115,8 @@ entries:
       equals: true
     - feature: tou_used
       equals: true
+    - feature: battery_control_basis
+      equals: voltage
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -7261,6 +7262,8 @@ entries:
       equals: true
     - feature: tou_used
       equals: true
+    - feature: battery_control_basis
+      equals: voltage
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -7406,6 +7409,8 @@ entries:
       equals: true
     - feature: tou_used
       equals: true
+    - feature: battery_control_basis
+      equals: voltage
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -7491,7 +7496,13 @@ entries:
   category: settings
   point: diagnostic
   group: settings
-  requires: {}
+  requires:
+    feature: external_signal_use
+    in:
+    - grid_contactor
+    - generator_start
+    - shared_grid_and_generator_logic
+    - other
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -7586,7 +7597,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R222; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'The BMS reports force charge (R222 bit 1). Evidence: document mapping public copy.'
 - key: bms_sleep
   name:
@@ -7617,15 +7628,15 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R222; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'The BMS reports sleep (R222 bit 3). Evidence: document mapping public copy.'
 - key: bms_flags_raw
   name:
     de: BMS-Statusflags
     en: BMS flags
   description:
-    de: BMS-Statusbits als Rohwort.
-    en: BMS status flags as a raw word.
+    de: Vom BMS gemeldete Statusflags (Zwangsladen, Sleep); unbekannte Bits stehen in den Attributen.
+    en: BMS flags as reported (force charge, sleep); unknown bits are in the attributes.
   addr: 222
   type: bitfield
   entity_category: diagnostic
@@ -7671,7 +7682,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R223; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'Reported BMS protocol identifier (R223); does not prove an active BMS link. Evidence: document
     mapping public copy.'
 - key: bms_soh_raw
@@ -7786,11 +7797,11 @@ entries:
   notes: 'BMS hardware version (R227) as a raw value. Evidence: document mapping public copy.'
 - key: drm_status_raw
   name:
-    de: DRM-Eingangsstatus
-    en: DRM input status
+    de: DRM-Status
+    en: DRM status
   description:
-    de: Eingangszustand der DRM-Anschlüsse als Rohwort.
-    en: State of the DRM inputs as a raw word.
+    de: Gemeldete DRM-Flags, mit der DRM-Einstellung eingeordnet. Keine Bestätigung der Verdrahtung oder einer ausgeführten Leistungsbegrenzung.
+    en: Reported DRM flags, qualified by the DRM setting; not confirmation of wiring or an applied power limit.
   addr: 544
   type: bitfield
   entity_category: diagnostic
@@ -7804,15 +7815,15 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'State of the DRM inputs (R544) as a raw word. Evidence: document mapping public copy.'
+  default_enabled: false
+  notes: 'Reported DRM flags (R544 bits 0-8), qualified by the DRM setting (R178 bits 12-13). Evidence: document mapping public copy.'
 - key: drm0_reported
   name:
-    de: DRM0-Eingang gemeldet
-    en: DRM0 input reported
+    de: DRM0 gemeldet
+    en: DRM0 reported
   description:
-    de: DRM-Eingang 0 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 0 reported active; says nothing about wiring.
+    de: Bit 0 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 0 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 1
   type: bitfield
@@ -7830,16 +7841,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 0 reported active (R544 bit 1); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM0 flag reported (R544 bit 0, mask 1); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm1_reported
   name:
-    de: DRM1-Eingang gemeldet
-    en: DRM1 input reported
+    de: DRM1 gemeldet
+    en: DRM1 reported
   description:
-    de: DRM-Eingang 1 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 1 reported active; says nothing about wiring.
+    de: Bit 1 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 1 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 2
   type: bitfield
@@ -7857,16 +7868,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 1 reported active (R544 bit 2); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM1 flag reported (R544 bit 1, mask 2); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm2_reported
   name:
-    de: DRM2-Eingang gemeldet
-    en: DRM2 input reported
+    de: DRM2 gemeldet
+    en: DRM2 reported
   description:
-    de: DRM-Eingang 2 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 2 reported active; says nothing about wiring.
+    de: Bit 2 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 2 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 4
   type: bitfield
@@ -7884,16 +7895,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 2 reported active (R544 bit 3); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM2 flag reported (R544 bit 2, mask 4); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm3_reported
   name:
-    de: DRM3-Eingang gemeldet
-    en: DRM3 input reported
+    de: DRM3 gemeldet
+    en: DRM3 reported
   description:
-    de: DRM-Eingang 3 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 3 reported active; says nothing about wiring.
+    de: Bit 3 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 3 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 8
   type: bitfield
@@ -7911,16 +7922,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 3 reported active (R544 bit 4); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM3 flag reported (R544 bit 3, mask 8); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm4_reported
   name:
-    de: DRM4-Eingang gemeldet
-    en: DRM4 input reported
+    de: DRM4 gemeldet
+    en: DRM4 reported
   description:
-    de: DRM-Eingang 4 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 4 reported active; says nothing about wiring.
+    de: Bit 4 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 4 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 16
   type: bitfield
@@ -7938,16 +7949,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 4 reported active (R544 bit 5); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM4 flag reported (R544 bit 4, mask 16); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm5_reported
   name:
-    de: DRM5-Eingang gemeldet
-    en: DRM5 input reported
+    de: DRM5 gemeldet
+    en: DRM5 reported
   description:
-    de: DRM-Eingang 5 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 5 reported active; says nothing about wiring.
+    de: Bit 5 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 5 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 32
   type: bitfield
@@ -7965,16 +7976,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 5 reported active (R544 bit 6); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM5 flag reported (R544 bit 5, mask 32); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm6_reported
   name:
-    de: DRM6-Eingang gemeldet
-    en: DRM6 input reported
+    de: DRM6 gemeldet
+    en: DRM6 reported
   description:
-    de: DRM-Eingang 6 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 6 reported active; says nothing about wiring.
+    de: Bit 6 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 6 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 64
   type: bitfield
@@ -7992,16 +8003,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 6 reported active (R544 bit 7); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM6 flag reported (R544 bit 6, mask 64); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm7_reported
   name:
-    de: DRM7-Eingang gemeldet
-    en: DRM7 input reported
+    de: DRM7 gemeldet
+    en: DRM7 reported
   description:
-    de: DRM-Eingang 7 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 7 reported active; says nothing about wiring.
+    de: Bit 7 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 7 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 128
   type: bitfield
@@ -8019,16 +8030,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 7 reported active (R544 bit 8); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM7 flag reported (R544 bit 7, mask 128); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: drm8_reported
   name:
-    de: DRM8-Eingang gemeldet
-    en: DRM8 input reported
+    de: DRM8 gemeldet
+    en: DRM8 reported
   description:
-    de: DRM-Eingang 8 meldet aktiv; keine Aussage über die Verdrahtung.
-    en: DRM input 8 reported active; says nothing about wiring.
+    de: Bit 8 des DRM-Statuswortes ist gesetzt; der elektrische Eingangspegel und die daraus folgende Regelung sind nicht belegt.
+    en: Bit 8 of the DRM status word is set; the electrical input level and resulting control action are not established.
   addr: 544
   mask: 256
   type: bitfield
@@ -8046,17 +8057,16 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R544; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
-  notes: 'DRM input 8 reported active (R544 bit 9); says nothing about wiring. Evidence: document mapping
+  default_enabled: false
+  notes: 'DRM8 flag reported (R544 bit 8, mask 256); no statement about wiring. Evidence: document mapping
     public copy.'
 - key: ct_selfcheck_result_raw
   name:
     de: CT-Selbsttestergebnis
     en: CT self-check result
   description:
-    de: Ergebnis der CT-Selbstprüfung als Rohwort. Ohne abgeschlossene Prüfung unbekannt, nicht
-      „in Ordnung“.
-    en: CT self-check result as a raw word. Unknown unless a check has completed, never “healthy”.
+    de: Gemeldete CT-Selbstprüfungs-Flags. Ohne gemeldeten Erfolg unbekannt, nicht „in Ordnung“ und nicht „fehlgeschlagen“.
+    en: Reported CT self-check flags. Without a reported success it is unknown, neither “healthy” nor “failed”.
   addr: 597
   type: bitfield
   entity_category: diagnostic
@@ -8115,7 +8125,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'CT A: self-check reported successful (R597). Unknown unless a check has completed. Evidence:
     document mapping public copy.'
 - key: ct_b_selfcheck_success
@@ -8151,7 +8161,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'CT B: self-check reported successful (R597). Unknown unless a check has completed. Evidence:
     document mapping public copy.'
 - key: ct_c_selfcheck_success
@@ -8187,7 +8197,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'CT C: self-check reported successful (R597). Unknown unless a check has completed. Evidence:
     document mapping public copy.'
 - key: ct_phase_sequence_result
@@ -8221,7 +8231,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'CT phase sequence result (R597 bits 3–5) as a number. Evidence: document mapping public copy.'
 - key: ct_a_direction_reversed
   name:
@@ -8256,7 +8266,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R597; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'CT A reported as reversed (R597 bit 6). Evidence: document mapping public copy.'
 - key: ct_direction_bit7_raw
   name:
@@ -8682,10 +8692,17 @@ entries:
   point: diagnostic
   group: settings
   requires:
-    feature: grid_port_use
-    in:
-    - utility
-    - generator
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - ct
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -8709,10 +8726,16 @@ entries:
   point: diagnostic
   group: settings
   requires:
-    feature: grid_port_use
-    in:
-    - utility
-    - generator
+    all_of:
+    - feature: grid_port_use
+      in:
+      - utility
+      - generator
+    - feature: external_measurement
+      in:
+      - meter
+      - ct_and_second_meter
+      - meter_and_second_meter
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -8887,7 +8910,7 @@ entries:
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R179; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: true
+  default_enabled: false
   notes: 'Force off-grid request (R179): 0 = Auto, 1 = forced; not the grid state. Evidence: document
     mapping public copy.'
 - key: signal_island_mode_reported

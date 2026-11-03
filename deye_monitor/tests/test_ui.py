@@ -301,19 +301,21 @@ async def test_overview_hints_open_and_are_ordered_warnings_first(
         await page.goto(stack.url)
         card = page.locator("article.inverter").first
         items = card.locator("ul.hints li")
+        # 0.5.2: the default description uses GRID, so the two zero-only GRID prompts are gone
         await expect(items).to_have_count(4)
         await expect(items.nth(0)).to_have_class(re.compile("conflict"))  # warnings first
         await expect(items.nth(1)).to_contain_text("R22=0xFFFF, R24=5")  # one merged info hint
         assert await card.get_by_text("Unbekannter Batterieeingangs-Code").count() == 0
-        toggle = card.get_by_role("button", name="4 weitere Hinweise anzeigen")
+        toggle = card.get_by_role("button", name="2 weitere Hinweise anzeigen")
         await expect(toggle).to_have_attribute("aria-expanded", "false")
         await toggle.focus()
         await page.keyboard.press("Enter")  # keyboard operable
-        await expect(items).to_have_count(8)
+        await expect(items).to_have_count(6)
         await expect(
             card.get_by_role("button", name="Weniger Hinweise anzeigen")
         ).to_have_attribute("aria-expanded", "true")
-        await expect(items.nth(7)).to_contain_text("nur 0 geliefert")  # observations come last
+        await expect(items.nth(5)).to_contain_text("nur 0 geliefert")  # observations come last
+        await expect(card.locator("ul.hints")).not_to_contain_text("Netzspannung")
         await page.keyboard.press("Enter")
         await expect(items).to_have_count(4)
         await context.close()
@@ -418,3 +420,54 @@ async def test_without_a_home_assistant_user_the_ui_is_read_only(
         await open_setup(s)
         await expect(row(page, "grid_voltage_a").locator("input")).to_be_disabled()
         await s.check()
+
+
+async def test_zero_only_prompts_of_a_used_grid_terminal_are_hidden_but_errors_stay(
+    browser: Browser, tmp_path: Path
+) -> None:
+    """Task 44: GRID telemetry may legitimately read 0 while the source is disconnected. Only the
+    zero-only prompt goes (whatever the signal answer); read errors of the same key stay."""
+
+    async def run(port: str, signal: str) -> list[str]:
+        async with ui_stack(tmp_path / f"{port}-{signal}") as stack:
+            context = await browser.new_context(
+                locale="de-DE", viewport={"width": 1100, "height": 900}
+            )
+            page = await context.new_page()
+
+            async def patched(route: Any) -> None:
+                response = await route.fetch()
+                data = await response.json()
+                inv = data["inverters"][0]
+                inv["selection"]["features"].update(
+                    {"grid_port_use": port, "external_signal_use": signal}
+                )
+                inv["status"]["capability_conflicts"] = []
+                inv["status"]["hints"] = [
+                    {"key": k, "state": st, "responses": 101, "daylight_samples": 0}
+                    for k, st in (
+                        ("grid_voltage_a", "zero_only_inconclusive"),
+                        ("grid_frequency", "zero_only_inconclusive"),
+                        ("grid_internal_power_total", "zero_only_inconclusive"),
+                        ("grid_voltage_b", "read_failed"),
+                        ("pv1_voltage", "zero_only_inconclusive"),
+                    )
+                ]
+                await route.fulfill(response=response, json=data)
+
+            await page.route("**/api/inverters", patched)
+            await page.goto(stack.url)
+            card = page.locator("article.inverter").first
+            await expect(card.locator("ul.hints li").first).to_be_visible()
+            texts = await card.locator("ul.hints li").all_inner_texts()
+            await context.close()
+            return texts
+
+    for signal in ("none", "grid_contactor", "unknown"):
+        for port in ("utility", "generator"):
+            texts = await run(port, signal)
+            assert len(texts) == 2, texts  # the read error and the PV prompt remain
+            assert not [x for x in texts if "Netzspannung Phase A" in x], texts
+    unused = await run("unused", "none")
+    # nothing is hidden when no source is described on GRID (the card shows four, the rest folds)
+    assert len(unused) == 4 and "Netzspannung Phase A" in unused[0]

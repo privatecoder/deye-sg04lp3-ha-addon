@@ -264,7 +264,13 @@ async def test_battery_temperature_follows_the_main_firmware_of_the_identity(
 ) -> None:
     for fw, expected, sub in ((0x1175, 17.6, "a"), (0x1151, 117.6, "b")):
         regs = device_regs(SN, r586=1176, r15=fw, r111=1)
-        async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path / sub) as r:
+        async with rig(
+            [ep("gw1")],
+            [inverter("deye1", "gw1")],
+            {"gw1": regs},
+            tmp_path / sub,
+            also={"battery_temperature"},
+        ) as r:
             inv = r.inv("deye1")
             await inv.step()
             assert r.sink.values("deye1", "battery_temperature")[-1] == expected

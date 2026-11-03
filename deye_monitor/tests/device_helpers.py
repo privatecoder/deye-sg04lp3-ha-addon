@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Collection, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,9 @@ from deye_monitor.config import AppConfig, EndpointConfig, parse_config
 from deye_monitor.device import InverterRuntime, InverterState, RuntimeSettings, Snapshot
 from deye_monitor.profiles.decode import Value
 from deye_monitor.profiles.features import Features
+from deye_monitor.profiles.hardware import load_hardware
+from deye_monitor.profiles.plan import template_selection
+from deye_monitor.profiles.schema import load_profile
 from deye_monitor.runtime import Runtime
 from deye_monitor.transport.modbus_tcp import tcp_connector
 from tests.fakes.servers import SERIAL, FakeServer, Kind
@@ -100,6 +103,7 @@ async def rig(
     settings: RuntimeSettings | None = None,
     features: Mapping[str, Features] | None = None,
     bms: bool = False,
+    also: Collection[str] = (),
     sink: Recorder | None = None,
     clock: FakeClock | None = None,
     runtime_kw: Mapping[str, Any] | None = None,
@@ -110,6 +114,15 @@ async def rig(
         # the inverter's own battery values (SOC, temperature) are in the template without a BMS
         features = {i.id: Features(bms=False) for i in cfg.inverters}
     clock = clock or FakeClock()
+    if also:  # the template plus entries that are optional by default (0.5.2)
+        selections = {}
+        for i in cfg.inverters:
+            profile = load_profile(i.profile)
+            template = template_selection(
+                profile, load_hardware(profile.hardware), (features or {}).get(i.id, Features())
+            )
+            selections[i.id] = (template | set(also), 0)
+        runtime_kw = {"selections": selections, **(runtime_kw or {})}
     servers: dict[str, FakeServer] = {}
     for ep in cfg.endpoints:
         server = FakeServer(KIND_OF[ep.transport.value], logger_serial=ep.logger_serial or SERIAL)
