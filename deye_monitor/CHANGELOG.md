@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ordinary PV zeros (shade, night, a quiet string) no longer prompt you to deselect the PV power, voltage and current sensors. The remaining "only 0" hint now reads "… was 0 in all n successful readings since this observation started. This alone does not prove that the sensor is missing or faulty." Read errors, placeholder and capability-conflict hints of PV sensors stay visible. Presentation only: no reads, values or sensor selection change.
 - Device type (R0): the codes 0x0006 (V104.2 spelling) and 0x0601 (HV 20–50 kW) are now named ("Three-phase HV hybrid" and "Three-phase HV hybrid (20–50 kW)"). Like 0x0600 they still count as a device type that does not match the SG04LP3 profile.
 
 ## 0.5.3 — 2026-11-03

@@ -180,10 +180,14 @@ export function hintsOf(inv, { diagnostics = false } = {}) {
     });
   }
   for (const hint of s.hints || []) {
+    const entry = profileOf(inv)?.byKey.get(hint.key);
+    const zeroOnly = hint.state === 'zero_only_inconclusive';
+    // only the zero-only prompt is dropped: read errors, placeholders and conflicts of the same key stay
+    // PV zeros (shade, night, a quiet string) say nothing about the sensor
+    if (zeroOnly && entry?.point === 'pv') continue;
     // a plant total needs this value: "only 0" is legitimate (the master may supply no load)
-    if (hint.state === 'zero_only_inconclusive' && plantInputsOf(inv, profileOf(inv)?.byKey.get(hint.key)).length) continue;
-    // only the zero-only prompt: read errors, placeholders and conflicts of the same key stay
-    if (hint.state === 'zero_only_inconclusive' && GRID_TELEMETRY.has(hint.key) && gridTerminalUsed(inv)) continue;
+    if (zeroOnly && plantInputsOf(inv, entry).length) continue;
+    if (zeroOnly && GRID_TELEMETRY.has(hint.key) && gridTerminalUsed(inv)) continue;
     const name = sensorName(inv, hint.key);
     out.push({
       kind: 'observation',

@@ -283,8 +283,8 @@ async def test_overview_hints_open_and_are_ordered_warnings_first(
                     "battery_voltage",
                     "grid_voltage_a",
                     "grid_frequency",
-                    "pv1_voltage",
-                    "pv2_voltage",
+                    "battery_temperature",
+                    "load_voltage_b",
                     "load_voltage_a",
                 )
             ]
@@ -314,7 +314,7 @@ async def test_overview_hints_open_and_are_ordered_warnings_first(
         await expect(
             card.get_by_role("button", name="Weniger Hinweise anzeigen")
         ).to_have_attribute("aria-expanded", "true")
-        await expect(items.nth(5)).to_contain_text("nur 0 geliefert")  # observations come last
+        await expect(items.nth(5)).to_contain_text("erfolgreichen Messwerten")  # observations last
         await expect(card.locator("ul.hints")).not_to_contain_text("Netzspannung")
         await page.keyboard.press("Enter")
         await expect(items).to_have_count(4)
@@ -466,8 +466,92 @@ async def test_zero_only_prompts_of_a_used_grid_terminal_are_hidden_but_errors_s
     for signal in ("none", "grid_contactor", "unknown"):
         for port in ("utility", "generator"):
             texts = await run(port, signal)
-            assert len(texts) == 2, texts  # the read error and the PV prompt remain
+            assert len(texts) == 1, texts  # only the read error remains; the PV prompt is gone
             assert not [x for x in texts if "Netzspannung Phase A" in x], texts
+            assert not [x for x in texts if "PV1" in x], texts
     unused = await run("unused", "none")
     # nothing is hidden when no source is described on GRID (the card shows four, the rest folds)
+    # (the PV zero-only prompt is gone either way)
     assert len(unused) == 4 and "Netzspannung Phase A" in unused[0]
+    assert not [x for x in unused if "PV1" in x], unused
+
+
+PV_MEASUREMENTS = (
+    "pv1_power",
+    "pv2_power",
+    "pv1_voltage",
+    "pv2_voltage",
+    "pv1_current",
+    "pv2_current",
+)
+
+
+async def _hints_of(
+    browser: Browser, tmp_path: Path, hints: list[dict[str, Any]], *, lang: str = "de-DE"
+) -> list[str]:
+    async with ui_stack(tmp_path) as stack:
+        context = await browser.new_context(locale=lang, viewport={"width": 1100, "height": 900})
+        page = await context.new_page()
+
+        async def patched(route: Any) -> None:
+            response = await route.fetch()
+            data = await response.json()
+            inv = data["inverters"][0]
+            inv["status"]["capability_conflicts"] = []
+            inv["status"]["hints"] = hints
+            await route.fulfill(response=response, json=data)
+
+        await page.route("**/api/inverters", patched)
+        await page.goto(stack.url)
+        await expect(page.locator("article.inverter").first).to_be_visible()
+        await page.wait_for_timeout(300)
+        texts = (
+            await page.locator("article.inverter").first.locator("ul.hints li").all_inner_texts()
+        )
+        await context.close()
+        return texts
+
+
+@pytest.mark.parametrize("key", PV_MEASUREMENTS)
+@pytest.mark.parametrize("responses", [30, 1635, 50000])
+async def test_pv_zero_only_prompts_are_never_shown(
+    browser: Browser, tmp_path: Path, key: str, responses: int
+) -> None:
+    hints = [
+        {
+            "key": key,
+            "state": "zero_only_inconclusive",
+            "responses": responses,
+            "daylight_samples": 0,
+        }
+    ]
+    assert await _hints_of(browser, tmp_path, hints) == []
+
+
+@pytest.mark.parametrize("state", ["read_failed", "known_placeholder"])
+async def test_other_hint_states_of_a_pv_key_stay_visible(
+    browser: Browser, tmp_path: Path, state: str
+) -> None:
+    hints = [{"key": "pv1_power", "state": state, "responses": 5, "daylight_samples": 0}]
+    texts = await _hints_of(browser, tmp_path, hints)
+    assert len(texts) == 1 and "PV1" in texts[0], texts
+
+
+async def test_a_non_pv_zero_only_prompt_uses_the_corrected_wording_in_both_languages(
+    browser: Browser, tmp_path: Path
+) -> None:
+    hints = [
+        {
+            "key": "battery_temperature",
+            "state": "zero_only_inconclusive",
+            "responses": 31,
+            "daylight_samples": 0,
+        },
+        {"key": "pv1_voltage", "state": "zero_only_inconclusive", "responses": 31},
+    ]
+    de = await _hints_of(browser, tmp_path / "de", hints)
+    en = await _hints_of(browser, tmp_path / "en", hints, lang="en-US")
+    assert len(de) == 1 and "in allen 31 erfolgreichen Messwerten seit Beginn" in de[0], de
+    assert "beweist weder einen fehlenden noch einen defekten Sensor" in de[0]
+    assert len(en) == 1 and "in all 31 successful readings since this observation started" in en[0]
+    assert "does not prove that the sensor is missing or faulty" in en[0], en
