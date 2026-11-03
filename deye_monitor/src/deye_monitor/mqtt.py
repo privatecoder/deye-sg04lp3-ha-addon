@@ -536,9 +536,7 @@ class MqttPublisher:
         if self.totals is not None and not self.totals.series.persist_failed:
             expire = {m.key: self.totals.expire_after(m) for m in METRICS}
             app_comps.update(
-                plant_components(
-                    ns, self.totals.series.series, expire, gen=self.totals.gen_active()
-                )
+                plant_components(ns, self.totals.series.series, expire, gates=self.totals.gates())
             )
         targets = {ns.discovery_topic(ns.app_device_id): DeviceTarget(app_meta, app_comps)}
         for inverter_id, rec in self._inv.items():

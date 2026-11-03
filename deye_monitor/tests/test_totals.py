@@ -64,6 +64,7 @@ class Rig:
         self.series = series or {i: "g0" for i in ids}
         self.keys = {i: set(SELECTED) for i in ids}
         self.gen: set[str] = set()  # members whose description has a GEN port use
+        self.grid: set[str] = set()  # members whose description has a used GRID port
         self.totals = PlantTotals(
             [TotalsMember(i, i.upper(), PROFILE, POLL) for i in ids],
             PlantSeries(tmp_path),
@@ -71,6 +72,7 @@ class Rig:
             role_of=lambda i: self.roles.get(i),
             member_series_of=lambda i: self.series[i],
             gen_use_of=lambda i: i in self.gen,
+            grid_use_of=lambda i: i in self.grid,
         )
         for i in ids:
             self.totals.set_online(i, True)
@@ -404,7 +406,7 @@ def test_the_gen_component_exists_only_when_a_member_describes_a_gen_use() -> No
     ns = Namespace("ab12cd34", "homeassistant", "deye")
     expire = {m.key: 30 for m in METRICS}
     with_gen = plant_components(ns, "g0", expire)
-    without = plant_components(ns, "g0", expire, gen=False)
+    without = plant_components(ns, "g0", expire, gates=frozenset({"grid"}))
     assert set(with_gen) - set(without) == {"plant_gen_power"}
     comp = with_gen["plant_gen_power"]
     validate_component("plant_gen_power", comp)
@@ -413,3 +415,189 @@ def test_the_gen_component_exists_only_when_a_member_describes_a_gen_use() -> No
     assert comp["state_class"] == "measurement"
     assert comp["suggested_display_precision"] == 0
     assert PLANT_INPUTS["gen_power_raw_total"][0]["metric"] == "plant_gen_power"
+
+
+# -- GRID diagnostics (0.5.3, task 45 stage A) ---------------------------------------------------
+
+
+def _grid_rig(tmp_path: Path, ids: tuple[str, ...] = ("m", "s1", "s2")) -> Rig:
+    rig = Rig(tmp_path, ids=ids)
+    rig.grid = set(ids)
+    for i in ids:
+        rig.keys[i] |= {
+            "grid_internal_power_total",
+            "grid_voltage_a",
+            "grid_voltage_b",
+            "grid_voltage_c",
+            "grid_frequency",
+        }
+    return rig
+
+
+def _grid_feed(rig: Rig, member: str, power: float, volts: float = 230.0, hz: float = 50.0) -> None:
+    rig.feed(
+        member,
+        grid_internal_power_total=power,
+        grid_voltage_a=volts,
+        grid_voltage_b=volts + 1,
+        grid_voltage_c=volts + 2,
+        grid_frequency=hz,
+    )
+
+
+def test_grid_terminal_power_sums_the_used_ports_signed(tmp_path: Path) -> None:
+    rig = _grid_rig(tmp_path)
+    for i, p in (("m", 1500), ("s1", -400), ("s2", 100)):
+        _grid_feed(rig, i, p)
+    assert rig.totals.grid_active() and rig.totals.gates() == {"grid"}
+    assert rig.value("plant_grid_terminal_power") == 1200
+    assert METRIC_BY_KEY["plant_inverter_power"] is not METRIC_BY_KEY["plant_grid_terminal_power"]
+
+
+def test_grid_terminal_power_unused_ports_add_zero_and_unselected_used_ports_are_unknown(
+    tmp_path: Path,
+) -> None:
+    rig = _grid_rig(tmp_path)
+    _grid_feed(rig, "m", 800)
+    _grid_feed(rig, "s1", 5)
+    rig.grid = {"m", "s1"}  # s2 explicitly unused: adds 0 even with stray data
+    _grid_feed(rig, "s2", 999)
+    assert rig.value("plant_grid_terminal_power") == 805
+    rig.grid = {"m", "s1", "s2"}
+    rig.keys["s2"].discard("grid_internal_power_total")  # used, not selected: not 0
+    assert rig.value("plant_grid_terminal_power") is None
+    assert "s2" in rig.totals.stale_members(rig.now)
+
+
+def test_grid_terminal_power_is_unknown_for_a_stale_missing_or_offline_member(
+    tmp_path: Path,
+) -> None:
+    rig = _grid_rig(tmp_path)
+    _grid_feed(rig, "m", 100)
+    _grid_feed(rig, "s1", 100)
+    assert rig.value("plant_grid_terminal_power") is None  # s2 has not delivered
+    _grid_feed(rig, "s2", 100)
+    assert rig.value("plant_grid_terminal_power") == 300
+    rig.totals.set_online("s2", False)
+    assert rig.value("plant_grid_terminal_power") is None
+    rig.totals.set_online("s2", True)
+    rig.now += 10_000
+    assert rig.value("plant_grid_terminal_power") is None
+
+
+def test_grid_reference_is_the_unique_master_never_the_first_member_or_an_average(
+    tmp_path: Path,
+) -> None:
+    rig = _grid_rig(tmp_path, ids=("a", "m", "s"))
+    rig.roles = {"a": "slave", "m": "master", "s": "slave"}
+    _grid_feed(rig, "a", 0, volts=100.0, hz=40.0)
+    _grid_feed(rig, "m", 0, volts=231.5, hz=50.02)
+    _grid_feed(rig, "s", 0, volts=300.0, hz=60.0)
+    assert rig.totals.reference() == "m"
+    assert rig.value("plant_grid_voltage_a") == 231.5
+    assert rig.value("plant_grid_voltage_b") == 232.5
+    assert rig.value("plant_grid_voltage_c") == 233.5
+    assert rig.value("plant_grid_frequency") == 50.02
+
+
+@pytest.mark.parametrize(
+    "roles",
+    [
+        {"a": "master", "b": "master"},  # two masters
+        {"a": "slave", "b": "slave"},  # no master
+        {"a": None, "b": None},  # unknown roles
+        {"a": "master", "b": None},
+    ],
+)
+def test_grid_reference_with_an_ambiguous_or_unknown_role_is_unavailable(
+    tmp_path: Path, roles: dict[str, str | None]
+) -> None:
+    rig = _grid_rig(tmp_path, ids=("a", "b"))
+    rig.roles = roles
+    for i in ("a", "b"):
+        _grid_feed(rig, i, 0)
+    if roles == {"a": "master", "b": None}:
+        assert rig.totals.reference() == "a"  # a unique master is enough
+    else:
+        assert rig.totals.reference() is None
+        assert rig.value("plant_grid_voltage_a") is None
+        assert rig.value("plant_grid_frequency") is None
+    assert rig.value("plant_grid_terminal_power") == 0  # the sum does not need a reference
+
+
+def test_grid_reference_of_a_single_member_plant_is_that_member_unless_it_is_a_slave(
+    tmp_path: Path,
+) -> None:
+    rig = _grid_rig(tmp_path, ids=("only",))
+    rig.roles = {"only": None}
+    _grid_feed(rig, "only", 10, volts=229.0)
+    assert rig.value("plant_grid_voltage_a") == 229.0
+    rig.roles = {"only": "slave"}
+    assert rig.value("plant_grid_voltage_a") is None
+
+
+def test_grid_reference_zero_is_a_reading_but_missing_stale_or_unselected_is_unknown(
+    tmp_path: Path,
+) -> None:
+    rig = _grid_rig(tmp_path, ids=("m", "s"))
+    rig.roles = {"m": "master", "s": "slave"}
+    assert rig.value("plant_grid_voltage_a") is None  # nothing delivered yet
+    _grid_feed(rig, "m", 0, volts=0.0, hz=0.0)  # the grid is absent: a valid reading
+    assert rig.value("plant_grid_voltage_a") == 0.0
+    assert rig.value("plant_grid_frequency") == 0.0
+    rig.keys["m"].discard("grid_frequency")
+    assert rig.value("plant_grid_frequency") is None
+    rig.keys["m"].add("grid_frequency")
+    rig.totals.set_online("m", False)
+    assert rig.value("plant_grid_voltage_a") is None
+    rig.totals.set_online("m", True)
+    rig.now += 10_000
+    assert rig.value("plant_grid_voltage_a") is None
+
+
+def test_a_stale_slave_does_not_invalidate_the_reference_values(tmp_path: Path) -> None:
+    rig = _grid_rig(tmp_path, ids=("m", "s"))
+    rig.roles = {"m": "master", "s": "slave"}
+    _grid_feed(rig, "m", 10)
+    assert rig.value("plant_grid_voltage_a") == 230.0
+    assert rig.value("plant_grid_terminal_power") is None  # the sum needs the slave
+
+
+def test_reference_member_with_an_unused_grid_port_is_unavailable(tmp_path: Path) -> None:
+    rig = _grid_rig(tmp_path, ids=("m", "s"))
+    rig.roles = {"m": "master", "s": "slave"}
+    rig.grid = {"s"}
+    _grid_feed(rig, "m", 0)
+    assert rig.value("plant_grid_voltage_a") is None
+
+
+def test_grid_components_follow_the_predicate_and_carry_units() -> None:
+    ns = Namespace("ab12cd34", "homeassistant", "deye")
+    expire = {m.key: 30 for m in METRICS}
+    grid_keys = {
+        "plant_grid_terminal_power",
+        "plant_grid_voltage_a",
+        "plant_grid_voltage_b",
+        "plant_grid_voltage_c",
+        "plant_grid_frequency",
+    }
+    both = plant_components(ns, "g0", expire)
+    only_gen = plant_components(ns, "g0", expire, gates=frozenset({"gen"}))
+    assert grid_keys <= set(both) and not grid_keys & set(only_gen)
+    for key in grid_keys:
+        validate_component(key, both[key])
+        assert both[key]["state_class"] == "measurement"
+    assert both["plant_grid_terminal_power"]["device_class"] == "power"
+    assert both["plant_grid_voltage_c"]["unit_of_measurement"] == "V"
+    assert both["plant_grid_frequency"]["device_class"] == "frequency"
+    assert both["plant_grid_frequency"]["unit_of_measurement"] == "Hz"
+
+
+def test_the_32_bit_grid_power_is_decoded_high_word_first_then_signed() -> None:
+    from deye_monitor.profiles.decode import decode
+
+    entry = PROFILE.entry("grid_internal_power_total")
+    assert (entry.low, entry.high) == (607, 703)
+    assert decode(entry, {607: 0xFFFF, 703: 0x0000}) == 65535  # low-word rollover, positive
+    assert decode(entry, {607: 0xFC18, 703: 0xFFFF}) == -1000  # negative, high word 0xFFFF
+    assert decode(entry, {607: 0x0000, 703: 0x0001}) == 65536

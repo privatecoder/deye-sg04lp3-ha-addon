@@ -10,6 +10,11 @@ into ``PlantTotals``; the totals are computed from the newest value of each memb
 * GEN port power (release 0.5.3): a member whose installation description has no GEN use adds 0; a
   member with a GEN use but without the sensor selected makes the total unknown (a missing
   selection is not a measured 0). The metric exists only while a member describes a GEN use;
+* GRID diagnostics (release 0.5.3, predicate G: a member describes a used GRID port, utility or
+  generator): the terminal power sums the members' internal GRID power with the same used / unused /
+  unselected semantics as the GEN power; voltage and frequency are the value of one reference member
+  (the sole member of a single-member plant, else the one parallel master), never an average and
+  never another member's value. A member that is offline makes the metrics that need it unknown;
 * energy totals are sums of the members' ``total_increasing`` counters. A plant statistics series
   (``g<n>`` like the inverter series) ends when the membership changes or when any member starts a
   new series of its own, so the total never drops or jumps inside a series;
@@ -49,7 +54,7 @@ class Metric:
 
     key: str
     name: str
-    kind: str  # power | energy | daily | master
+    kind: str  # power | energy | daily | master | reference
     keys: tuple[str, ...]
     unit: str
     device_class: str | None = None
@@ -59,6 +64,8 @@ class Metric:
     # "master" metrics: ``keys`` are alternatives in order of preference (the first one the master
     # has selected is used) instead of values that are all needed
     alternatives: bool = False
+    # exposure predicate: "gen" (a member describes a GEN use), "grid" (a used GRID port), or always
+    gate: str | None = None
 
 
 METRICS: Final = (
@@ -82,6 +89,62 @@ METRICS: Final = (
         "power",
         "measurement",
         0,
+        gate="gen",
+    ),
+    Metric(
+        "plant_grid_terminal_power",
+        "Plant GRID terminal power",
+        "power",
+        ("grid_internal_power_total",),
+        "W",
+        "power",
+        "measurement",
+        0,
+        gate="grid",
+    ),
+    Metric(
+        "plant_grid_voltage_a",
+        "Plant GRID voltage phase A",
+        "reference",
+        ("grid_voltage_a",),
+        "V",
+        "voltage",
+        "measurement",
+        1,
+        gate="grid",
+    ),
+    Metric(
+        "plant_grid_voltage_b",
+        "Plant GRID voltage phase B",
+        "reference",
+        ("grid_voltage_b",),
+        "V",
+        "voltage",
+        "measurement",
+        1,
+        gate="grid",
+    ),
+    Metric(
+        "plant_grid_voltage_c",
+        "Plant GRID voltage phase C",
+        "reference",
+        ("grid_voltage_c",),
+        "V",
+        "voltage",
+        "measurement",
+        1,
+        gate="grid",
+    ),
+    Metric(
+        "plant_grid_frequency",
+        "Plant GRID frequency",
+        "reference",
+        ("grid_frequency",),
+        "Hz",
+        "frequency",
+        "measurement",
+        2,
+        gate="grid",
     ),
     Metric(
         "plant_battery_power",
@@ -269,7 +332,7 @@ def _plant_inputs() -> dict[str, tuple[dict[str, Any], ...]]:
                         m
                     ),  # all: a missing input makes it unknown; any; optional: adds 0
                     "keys": list(m.keys),
-                    "master_only": m.kind == "master",
+                    "master_only": m.kind in ("master", "reference"),
                 }
             )
     return {k: tuple(v) for k, v in out.items()}
@@ -385,6 +448,7 @@ class PlantTotals:
         role_of: Callable[[str], str | None],
         member_series_of: Callable[[str], str],
         gen_use_of: Callable[[str], bool] = lambda _: False,
+        grid_use_of: Callable[[str], bool] = lambda _: False,
     ) -> None:
         self.members = {m.id: m for m in members}
         self.series = series
@@ -392,6 +456,7 @@ class PlantTotals:
         self._role_of = role_of
         self._member_series_of = member_series_of
         self._gen_use_of = gen_use_of
+        self._grid_use_of = grid_use_of
         self._latest: dict[str, dict[str, tuple[Value, float]]] = {i: {} for i in self.members}
         self._online: dict[str, bool] = dict.fromkeys(self.members, False)
         self.dirty = True
@@ -466,6 +531,11 @@ class PlantTotals:
         selected = self._keys_of(member.id)
         if metric.key == "plant_gen_power" and not self._gen_use_of(member.id):
             return 0.0
+        if metric.key == "plant_grid_terminal_power":
+            if not self._grid_use_of(member.id):
+                return 0.0  # an explicitly unused GRID port contributes nothing
+            if "grid_internal_power_total" not in selected or not self._online[member.id]:
+                return None  # a used port without a usable input is unknown, not 0
         if metric.key == "plant_pv_power":
             expected = [k for k in metric.keys if k in selected]
             if not expected:
@@ -483,6 +553,33 @@ class PlantTotals:
     def gen_active(self) -> bool:
         """At least one member describes a GEN port use (the GEN metric is published then)."""
         return any(self._gen_use_of(i) for i in self.members)
+
+    def grid_active(self) -> bool:
+        """At least one member describes a used GRID port (predicate G)."""
+        return any(self._grid_use_of(i) for i in self.members)
+
+    def gates(self) -> frozenset[str]:
+        """The exposure predicates that hold now (``Metric.gate``)."""
+        return frozenset(
+            g for g, on in (("gen", self.gen_active()), ("grid", self.grid_active())) if on
+        )
+
+    def reference(self) -> str | None:
+        """The member whose GRID voltage and frequency stand for the plant: the sole member of a
+        single-member plant (unless it reports to be a parallel slave), else the one parallel
+        master. ``None`` for an unknown, ambiguous or missing role: never the first member."""
+        if len(self.members) == 1:
+            only = next(iter(self.members))
+            return only if self._role_of(only) in (None, "master") else None
+        return self.master()
+
+    def _reference_value(self, metric: Metric, now: float) -> float | None:
+        ref = self.reference()
+        if ref is None or not self._online[ref] or not self._grid_use_of(ref):
+            return None
+        if metric.keys[0] not in self._keys_of(ref):
+            return None
+        return self._fresh(self.members[ref], metric.keys[0], now)
 
     def master(self) -> str | None:
         """The one member that the device reports as parallel master (R336); ``None`` if there is
@@ -509,6 +606,8 @@ class PlantTotals:
     def value(self, metric: Metric, now: float) -> float | None:
         if metric.kind == "master":
             return self._master_value(metric, now)
+        if metric.kind == "reference":
+            return self._reference_value(metric, now)
         total = 0.0
         for member in self.members.values():
             part = self._member_value(metric, member, now)
@@ -527,7 +626,10 @@ class PlantTotals:
                 bad.append(member.id)
                 continue
             for metric in METRICS:
-                if metric.kind != "master" and self._member_value(metric, member, now) is None:
+                if (
+                    metric.kind not in ("master", "reference")
+                    and self._member_value(metric, member, now) is None
+                ):
                     bad.append(member.id)
                     break
         return bad
@@ -558,6 +660,8 @@ class PlantTotals:
             "series": self.series.series,
             "master": self.master(),
             "gen": self.gen_active(),
+            "grid": self.grid_active(),
+            "reference": self.reference(),
             "values": {m.key: self.value(m, now) for m in METRICS},
             "members": [
                 {

@@ -25,7 +25,7 @@ import datetime
 import json
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -525,10 +525,14 @@ def app_components(ns: Namespace) -> dict[str, dict[str, Any]]:
 
 
 def plant_components(
-    ns: Namespace, series: str, expire: Mapping[str, int], *, gen: bool = True
+    ns: Namespace,
+    series: str,
+    expire: Mapping[str, int],
+    *,
+    gates: Collection[str] = frozenset({"gen", "grid"}),
 ) -> dict[str, dict[str, Any]]:
-    """Plant totals on the app device (``expire``: seconds per metric key; ``gen``: a member
-    describes a GEN port use, so the GEN power exists). Energy totals carry the
+    """Plant totals on the app device (``expire``: seconds per metric key; ``gates``: the exposure
+    predicates that hold (a GEN use, a used GRID port)). Energy totals carry the
     plant series in key, unique id, entity id and the template guard, like the inverter counters."""
     from deye_monitor.totals import METRICS  # local: totals imports this module's siblings
 
@@ -536,7 +540,7 @@ def plant_components(
     heartbeat = math.ceil(3 * APP_HEARTBEAT_S)
     out: dict[str, dict[str, Any]] = {}
     for m in METRICS:
-        if m.key == "plant_gen_power" and not gen:
+        if m.gate is not None and m.gate not in gates:
             continue
         energy = m.kind == "energy"
         ckey = f"{m.key}_{check_series(series)}" if energy else m.key

@@ -9,6 +9,14 @@
   use. A member without a GEN use adds 0; a member with a GEN use that has not selected the sensor
   makes the total unknown instead of silently adding 0. A missing or stale member value makes it
   unknown, like the other power totals. The Web UI plant card lists it (German: "GEN-Anschlussleistung").
+- Plant GRID diagnostics (stage A of the plant metrics design): **Plant GRID terminal power** (sum of
+  the members' internal GRID-terminal powers, signed as reported, not the grid connection point,
+  direction not interpreted) and, from one reference member, **Plant GRID voltage phase A/B/C** and
+  **Plant GRID frequency**. They exist while at least one member describes a used GRID port (utility
+  or generator). An unused port adds 0; a used port with an unselected, stale or offline sensor makes
+  the sum unknown. The reference is the sole member of a single-member plant or the one parallel
+  master; an ambiguous, unknown or stale role gives unknown (never the first member, never an
+  average). Zero is a valid reading. Web UI plant card rows added (DE/EN).
 - Removed the empty stray file `rite_ops.py`.
 - Test fix: the deadline test for a wait for the plant lock waits for the event instead of reading it
   immediately (flaky in CI).
