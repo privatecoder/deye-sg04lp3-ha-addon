@@ -345,7 +345,7 @@ async def test_four_island_devices_layout_and_selection(browser: Browser, tmp_pa
         SHOTS.mkdir(parents=True, exist_ok=True)
         await page.screenshot(path=str(SHOTS / "four-island-overview-de.png"))
         await open_setup(s)
-        await expect(page.get_by_label("Nichts – Inselbetrieb")).to_be_checked()
+        await expect(page.get_by_label("Nichts – GRID bleibt ungenutzt")).to_be_checked()
         await expect(row(page, "grid_voltage_a").locator("input")).not_to_be_checked()
         await expect(row(page, "load_voltage_a").locator("input")).to_be_checked()
         await page.set_viewport_size({"width": 390, "height": 844})

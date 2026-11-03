@@ -200,7 +200,7 @@ Goal: maximally user-friendly; only what is needed is polled. Four separate laye
 | Feature | Values |
 | --- | --- |
 | `utility_grid` | yes/no (grid operation vs. island) |
-| `grid_port_use` | `utility`, `generator` (R189), `unused` |
+| `grid_port_use` | `utility` (the possible source, permanently or at times through a contactor, e.g. charging only; not the relay state), `generator` (R189), `unused` (nothing is ever connected to GRID) |
 | `battery` | yes/no; `bms` yes/no (sub-condition) |
 | `gen_port_mode` | `unused`, `generator`, `smart_load`, `ac_coupled` (reconcile with R133) |
 | `mppt1_used`, `mppt2_used` | yes/no |
@@ -212,6 +212,8 @@ Goal: maximally user-friendly; only what is needed is polled. Four separate laye
 | `tou_used` (0.5.0) | yes/no (default no) |
 
 The five 0.5.0 features start as "unknown"/no and select nothing; the EV charger question (`ev_charger`: none / grid_port / load_port / unknown) and the four optional installation numbers (`export_limit_w`, `grid_limit_w`, `generator_capacity_w`, `ev_charger_limit_w`, whole watts) are no sensor predicates: they only gate and cap the matching settings (10.9). **Preselection** is a pure predicate of the saved answers (`default_enabled` plus `requires`); no register value, owner-plant assumption or last use adds a selected entity. Settings read from the device (R142, R344, R140, R111, R146 through the internal hint entries) only produce consistency hints; the UI never applies them. `profiles/setting_presets.py` maps the answers to the operations the release dialog may tick ("Apply suggestion"); it releases nothing.
+
+0.5.2: the signal answer (`external_signal_use`) never influences GRID eligibility, gates or sensor predicates; `_NO_GRID` is unchanged. Presets: R145 only with a confirmed positive `export_limit_w`, R143/R340 not at a 0 W allowance. Sensor template: `inverter_frequency` for `battery OR grid_port_use in {unused,generator}`, `relay_grid` (R552 bit 2) and `grid_internal_power_total` default for `grid_port_use in {utility,generator}`.
 
 `requires` uses predicates (`all_of`/`any_of`) over these features, e.g. GEN power: `gen_port_mode in [generator, smart_load, ac_coupled]`. Register mapping per measurement location according to REVIEW2 §4 (grid_terminal, battery, bms, gen_port, inverter_output, ups_load, pv, parallel, tou, diagnostic). Diagnostics (identity, R65, R80, R98/R111, R133, R336, R500, R551–R558) are **always** available, independent of features. Suggestion of the features from read settings (R111, R133, R189, R336) on first connection, user confirms.
 

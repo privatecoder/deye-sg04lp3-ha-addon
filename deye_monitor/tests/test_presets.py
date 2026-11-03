@@ -78,10 +78,11 @@ def expected(f: Features) -> dict[str, bool]:
     out |= {k: terminal for k in ("grid_voltage_a", "grid_voltage_b", "grid_voltage_c")}
     out["grid_frequency"] = terminal
     out["grid_selected_power_total"] = utility
-    out["grid_internal_power_total"] = f.grid_port_use == "generator"
+    out["grid_internal_power_total"] = terminal
+    out["relay_grid"] = terminal
     out |= {k: True for k in ("load_voltage_a", "load_voltage_b", "load_voltage_c")}
     out |= {"load_power_total": True, "inverter_power_total": True}
-    out["inverter_frequency"] = f.grid_port_use in ("unused", "generator")
+    out["inverter_frequency"] = bool(f.battery) or f.grid_port_use in ("unused", "generator")
     out |= {
         k: utility
         for k in (
@@ -164,3 +165,92 @@ def test_no_ac_source_suggests_no_charging_source_settings() -> None:
         "grid_charge_start_soc",
         "generator_charge_current",
     }
+
+
+# -- 0.5.2: GRID source wording, presets and sensor defaults (design 41) ------------------------
+
+CHARGING_ONLY = {
+    "utility_grid": True,
+    "grid_port_use": "utility",
+    "battery": True,
+    "bms": True,
+    "battery_control_basis": "soc",
+    "gen_port_mode": "smart_load",
+    "mppt1_used": True,
+    "export_policy": "zero_export_load",
+}
+
+
+def _suggest(**over: object) -> tuple[str, ...]:
+    return suggested_operations(Features.model_validate({**CHARGING_ONLY, **over}))
+
+
+@pytest.mark.parametrize("signal", ["none", "grid_contactor", "other", "unknown"])
+def test_the_signal_answer_never_changes_the_grid_suggestions(signal: str) -> None:
+    base = set(_suggest(external_signal_use="none"))
+    got = set(_suggest(external_signal_use=signal))
+    assert got - {"external_signal"} == base - {"external_signal"}
+    assert {"grid_reconnection_time", "grid_charge_enable", "force_off_grid"} <= got
+
+
+def test_the_charging_only_island_suggests_grid_charging_and_never_generator_charging() -> None:
+    got = set(_suggest(export_limit_w=0))
+    assert {"grid_reconnection_time", "grid_charge_enable", "grid_charge_start_soc"} <= got
+    assert {"force_off_grid", "signal_island_mode", "smart_load_force"} <= got
+    assert not got & {"generator_charge_enable", "generator_charge_soc"}
+    assert not got & {"export_max_power", "pv_sale_max_power", "pv_sale_enable"}
+
+
+def test_solar_sell_needs_a_confirmed_positive_allowance() -> None:
+    assert "pv_sale_enable" not in _suggest()  # unanswered
+    assert "pv_sale_enable" not in _suggest(export_limit_w=0)
+    assert "pv_sale_enable" in _suggest(export_limit_w=1000)
+
+
+def test_a_zero_allowance_suggests_no_sale_power_rows_for_selling_first() -> None:
+    allowed = {"export_policy": "export_allowed"}
+    assert {"export_max_power", "pv_sale_max_power"} <= set(_suggest(**allowed, export_limit_w=500))
+    assert not set(_suggest(**allowed, export_limit_w=0)) & {
+        "export_max_power",
+        "pv_sale_max_power",
+    }
+
+
+def test_the_template_deltas_of_a_battery_utility_plant(p: Profile, hw: HardwareProfile) -> None:
+    f = Features.model_validate(CHARGING_ONLY)
+    template = template_selection(p, hw, f)
+    assert {"inverter_frequency", "relay_grid", "grid_internal_power_total"} <= template
+    assert {"grid_energy_export_today", "grid_energy_export_total"} <= template
+    assert "load_frequency" not in template
+    off = template_selection(
+        p, hw, f.model_copy(update={"grid_port_use": "unused", "utility_grid": False})
+    )
+    assert "relay_grid" not in off and "grid_internal_power_total" not in off
+    assert "inverter_frequency" in off
+
+
+def test_the_signal_answer_adds_no_sensor(p: Profile, hw: HardwareProfile) -> None:
+    f = Features.model_validate(CHARGING_ONLY)
+    a = template_selection(p, hw, f.model_copy(update={"external_signal_use": "none"}))
+    b = template_selection(p, hw, f.model_copy(update={"external_signal_use": "grid_contactor"}))
+    assert a == b
+
+
+def test_the_grid_and_ev_texts_use_the_design_41_wording() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).parents[1] / "src/deye_monitor/web/static/i18n.js").read_text(
+        encoding="utf-8"
+    )
+    for needle in (
+        "Welche Quelle kann am GRID-Anschluss anliegen?",
+        "What can supply the GRID port?",
+        "Öffentliches Stromnetz – dauerhaft oder zeitweise",  # noqa: RUF001
+        "zeitweise über ein Schütz",
+        "Nichts – GRID bleibt ungenutzt",  # noqa: RUF001
+        "Nothing – GRID unused",  # noqa: RUF001
+        "Was steuert der externe Signalausgang dieses Wechselrichters?",
+        "Kein vom Wechselrichter gesteuerter Fahrzeuglader",
+        "directly with the inverter",
+    ):
+        assert needle in js, needle

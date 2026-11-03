@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.2 — 2026-11-03
+Island plant with a grid contactor for charging: the GRID answer now says it describes the possible source.
+
+- **Wording (DE+EN):** GRID question "What can supply the GRID port?"; "Public grid – permanently or at
+  times" (also a utility connected only through a contactor, e.g. for charging; not the relay state, no
+  export permission); "Nothing – GRID unused" (stored value unchanged). Signal question "What does this
+  inverter's external signal output control?" ("Grid contactor" = the output is wired to it). Export
+  policy / allowance help separates zero-export regulation from a confirmed 0 W allowance.
+- **Presets:** Solar Sell (R145) is suggested only with a confirmed positive export limit; R143/R340 are
+  not suggested at a 0 W allowance. No gate changed, no automatic write, no migration.
+- **Sensor template:** inverter output frequency (R638) stays for battery plants, grid relay (R552 bit 2)
+  and internal grid power (R607+R703) are defaults for a utility or generator on GRID.
+- **EV question:** applies only to a charger the inverter controls; a third-party wallbox is "No".
+
 ## 0.5.1 — 2026-11-02
 Field report: a plant showed energy counters 10× too high (factor 1 instead of 0.1 kWh). A diff of
 0.4.1..0.5.0 found no regression. The automatic rule (R65 > 0x0104 → 1 kWh) is a possible cause of

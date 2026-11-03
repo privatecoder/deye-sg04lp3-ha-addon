@@ -132,7 +132,7 @@ async def test_confirming_features_changes_the_template_and_saves(
         )
         await expect(row(page, "grid_voltage_a").locator("input")).to_be_checked()
         # Island operation hides the grid values and brings the load output.
-        await page.get_by_label("Nichts – Inselbetrieb").check()
+        await page.get_by_label("Nichts – GRID bleibt ungenutzt").check()
         await expect(row(page, "grid_voltage_a").locator("input")).not_to_be_checked()
         await expect(row(page, "load_voltage_a").locator("input")).to_be_checked()
         await expect(page.locator(".change-box")).to_be_visible()
@@ -146,7 +146,7 @@ async def test_confirming_features_changes_the_template_and_saves(
         # A reload shows the saved plant, nothing pending.
         await page.reload()
         await expect(page.locator(".dirty-note")).to_have_text("Alles gespeichert")
-        await expect(page.get_by_label("Nichts – Inselbetrieb")).to_be_checked()
+        await expect(page.get_by_label("Nichts – GRID bleibt ungenutzt")).to_be_checked()
         await s.check()
 
 

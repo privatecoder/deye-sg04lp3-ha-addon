@@ -1026,14 +1026,18 @@ entries:
   group: status
   tags:
   - relay
-  requires: {}
+  requires:
+    feature: grid_port_use
+    in:
+    - utility
+    - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R552 (TXT 3435-3451)"
   confidence: document_only
-  default_enabled: false
+  default_enabled: true
   notes: Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded.
 - key: relay_generator
   name:
@@ -2776,7 +2780,9 @@ entries:
   tags: []
   requires:
     feature: grid_port_use
-    equals: "generator"
+    in:
+    - utility
+    - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -3531,10 +3537,13 @@ entries:
   group: ac
   tags: []
   requires:
-    feature: grid_port_use
-    in:
-    - unused
-    - generator
+    any_of:
+    - feature: battery
+      equals: true
+    - feature: grid_port_use
+      in:
+      - unused
+      - generator
   supported_on:
   - sg04lp3_eu
   support_status: supported

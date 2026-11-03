@@ -112,18 +112,23 @@ def suggested_operations(
         if gen_mode == "generator":  # the generator-charge flag belongs to a generator on GEN
             out.update(f"tou_slot{n}_gen_charge" for n in range(1, TOU_SLOTS + 1))
     policy = answer("export_policy")
+    # the allowance is a typed number without a model default (empty = None): a confirmed 0 W
+    # allows no sales, so no sale-power row is suggested; Solar Sell needs a confirmed positive one
+    limit = features.export_limit_w
+    zero_allowance = limit == 0
+    export_permitted = limit is not None and limit > 0
     if utility:
         out.add("grid_reconnection_time")
         if policy in ("export_allowed", "zero_export_load", "zero_export_external"):
             out.add("export_mode")
-        if policy == "export_allowed":
+        if policy == "export_allowed" and not zero_allowance:
             out.add("export_max_power")
         if policy in ("zero_export_load", "zero_export_external"):
             out.add("zero_export_bias")
-        if mppt and policy == "export_allowed":
+        if mppt and policy == "export_allowed" and not zero_allowance:
             out.add("pv_sale_max_power")
         # Solar Sell (R145) is the PV-sale switch of the zero-export modes (R142 = 1 / 2)
-        if mppt and policy in ("zero_export_load", "zero_export_external"):
+        if mppt and export_permitted and policy in ("zero_export_load", "zero_export_external"):
             out.add("pv_sale_enable")
     if battery and bms is True:
         out.add("bms_loss_fault")

@@ -75,7 +75,8 @@ def test_slave_without_pv_keeps_the_island_ac_basics(p: Profile, hw: HardwarePro
 
 def test_grid_mode_template_is_unchanged(p: Profile, hw: HardwareProfile) -> None:
     template = template_selection(p, hw, GRID)
-    assert "inverter_frequency" not in template  # the grid sets the frequency
+    # the grid sets the frequency, but a battery plant keeps the inverter output frequency (0.5.2)
+    assert ("inverter_frequency" in template) is bool(GRID.battery)
     assert {"grid_voltage_a", "grid_frequency", "load_voltage_a"} <= template  # LOAD is measured
     # the island entries stay selectable by hand: the template changes defaults, not rights
     validate_selection(p, ISLAND_KEYS)

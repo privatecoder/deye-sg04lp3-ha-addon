@@ -751,12 +751,18 @@ card (totals and the status of every member).
    the hardware profile, or a running energy-resolution change.
 2. **First start.** An inverter whose selection was never saved shows “Please choose sensors” on its card and reads only identity and status (and the internal hint registers) until you saved a selection; no sensor entities exist before that. Existing saved selections count as confirmed.
    **Set up sensors** (button on the card). *Step 1 – describe your plant:* grid connection
-   (public grid, island, generator), battery (and BMS cable), GEN port, used PV inputs, parallel
+   (public grid – permanently or at times –, nothing / GRID unused, generator), battery (and BMS cable), GEN port, used PV inputs, parallel
    operation. Values the device reports itself are filled in and marked “read from the device –
    please confirm”. The BMS question defaults to “Yes, with communication” and is suggested
    from the battery type (R98: lithium = yes, lead = no); parallel slaves keep their BMS values
-   inactive regardless. The choice decides the default selection (the template, below):
-   “island” hides all grid values, “no battery” all battery values. *Step 2 – choose sensors:* grouped by measuring point with a
+   inactive regardless. The choice decides the default selection (the template, below). Example: an island plant that
+   connects the utility through a contactor only for charging (0 W export allowance) chooses
+   “Public grid – permanently or at times” on the GRID question, because the answer describes the
+   possible source, not the relay state; the question about the external signal output is independent
+   (answer “Nothing” if the contactor is switched elsewhere, for example by Home Assistant). The
+   vehicle-charger question applies only to a charger the inverter itself controls; a third-party
+   wallbox is “No”.
+   “GRID unused” hides all grid values, “no battery” all battery values. *Step 2 – choose sensors:* grouped by measuring point with a
    short description and unit; search, filter (all / selected / deviations); quick actions
    “Basics only” (serial number, operating state, active warnings and faults) and “Deselect all”, which are
    ordinary deviations you can preview and reset; “Accept the template unchanged” saves the

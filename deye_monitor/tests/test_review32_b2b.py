@@ -115,7 +115,7 @@ async def test_solar_sell_is_checked_again_at_the_late_send(
 
 
 def test_solar_sell_is_suggested_for_the_zero_export_modes_only() -> None:
-    zero = Features(export_policy="zero_export_external")
+    zero = Features(export_policy="zero_export_external", export_limit_w=3000)
     assert "pv_sale_enable" in suggested_operations(zero)
     assert "pv_sale_enable" not in suggested_operations(Features(export_policy="export_allowed"))
     assert "pv_sale_max_power" in suggested_operations(Features(export_policy="export_allowed"))

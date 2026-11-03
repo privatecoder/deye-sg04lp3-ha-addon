@@ -152,7 +152,7 @@ dev = [
 
 [[package]]
 name = "deye-monitor"
-version = "0.5.1"
+version = "0.5.2"
 source = { editable = "../deye_monitor" }
 dependencies = [
     { name = "aiohttp" },
