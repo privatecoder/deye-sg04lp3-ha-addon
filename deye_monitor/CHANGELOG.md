@@ -1,6 +1,34 @@
 # Changelog
 
 ## 0.5.2 — 2026-11-03
+
+### Upgrade notice (read before updating)
+0.5.2 ships a shorter default sensor template, and **the template is applied to every installation,
+including one whose selection you accepted earlier.** Your explicit additions and removals (the
+deviations from the template) are kept; the preselection itself follows the new template. Sensors that
+are no longer preselected **disappear from Home Assistant** (their entities are removed), and
+automations, dashboards or history cards that use them stop working until you add them again.
+
+For the default plant description (public grid, battery with BMS) **29 formerly selected sensors are no
+longer preselected and 3 are new**; across all descriptions up to 52 formerly preselected sensors drop
+out depending on your answers:
+- DRM: `DRM status` and the nine `DRM0..8 reported` (10)
+- single warning/fault bits: fan, grid phase, battery missing, parallel communication, F13, F29, F41 (7)
+- BMS flag bits: force charge, sleep, protocol (3)
+- hardware counts: MPPT count, phase count, battery input code (3)
+- request/setting reports: signal output (R140) without a described signal use, Force Off-Grid report,
+  GEN port usage without a GEN answer, parallel enable without parallel operation (4)
+- Meter Select / sensing source without a described external meter or measurement (2)
+- depending on your answers: ToU voltage targets 1-6 with an SOC or unknown control basis, ToU Spain mode,
+  CT detail bits (5: three self-check, direction, phase sequence), per-phase external current/power, GEN per-phase
+  power, external total power without a described measurement, battery temperature (inverter probe)
+- New defaults: inverter output frequency (for battery plants), grid relay (R552 bit 2) and internal grid
+  power total (GRID with a utility or generator).
+
+**To keep a sensor:** open the inverter's *Set up sensors*, step 2, search for it and tick it; it is then
+an explicit addition and survives future template changes. Deviations from the template can be reset one by one to the new defaults. Nothing is written to the inverter by any of this.
+
+### Changes
 Island plant with a grid contactor for charging: the GRID answer now says it describes the possible source.
 
 - **Wording (DE+EN):** GRID question "What can supply the GRID port?"; "Public grid – permanently or at

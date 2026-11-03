@@ -322,7 +322,9 @@ def _drm(entry: Entry, words: tuple[int, ...]) -> tuple[Label, dict[str, object]
     word = words[0]
     known = [i for i in range(9) if bit(word, i)]
     unknown_bits = word & 0xFE00
-    pair = (words[1] >> 12) & 3 if len(words) > 1 else None
+    # R178 whole-word 0xFFFF is the invalid sentinel: no enable state can be read from it
+    context = words[1] if len(words) > 1 and words[1] != 0xFFFF else None
+    pair = (context >> 12) & 3 if context is not None else None
     setting = {2: "off", 3: "on"}.get(pair, "unknown") if pair is not None else "unknown"
     extra: dict[str, object] = {
         "reported_modes": [f"DRM{i}" for i in known],

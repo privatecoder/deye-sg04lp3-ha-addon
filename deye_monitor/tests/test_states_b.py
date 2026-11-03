@@ -52,6 +52,10 @@ def _drm(word: int, r178: int | None) -> tuple[str, dict[str, object]]:
         ),
         (0, 0x1000, "DRM enable state unknown"),  # pair 1 is no explicit setting
         (0b1, None, "DRM enable state unknown"),  # R178 absent or stale
+        (0, 0xFFFF, "DRM enable state unknown"),  # R178 invalid sentinel, never "on"
+        (0x201, 0xFFFF, "DRM enable state unknown"),  # the flags stay in the attributes
+        (0x201, 0x2000, "DRM: Off (setting)"),  # valid pair 2 control
+        (0x201, 0x3000, "Reported: DRM0 + additional flags"),  # valid pair 3 control
     ],
 )
 def test_the_drm_aggregate_is_qualified_by_the_setting(
@@ -61,6 +65,8 @@ def test_the_drm_aggregate_is_qualified_by_the_setting(
     assert text == expected
     assert attrs["unknown_bits"] == word & 0xFE00
     assert attrs["reported_modes"] == [f"DRM{i}" for i in range(9) if word >> i & 1]
+    if r178 in (None, 0xFFFF, 0x1000):
+        assert attrs["enable_setting"] == "unknown"
 
 
 def test_each_drm_bit_maps_to_its_zero_based_mask() -> None:
