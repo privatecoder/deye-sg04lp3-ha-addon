@@ -525,9 +525,10 @@ def app_components(ns: Namespace) -> dict[str, dict[str, Any]]:
 
 
 def plant_components(
-    ns: Namespace, series: str, expire: Mapping[str, int]
+    ns: Namespace, series: str, expire: Mapping[str, int], *, gen: bool = True
 ) -> dict[str, dict[str, Any]]:
-    """Plant totals on the app device (``expire``: seconds per metric key). Energy totals carry the
+    """Plant totals on the app device (``expire``: seconds per metric key; ``gen``: a member
+    describes a GEN port use, so the GEN power exists). Energy totals carry the
     plant series in key, unique id, entity id and the template guard, like the inverter counters."""
     from deye_monitor.totals import METRICS  # local: totals imports this module's siblings
 
@@ -535,6 +536,8 @@ def plant_components(
     heartbeat = math.ceil(3 * APP_HEARTBEAT_S)
     out: dict[str, dict[str, Any]] = {}
     for m in METRICS:
+        if m.key == "plant_gen_power" and not gen:
+            continue
         energy = m.kind == "energy"
         ckey = f"{m.key}_{check_series(series)}" if energy else m.key
         comp: dict[str, Any] = {

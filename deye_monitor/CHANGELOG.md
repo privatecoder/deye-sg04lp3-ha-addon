@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.3 — 2026-11-03
+
+### Changes
+- New plant sensor **Plant GEN port power** (device "Deye Monitor", next to the PV and load power): the
+  sum of the members' "GEN port power total" in W, signed, direction not interpreted (as the member
+  sensor). It is published only while at least one member's installation description names a GEN port
+  use. A member without a GEN use adds 0; a member with a GEN use that has not selected the sensor
+  makes the total unknown instead of silently adding 0. A missing or stale member value makes it
+  unknown, like the other power totals. The Web UI plant card lists it (German: "GEN-Anschlussleistung").
+- Removed the empty stray file `rite_ops.py`.
+- Test fix: the deadline test for a wait for the plant lock waits for the event instead of reading it
+  immediately (flaky in CI).
+
 ## 0.5.2 — 2026-11-03
 
 ### Upgrade notice (read before updating)

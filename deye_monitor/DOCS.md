@@ -93,6 +93,7 @@ device loop and without the publisher.
   | Sensor | Meaning |
   | --- | --- |
   | Plant PV power / load power / inverter output power | sums of PV1..n power, "Load power total" (equals the LOAD/UPS output on these units) and "Inverter output power total" |
+  | Plant GEN port power | sum of the members' "GEN port power total", signed in W; the direction (import/export) is not interpreted. Only present while at least one member's installation description names a GEN port use. A member without a GEN use adds 0; a member with a GEN use that has not selected the sensor makes the total `unknown` (a missing selection is not a measured 0) |
   | Plant battery power | sum of battery voltage x battery current of the members; **positive = discharging** |
   | Plant PV energy, battery charge, battery discharge, load energy | sums of the members' total counters (`total_increasing`); the series is in the entity id (`..._g<n>`) and the attribute `energy_series`, not in the name |
   | Plant ... today (PV, battery charge/discharge, load) | sums of the "today" counters, measurement only |

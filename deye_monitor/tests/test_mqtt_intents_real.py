@@ -202,6 +202,7 @@ async def test_the_deadline_holds_over_a_wait_for_the_plant_lock(
             clock.now += 61.0  # receipt at t=0, the lock is free at t=61
             op = await release(rig, svc, bridge)
             assert op["reason"] == "expired"
+            await settle(lambda: len(bridge.events()) >= 1)
             assert bridge.events()[-1]["reason"] == "expired"
 
 

@@ -7,6 +7,9 @@ into ``PlantTotals``; the totals are computed from the newest value of each memb
   the total unknown (``None``): a partial sum is never shown as a total;
 * PV power and PV energy are the exception for a member without PV inputs (nothing selected):
   that member adds 0;
+* GEN port power (release 0.5.3): a member whose installation description has no GEN use adds 0; a
+  member with a GEN use but without the sensor selected makes the total unknown (a missing
+  selection is not a measured 0). The metric exists only while a member describes a GEN use;
 * energy totals are sums of the members' ``total_increasing`` counters. A plant statistics series
   (``g<n>`` like the inverter series) ends when the membership changes or when any member starts a
   new series of its own, so the total never drops or jumps inside a series;
@@ -69,6 +72,16 @@ METRICS: Final = (
         "measurement",
         0,
         optional=True,
+    ),
+    Metric(
+        "plant_gen_power",
+        "Plant GEN port power",
+        "power",
+        ("gen_power_raw_total",),
+        "W",
+        "power",
+        "measurement",
+        0,
     ),
     Metric(
         "plant_battery_power",
@@ -371,12 +384,14 @@ class PlantTotals:
         keys_of: Callable[[str], Collection[str]],
         role_of: Callable[[str], str | None],
         member_series_of: Callable[[str], str],
+        gen_use_of: Callable[[str], bool] = lambda _: False,
     ) -> None:
         self.members = {m.id: m for m in members}
         self.series = series
         self._keys_of = keys_of
         self._role_of = role_of
         self._member_series_of = member_series_of
+        self._gen_use_of = gen_use_of
         self._latest: dict[str, dict[str, tuple[Value, float]]] = {i: {} for i in self.members}
         self._online: dict[str, bool] = dict.fromkeys(self.members, False)
         self.dirty = True
@@ -449,6 +464,8 @@ class PlantTotals:
 
     def _member_value(self, metric: Metric, member: TotalsMember, now: float) -> float | None:
         selected = self._keys_of(member.id)
+        if metric.key == "plant_gen_power" and not self._gen_use_of(member.id):
+            return 0.0
         if metric.key == "plant_pv_power":
             expected = [k for k in metric.keys if k in selected]
             if not expected:
@@ -462,6 +479,10 @@ class PlantTotals:
             amps = self._fresh(member, "battery_current", now)
             return None if volts is None or amps is None else volts * amps
         return self._fresh(member, metric.keys[0], now)
+
+    def gen_active(self) -> bool:
+        """At least one member describes a GEN port use (the GEN metric is published then)."""
+        return any(self._gen_use_of(i) for i in self.members)
 
     def master(self) -> str | None:
         """The one member that the device reports as parallel master (R336); ``None`` if there is
@@ -536,6 +557,7 @@ class PlantTotals:
             "active": True,
             "series": self.series.series,
             "master": self.master(),
+            "gen": self.gen_active(),
             "values": {m.key: self.value(m, now) for m in METRICS},
             "members": [
                 {

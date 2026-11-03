@@ -63,12 +63,14 @@ class Rig:
         self.roles = roles or {"m": "master", "s1": "slave", "s2": "slave"}
         self.series = series or {i: "g0" for i in ids}
         self.keys = {i: set(SELECTED) for i in ids}
+        self.gen: set[str] = set()  # members whose description has a GEN port use
         self.totals = PlantTotals(
             [TotalsMember(i, i.upper(), PROFILE, POLL) for i in ids],
             PlantSeries(tmp_path),
             keys_of=lambda i: self.keys[i],
             role_of=lambda i: self.roles.get(i),
             member_series_of=lambda i: self.series[i],
+            gen_use_of=lambda i: i in self.gen,
         )
         for i in ids:
             self.totals.set_online(i, True)
@@ -335,3 +337,79 @@ def test_plant_components_are_valid_stable_and_series_guarded() -> None:
     assert "state_class" in comps["plant_pv_energy_today"]
     assert comps["plant_pv_energy_today"]["state_class"] == "measurement"
     assert comps["plant_members"]["state_class"] == "measurement"
+
+
+def test_gen_power_adds_the_members_signed_and_counts_members_without_gen_use_as_zero(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path)
+    for i in ("m", "s1", "s2"):
+        rig.fast(i, load=100)
+    assert rig.totals.gen_active() is False
+    assert rig.value("plant_gen_power") == 0  # no GEN use anywhere: adds 0, not published
+    rig.gen = {"m", "s1", "s2"}
+    for i in rig.gen:
+        rig.keys[i].add("gen_power_raw_total")
+    rig.feed("m", gen_power_raw_total=1200)
+    rig.feed("s1", gen_power_raw_total=-300)
+    rig.feed("s2", gen_power_raw_total=50)
+    assert rig.totals.gen_active() is True
+    assert rig.totals.view(rig.now)["gen"] is True
+    assert rig.value("plant_gen_power") == 950  # signed, direction not interpreted
+
+
+def test_gen_power_of_a_member_without_gen_use_adds_zero_even_if_its_sensor_is_selected(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path)
+    for i in ("m", "s1", "s2"):
+        rig.fast(i, load=100)
+    rig.gen = {"m"}
+    rig.keys["m"].add("gen_power_raw_total")
+    rig.feed("m", gen_power_raw_total=700)
+    rig.feed("s1", gen_power_raw_total=999)  # no GEN use: not counted
+    assert rig.value("plant_gen_power") == 700
+
+
+def test_gen_power_is_unknown_when_a_member_with_gen_use_has_not_selected_the_sensor(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path)
+    for i in ("m", "s1", "s2"):
+        rig.fast(i, load=100)
+    rig.gen = {"m", "s1"}
+    rig.keys["m"].add("gen_power_raw_total")
+    rig.feed("m", gen_power_raw_total=700)
+    assert rig.value("plant_gen_power") is None  # s1: GEN use but no selection, never silent 0
+    assert "s1" in rig.totals.stale_members(rig.now)
+    assert rig.value("plant_load_power") == 300  # the other totals are unaffected
+
+
+def test_gen_power_is_unknown_for_a_stale_or_missing_member_value(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+    for i in ("m", "s1", "s2"):
+        rig.fast(i, load=100)
+    rig.gen = {"m", "s1"}
+    for i in rig.gen:
+        rig.keys[i].add("gen_power_raw_total")
+    rig.feed("m", gen_power_raw_total=700)
+    assert rig.value("plant_gen_power") is None  # s1 has not delivered yet
+    rig.feed("s1", gen_power_raw_total=10)
+    assert rig.value("plant_gen_power") == 710
+    rig.now += 10_000  # far past three poll intervals of the group
+    assert rig.value("plant_gen_power") is None
+
+
+def test_the_gen_component_exists_only_when_a_member_describes_a_gen_use() -> None:
+    ns = Namespace("ab12cd34", "homeassistant", "deye")
+    expire = {m.key: 30 for m in METRICS}
+    with_gen = plant_components(ns, "g0", expire)
+    without = plant_components(ns, "g0", expire, gen=False)
+    assert set(with_gen) - set(without) == {"plant_gen_power"}
+    comp = with_gen["plant_gen_power"]
+    validate_component("plant_gen_power", comp)
+    assert comp["name"] == "Plant GEN port power"
+    assert comp["unit_of_measurement"] == "W" and comp["device_class"] == "power"
+    assert comp["state_class"] == "measurement"
+    assert comp["suggested_display_precision"] == 0
+    assert PLANT_INPUTS["gen_power_raw_total"][0]["metric"] == "plant_gen_power"

@@ -184,6 +184,7 @@ def build_totals(
         ),
         role_of=lambda i: _parallel_role(runtime, i),
         member_series_of=lambda i: invs[i].energy.series,
+        gen_use_of=lambda i: invs[i].features.gen_port_mode != "unused",
     )
 
 

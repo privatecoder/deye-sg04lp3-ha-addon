@@ -81,7 +81,7 @@ export function overviewView() {
   }
 
   const TOTAL_ROWS = [
-    ['plant_pv_power', 'W'], ['plant_load_power', 'W'], ['plant_battery_power', 'W'], ['plant_inverter_power', 'W'],
+    ['plant_pv_power', 'W'], ['plant_load_power', 'W'], ['plant_battery_power', 'W'], ['plant_inverter_power', 'W'], ['plant_gen_power', 'W'],
     ['plant_battery_soc', '%'], ['plant_pv_energy_total', 'kWh'], ['plant_load_energy_total', 'kWh'],
     ['plant_battery_charge_energy_total', 'kWh'], ['plant_battery_discharge_energy_total', 'kWh'],
   ];
@@ -98,7 +98,7 @@ export function overviewView() {
     return h('article', { class: 'card plant-totals', id: 'plant-card', 'aria-labelledby': 'plant-card-title' },
       h('header', { class: 'card-head' }, h('div', {}, h('h2', { id: 'plant-card-title' }, t('overview.plant')), h('p', { class: 'muted' }, t('overview.plant_sub', { n: totals.members.length })))),
       h('dl', { class: 'facts' },
-        TOTAL_ROWS.map(([key, unit]) => fact(t(`totals.${key}`), h('span', { 'data-total': key }, totalsValue(totals.values[key], unit))))),
+        TOTAL_ROWS.filter(([key]) => key !== 'plant_gen_power' || totals.gen).map(([key, unit]) => fact(t(`totals.${key}`), h('span', { 'data-total': key }, totalsValue(totals.values[key], unit))))),
       h('ul', { class: 'members', 'aria-label': t('overview.plant_members') },
         totals.members.map((m) => h('li', { class: m.stale ? 'hint warn' : 'hint info', 'data-member': m.id },
           `${m.name}${m.role === 'master' ? ` (${t('totals.master')})` : ''}: `,
