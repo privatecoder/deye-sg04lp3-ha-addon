@@ -127,3 +127,36 @@ def test_the_reference_survives_a_stale_unrelated_slave(tmp_path: Path, role: st
     rig_ = _ref_rig(tmp_path, ids, roles)
     rig_.now += 0
     assert rig_.value("plant_grid_voltage_a") == 230.0
+
+
+@pytest.mark.parametrize("initial", [STANDALONE, MASTER])
+async def test_a_failed_r336_refresh_revokes_the_role_at_once_and_a_success_restores_it(
+    tmp_path: Path, initial: int
+) -> None:
+    regs = device_regs(SN, r336=initial)
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        first = "master" if initial == MASTER else "standalone"
+        assert inv.current_role(WINDOW) == first
+        responder = r.servers["gw1"].responder
+        responder.regs[336] = SLAVE
+        responder.fail_addresses = {336}
+        r.clock.offset += 3601.0  # one identity interval later: well inside the TTL
+        await inv.step()
+        assert inv.current_role(WINDOW) is None  # failed refresh: unknown, not the old role
+        assert inv.identity_info["role"]["master"] is (initial == MASTER)  # last known stays
+        responder.fail_addresses = set()
+        r.clock.offset += 3601.0
+        await r.step_until("deye1", lambda i: i.current_role(WINDOW) == "slave")
+
+
+async def test_an_unrelated_snapshot_without_r336_does_not_revoke_the_role(tmp_path: Path) -> None:
+    regs = device_regs(SN, r336=MASTER)
+    async with rig([ep("gw1")], [inverter("deye1", "gw1")], {"gw1": regs}, tmp_path) as r:
+        inv = r.inv("deye1")
+        await inv.step()
+        assert inv.current_role(WINDOW) == "master"
+        r.servers["gw1"].responder.fail_addresses = {336}
+        await inv.step()  # only fast-group data is due: no identity pass, no R336 attempt
+        assert inv.current_role(WINDOW) == "master"

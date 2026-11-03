@@ -966,6 +966,8 @@ class InverterRuntime:
             failed=failed,
             profile_keys=profile_keys,
         )
+        if group == self.profile.entry("parallel_master").group:
+            self._role_evidence = None  # this pass attempted R336: only a new decode renews it
         if not failed:
             self._update_suggestions(snapshot)
             self.last_success_wall = snapshot.wall_ts
