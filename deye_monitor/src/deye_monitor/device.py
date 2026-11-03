@@ -266,6 +266,9 @@ class InverterRuntime:
         self.lifecycle_epoch = 0
         self.suggested_features: dict[str, Any] = {}
         self.identity_info: dict[str, Any] = {}  # firmware words / R336 role for the status view
+        # R336 role evidence for the plant GRID reference: (role, observed at, lifecycle epoch,
+        # connection epoch); separate from the last-known ``identity_info["role"]`` above
+        self._role_evidence: tuple[str, float, int, int] | None = None
         self.last_success_wall: float | None = None
         self.r65_raw: int | None = (
             None  # last VALID R65 reading (never invented, never 0 by default)
@@ -569,6 +572,24 @@ class InverterRuntime:
 
     def _bump(self) -> None:
         self.lifecycle_epoch += 1
+        self._role_evidence = None  # a new lifecycle never inherits the old role
+
+    def current_role(self, max_age_s: float) -> str | None:
+        """``standalone`` / ``master`` / ``slave`` while a successful R336 decode is at most
+        ``max_age_s`` old and belongs to the current lifecycle and connection; ``None`` otherwise
+        (never read, failed or incomplete, expired, or another connection). Successful reads of
+        other registers never refresh it."""
+        evidence = self._role_evidence
+        if evidence is None:
+            return None
+        role, seen_at, lifecycle, connection = evidence
+        if (
+            lifecycle != self.lifecycle_epoch
+            or connection != _epoch(self.route)
+            or self.clock() - seen_at > max_age_s
+        ):
+            return None
+        return role
 
     async def _identify(self) -> bool:
         token, route = self._token(), self.route
@@ -1065,6 +1086,13 @@ class InverterRuntime:
                 "phase": read("parallel_phase"),
             }
         enable = read("parallel_enable")
+        if isinstance(master, bool) and isinstance(enable, bool):
+            self._role_evidence = (
+                ("master" if master else "slave") if enable else "standalone",
+                snapshot.monotonic_ts,
+                snapshot.lifecycle_epoch,
+                _epoch(self.route),
+            )
         if enable is not None:
             self.suggested_features["parallel"] = bool(enable)
             basis["parallel"] = "R336 bit0"

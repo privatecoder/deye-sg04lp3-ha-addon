@@ -14,9 +14,12 @@
   direction not interpreted) and, from one reference member, **Plant GRID voltage phase A/B/C** and
   **Plant GRID frequency**. They exist while at least one member describes a used GRID port (utility
   or generator). An unused port adds 0; a used port with an unselected, stale or offline sensor makes
-  the sum unknown. The reference is the sole member of a single-member plant or the one parallel
-  master; an ambiguous, unknown or stale role gives unknown (never the first member, never an
-  average). Zero is a valid reading. Web UI plant card rows added (DE/EN).
+  the sum unknown. The reference is the sole **verified standalone** (or master) member of a
+  single-member plant or the one parallel master, judged from a fresh, successful R336 read of the
+  current connection (at most three identity intervals old); a missing, failed, stale or ambiguous
+  role, or a lone member of unknown role, gives unknown (never the first member, never an
+  average). The GEN power likewise turns unknown at once when a used GEN input is unselected or
+  its member is offline. Zero is a valid reading. Web UI plant card rows added (DE/EN).
 - Removed the empty stray file `rite_ops.py`.
 - Test fix: the deadline test for a wait for the plant lock waits for the event instead of reading it
   immediately (flaky in CI).

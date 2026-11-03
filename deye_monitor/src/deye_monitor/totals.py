@@ -449,6 +449,7 @@ class PlantTotals:
         member_series_of: Callable[[str], str],
         gen_use_of: Callable[[str], bool] = lambda _: False,
         grid_use_of: Callable[[str], bool] = lambda _: False,
+        reference_role_of: Callable[[str], str | None] | None = None,
     ) -> None:
         self.members = {m.id: m for m in members}
         self.series = series
@@ -457,6 +458,8 @@ class PlantTotals:
         self._member_series_of = member_series_of
         self._gen_use_of = gen_use_of
         self._grid_use_of = grid_use_of
+        # fresh R336 evidence: standalone / master / slave, ``None`` when unknown, failed or stale
+        self._reference_role_of = reference_role_of or role_of
         self._latest: dict[str, dict[str, tuple[Value, float]]] = {i: {} for i in self.members}
         self._online: dict[str, bool] = dict.fromkeys(self.members, False)
         self.dirty = True
@@ -529,8 +532,11 @@ class PlantTotals:
 
     def _member_value(self, metric: Metric, member: TotalsMember, now: float) -> float | None:
         selected = self._keys_of(member.id)
-        if metric.key == "plant_gen_power" and not self._gen_use_of(member.id):
-            return 0.0
+        if metric.key == "plant_gen_power":
+            if not self._gen_use_of(member.id):
+                return 0.0
+            if "gen_power_raw_total" not in selected or not self._online[member.id]:
+                return None  # a used port without a usable input is unknown, not a cached value
         if metric.key == "plant_grid_terminal_power":
             if not self._grid_use_of(member.id):
                 return 0.0  # an explicitly unused GRID port contributes nothing
@@ -565,13 +571,16 @@ class PlantTotals:
         )
 
     def reference(self) -> str | None:
-        """The member whose GRID voltage and frequency stand for the plant: the sole member of a
-        single-member plant (unless it reports to be a parallel slave), else the one parallel
-        master. ``None`` for an unknown, ambiguous or missing role: never the first member."""
+        """The member whose GRID voltage and frequency stand for the plant, from fresh R336
+        evidence only: the sole member of a single-member plant when it is a verified standalone
+        or a master, else the one member with a fresh master role. An unknown, failed, stale or
+        ambiguous role gives ``None``: never the first member, and a lone configured member is not
+        a standalone merely because nothing says otherwise."""
         if len(self.members) == 1:
             only = next(iter(self.members))
-            return only if self._role_of(only) in (None, "master") else None
-        return self.master()
+            return only if self._reference_role_of(only) in ("standalone", "master") else None
+        masters = [i for i in self.members if self._reference_role_of(i) == "master"]
+        return masters[0] if len(masters) == 1 else None
 
     def _reference_value(self, metric: Metric, now: float) -> float | None:
         ref = self.reference()

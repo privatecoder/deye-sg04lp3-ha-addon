@@ -506,6 +506,7 @@ def test_grid_reference_is_the_unique_master_never_the_first_member_or_an_averag
         {"a": "master", "b": "master"},  # two masters
         {"a": "slave", "b": "slave"},  # no master
         {"a": None, "b": None},  # unknown roles
+        {"a": "standalone", "b": "standalone"},  # two standalones are no common bus
         {"a": "master", "b": None},
     ],
 )
@@ -529,7 +530,7 @@ def test_grid_reference_of_a_single_member_plant_is_that_member_unless_it_is_a_s
     tmp_path: Path,
 ) -> None:
     rig = _grid_rig(tmp_path, ids=("only",))
-    rig.roles = {"only": None}
+    rig.roles = {"only": "standalone"}
     _grid_feed(rig, "only", 10, volts=229.0)
     assert rig.value("plant_grid_voltage_a") == 229.0
     rig.roles = {"only": "slave"}

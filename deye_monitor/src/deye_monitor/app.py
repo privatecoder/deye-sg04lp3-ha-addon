@@ -157,6 +157,16 @@ def _parallel_role(runtime: Runtime, inverter_id: str) -> str | None:
     return None if not isinstance(master, bool) else ("master" if master else "slave")
 
 
+def _reference_role(runtime: Runtime, cfg: AppConfig, inverter_id: str) -> str | None:
+    """The member's R336 role for the plant GRID reference: only a fresh, current decode counts
+    (three identity-group intervals); ``None`` is unknown."""
+    inv = next(i for i in cfg.inverters if i.id == inverter_id)
+    device = runtime.inverters[inverter_id]
+    group = device.profile.entry("parallel_master").group
+    window = 3 * float(getattr(inv.poll, device.profile.groups[group].poll))
+    return device.current_role(window)
+
+
 def build_totals(
     cfg: AppConfig,
     runtime: Runtime,
@@ -183,6 +193,7 @@ def build_totals(
             invs[i].selection - frozenset(invs[i].unreported) - frozenset(invs[i].inactive)
         ),
         role_of=lambda i: _parallel_role(runtime, i),
+        reference_role_of=lambda i: _reference_role(runtime, cfg, i),
         member_series_of=lambda i: invs[i].energy.series,
         gen_use_of=lambda i: invs[i].features.gen_port_mode != "unused",
         grid_use_of=lambda i: invs[i].features.grid_port_use in ("utility", "generator"),
