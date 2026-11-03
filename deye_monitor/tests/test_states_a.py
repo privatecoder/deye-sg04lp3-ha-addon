@@ -166,7 +166,9 @@ def test_enum_options_cover_every_label(key: str) -> None:
 def test_device_type_and_family() -> None:
     assert state("device_type", 512) == "String inverter"
     assert state("device_type", 5) == state("device_type", 1280) == "Three-phase LV hybrid"
-    assert state("device_type", 1536) == "Three-phase HV hybrid"
+    assert state("device_type", 1536) == state("device_type", 6) == "Three-phase HV hybrid"
+    assert state("device_type", 1537) == "Three-phase HV hybrid (20–50 kW)"  # noqa: RUF001
+    assert state_de("device_type", 1537) == "Dreiphasiger HV-Hybrid (20–50 kW)"  # noqa: RUF001
     assert state("device_type", 9999) == "Unknown"
     assert state("id_device_type", 0x0500) == state("id_device_type", 5) == "Three-phase LV hybrid"
     assert state("id_device_type", 7) == "Other device family / unknown"

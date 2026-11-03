@@ -28,6 +28,7 @@ NOT_PROVIDED = Label("Nicht bereitgestellt", "Not provided")
 UNCONFIRMED_VALUE = Label("Unbestätigter Wert", "Unconfirmed value")
 NOT_ASSIGNED = Label("Nicht zugeordnet", "Unmapped")
 THREE_PHASE_LV = Label("Dreiphasiger LV-Hybrid", "Three-phase LV hybrid")
+THREE_PHASE_HV = Label("Dreiphasiger HV-Hybrid", "Three-phase HV hybrid")
 NONE_REPORTED = Label("Keine gemeldet", "None reported")
 UNKNOWN_REPORT = Label("Unbekannte Meldung", "Unknown report")
 
@@ -44,7 +45,9 @@ _DEVICE_TYPE = {
     1024: Label("Mikro-Wechselrichter", "Microinverter"),
     5: THREE_PHASE_LV,
     1280: THREE_PHASE_LV,
-    1536: Label("Dreiphasiger HV-Hybrid", "Three-phase HV hybrid"),
+    6: THREE_PHASE_HV,
+    1536: THREE_PHASE_HV,
+    1537: Label("Dreiphasiger HV-Hybrid (20–50 kW)", "Three-phase HV hybrid (20–50 kW)"),  # noqa: RUF001
     2048: Label("PCS100k", "PCS100k"),
     2304: Label("Balkonspeicher", "Balcony storage"),
 }

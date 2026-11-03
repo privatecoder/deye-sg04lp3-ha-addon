@@ -272,3 +272,21 @@ def test_not_reported_words_are_unknown_per_field(p: Profile) -> None:
     assert d(p, "device_type", {0: 0x0500}) == "three_phase_lv_hybrid"
     assert d(p, "device_type", {0: 0x0005}) == "three_phase_lv_hybrid"
     assert d(p, "id_r22", {22: 0xFFFF}) == 0xFFFF  # the raw word stays available
+
+
+@pytest.mark.parametrize(
+    ("word", "expected"),
+    [
+        (5, "three_phase_lv_hybrid"),
+        (0x0500, "three_phase_lv_hybrid"),
+        (6, "three_phase_hv_hybrid"),  # V104.2 spelling
+        (0x0600, "three_phase_hv_hybrid"),
+        (0x0601, "three_phase_hv_hybrid_20_50k"),  # HV 20-50 kW, V105.1+
+        (0x1234, "unknown_4660"),  # unknown code
+    ],
+)
+def test_device_type_codes(p: Profile, word: int, expected: str) -> None:
+    assert d(p, "device_type", {0: word}) == expected
+    assert p.entry("device_type").label("three_phase_hv_hybrid_20_50k") == (
+        "Three-phase HV hybrid (20–50 kW)"  # noqa: RUF001
+    )

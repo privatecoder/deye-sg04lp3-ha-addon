@@ -99,7 +99,9 @@ entries:
     1024: microinverter
     5: three_phase_lv_hybrid
     1280: three_phase_lv_hybrid
+    6: three_phase_hv_hybrid
     1536: three_phase_hv_hybrid
+    1537: three_phase_hv_hybrid_20_50k
     2048: pcs_100k
     2304: balcony_storage
   enum_labels:
@@ -108,6 +110,7 @@ entries:
     'microinverter': "Microinverter"
     'three_phase_lv_hybrid': "Three-phase LV hybrid"
     'three_phase_hv_hybrid': "Three-phase HV hybrid"
+    'three_phase_hv_hybrid_20_50k': "Three-phase HV hybrid (20–50 kW)"
     'pcs_100k': "PCS 100K"
     'balcony_storage': "Balcony storage"
   entity_category: diagnostic

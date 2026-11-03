@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Device type (R0): the codes 0x0006 (V104.2 spelling) and 0x0601 (HV 20–50 kW) are now named ("Three-phase HV hybrid" and "Three-phase HV hybrid (20–50 kW)"). Like 0x0600 they still count as a device type that does not match the SG04LP3 profile.
+
 ## 0.5.3 — 2026-11-03
 
 ### Changes
