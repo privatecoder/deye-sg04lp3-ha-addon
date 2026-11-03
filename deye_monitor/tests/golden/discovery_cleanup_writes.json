@@ -43,7 +43,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.5.3"
+   "sw_version": "0.5.4"
   }
  },
  "set_tou_enable": {
@@ -84,7 +84,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.5.3"
+   "sw_version": "0.5.4"
   }
  },
  "set_tou_slot2_start": {
@@ -125,7 +125,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.5.3"
+   "sw_version": "0.5.4"
   }
  },
  "write_result": {
@@ -168,7 +168,7 @@
   },
   "origin": {
    "name": "Deye SG04LP3 Monitor",
-   "sw_version": "0.5.3"
+   "sw_version": "0.5.4"
   }
  }
 }
