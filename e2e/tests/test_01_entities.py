@@ -73,8 +73,9 @@ async def test_values_match_the_fake_registers(running):
         assert float(got["battery_energy_charge_total_g0"]) == pytest.approx(3456.7)
         assert float(got["pv_energy_total_g0"]) == pytest.approx(12345.6)
         assert float(got["battery_energy_charge_today_g0"]) == pytest.approx(12.3)
-        assert got["fault_word_1"] == "1"  # raw fault word, bit 0 set
-        assert got["operating_state"] == "Normal"
+        # the fault word is a plain-text state since 0.5.2; bit 0 set is F1
+        assert got["fault_word_1"] == "F1 DC inversed failure"
+        assert got["operating_state"] == "Normal (reported)"
         assert "parallel_phase" not in got  # three-phase model: only master/slave is shown
 
 

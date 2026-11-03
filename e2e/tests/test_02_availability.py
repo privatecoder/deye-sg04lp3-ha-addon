@@ -148,11 +148,11 @@ async def test_binary_sensor_true_false_unknown_and_unknown_enum_code(running):
     fake.fail_ranges.clear()
     fake.regs[555] = 0x0001
     await until(lambda: binary("off"), "recovered", 60, 1)
-    # an enum code the profile does not know: the physical state is unknown, the old text must not stay
+    # an enum code the profile does not know: the physical state is unknown, the old text must not stay (a plain-text state "Unknown" since 0.5.2)
     fake.regs[500] = 99
-    await until(lambda: _enum(ha, "unknown"), "unknown enum code -> unknown", 60, 1)
+    await until(lambda: _enum(ha, "Unknown"), "unknown enum code -> unknown", 60, 1)
     fake.regs[500] = 2
-    await until(lambda: _enum(ha, "Normal"), "known code again", 60, 1)
+    await until(lambda: _enum(ha, "Normal (reported)"), "known code again", 60, 1)
 
 
 async def _enum(ha, expect: str) -> bool:
