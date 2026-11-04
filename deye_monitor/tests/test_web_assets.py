@@ -271,33 +271,35 @@ def test_load_values_are_reported_plant_values_separate_from_ups_eps() -> None:
         assert "Lastausgang" not in de and "load output" not in en, key
     for key in ("load_energy_today", "load_energy_total"):
         de, en = _desc(key)
-        assert de.startswith("Vom Wechselrichter gemeldete Lastenergie"), key
-        assert en.startswith("Load energy reported by the inverter"), key
+        assert de.startswith("Energie aus berechneter LOAD-Leistung"), key
+        assert en.startswith("Energy accumulated from calculated LOAD"), key
         assert "Lastausgang" not in de and "load output" not in en, key
 
 
-def test_load_and_gen_descriptions_say_calculated_and_allocated() -> None:
+def test_load_and_gen_descriptions_say_calculated_clamped_and_gen_allocated() -> None:
     for key in ("load_power_a", "load_power_b", "load_power_c", "load_power_total"):
         de, en = _desc(key)
-        assert "berechnete Last" in de and "Smart Load" in de, key
-        assert "kein gemessener Hausverbrauch" in de and "zugeteilt" in de, key
-        assert "calculated by the inverter" in en and "Smart Load" in en, key
-        assert "not a measured house consumption" in en and "allocated" in en, key
+        assert "Berechnete Last" in de and "Nullbegrenzung" in de and "kein Hauszähler" in de, key
+        assert "Calculated load" in en and "Clamping" in en and "Not an independent" in en, key
+        assert "GEN im Parallelbetrieb ggf. zugeteilt" in de, key
+        assert "GEN can be allocated in parallel" in en, key
     for key in ("load_energy_today", "load_energy_total"):
         de, en = _desc(key)
-        assert "kein gemessener Hausverbrauch" in de and "zugeteilt" in de, key
-        assert "not a measured house consumption" in en and "allocated" in en, key
+        assert "berechneter LOAD-Leistung" in de and "Nullbegrenzung" in de, key
+        assert "calculated LOAD" in en and "clamping" in en, key
     for key in ("gen_power_raw_a", "gen_power_raw_b", "gen_power_raw_c", "gen_power_raw_total"):
         de, en = _desc(key)
-        assert "zugeteilter Anteil" in de and "nicht verdrahtetem" in de, key
-        assert "allocated share" in en and "not wired" in en, key
+        assert "ggf. zugeteilter Anteil" in de and "nicht verdrahtetem" in de, key
+        assert "can be an allocated share" in en and "unwired GEN port" in en, key
 
 
 def test_plant_card_notes_exist_in_both_languages() -> None:
     i18n = (STATIC / "i18n.js").read_text(encoding="utf-8")
     assert i18n.count("'totals.note_load'") == 2 and i18n.count("'totals.note_gen'") == 2
-    assert "Das ist kein gemessener Hausverbrauch" in i18n
-    assert "This is not a measured house consumption" in i18n
+    assert "Das ist keine unabhängige Messung des Hausverbrauchs" in i18n
+    assert "This is not independently metered house consumption" in i18n
+    assert "nicht als genutzt eintragen" in i18n
+    assert "Do not mark an unwired port as used to compensate" in i18n
 
 
 def test_load_frequency_is_a_duplicate_of_the_inverter_frequency() -> None:

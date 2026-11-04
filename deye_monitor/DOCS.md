@@ -103,24 +103,31 @@ device loop and without the publisher.
   | Plant BMS voltage / current (bank), battery power (BMS) | from the master only, as above. BMS current is positive while charging, so the BMS power is negated to show discharging as positive |
   | Plant members / stale members / master / energy series | diagnostics; the members are attributes |
 
-  **Load and GEN are calculated, not measured.** The inverter *calculates* LOAD (it includes the
-  Smart Load on the GEN port); in parallel operation the per-unit values are allocated, and a unit
-  can report more than it delivers. *Plant load power* and *Plant load energy* are therefore the
-  **sum of the reported LOAD values, not a measured house consumption**: use them in the Energy
-  dashboard only as a reported load and verify them with your own meter. Likewise each unit can
-  report an allocated share of the plant's GEN/Smart Load power, also units whose own GEN port is
-  not wired; *Plant GEN port power* sums only the members whose description names a GEN use.
+  **Reported LOAD and GEN: measurement scope matters.** LOAD is calculated from inverter/grid
+  channels and GEN; in Smart Load mode it includes Smart Load. Its GEN term can be allocated in
+  parallel. Some calculation paths clamp negative intermediate UPS values to zero, so summing
+  reported LOAD can exceed summed converter output. LOAD energy accumulates positive calculated
+  LOAD. These plant LOAD sums are not independently metered house consumption; verify their
+  physical scope with your own meter. In parallel, GEN readings can be assigned shares of the
+  plant GEN power, including on units with unwired GEN ports; they are not necessarily local
+  terminal measurements. *Plant GEN port power* sums only the members whose description names a
+  GEN use. Allocated shares on other members may be omitted, so this sum may not represent total
+  plant GEN power. Do not mark an unwired port as used to compensate.
 
-  **Loss / efficiency.** No loss or efficiency sensor is offered, because LOAD and GEN are
-  calculated and allocated. A simple template such as PV + battery − LOAD − GEN is not a loss
-  (the Smart Load is counted in both LOAD and GEN, and the per-unit allocation can overstate the
-  sum).
+  **Loss / efficiency.** No physical loss or efficiency sensor is offered. LOAD is calculated, may
+  include allocated GEN power, and is affected by clamps. In Smart Load mode, subtracting both
+  LOAD and GEN counts Smart Load twice. A simple PV + battery − LOAD − GEN template is therefore
+  not a validated loss measurement.
 
-  **Energy dashboard.** Use the energy sensors of the current series (the entity id ends in `_g<n>`; the attribute `energy_series` and the diagnostic *Plant energy series* show it; after a series change the retired entities are removed, so the names do not clash): *Plant PV energy* as solar
-  production, *Plant battery charge* and *Plant battery discharge* as the battery's "energy
-  going in" and "out", *Plant load energy* only as a "reported load" (see below), not as a measured
-  house consumption. Do not use the "today" sensors there. Every inverter counts its own battery
-  and PV energy, so the sum is the plant value; do not add the inverters' own sensors on top. A new plant series
+  **Energy dashboard.** Use energy entities from the current series, not the "today" sensors (the
+  entity id ends in `_g<n>`; the attribute `energy_series` and the diagnostic *Plant energy series*
+  show it; after a series change the retired entities are removed, so the names do not clash).
+  Verify the source scope before configuring energy accounting: PV counters can include GEN energy
+  in AC-coupling mode and optional meter contributions, so the plant PV sum is not always DC solar
+  energy alone. Battery charge/discharge use converter-side member counters; master BMS bank
+  measurements have a different boundary. Treat LOAD as reported energy unless its physical
+  consumption boundary has been independently verified. Never add overlapping member and plant
+  counters or count GEN energy again when it is already included in PV or LOAD. A new plant series
   (`g<n>`, never reused) starts when the membership changes or any member starts a new energy
   series (resolution change, counter reset); the old plant energy entities are then retired, like
   the inverter ones. The power sensors are for the live view (or for the Energy dashboard's

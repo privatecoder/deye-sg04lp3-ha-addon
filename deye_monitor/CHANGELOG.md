@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Plant load and GEN: wording only, no values change. The sensor descriptions, the Web UI plant card and the DOCS now say that the inverter calculates LOAD (including the Smart Load on GEN), that in parallel operation the per-unit LOAD and GEN values are allocated (also on units whose GEN port is not wired), and that the plant load power and energy are the sum of reported values, not a measured house consumption. The DOCS no longer recommend the load energy as house consumption for the Energy dashboard and add a note why no loss or efficiency sensor is offered.
+- Clarified LOAD/GEN descriptions and plant notes; values, aggregation and history are unchanged. LOAD is calculated and includes Smart Load in that mode; its GEN term can be allocated in parallel, and clamping can affect LOAD sums. GEN readings can be allocated shares even on units with unwired GEN ports. Reported LOAD totals are not independently metered house consumption. Documented the current GEN contributor filter, its possible omission of allocated shares, and limits of PV-energy and loss accounting.
 
 ## 0.5.4 — 2026-11-03
 
