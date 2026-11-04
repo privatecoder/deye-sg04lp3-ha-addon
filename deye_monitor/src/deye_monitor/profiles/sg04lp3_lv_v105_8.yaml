@@ -3842,8 +3842,8 @@ entries:
     de: Lastleistung Phase A
     en: Load power phase A
   description:
-    de: "Vom Wechselrichter gemeldete Anlagen-/Lastleistung (A); getrennt von der Leistung am UPS/EPS-Ausgang."
-    en: "Site/load power reported by the inverter (phase A); separate from UPS/EPS output power."
+    de: "Vom Wechselrichter berechnete Last (A) einschließlich Smart Load, im Parallelbetrieb zugeteilt; kein gemessener Hausverbrauch; getrennt von der Leistung am UPS/EPS-Ausgang."
+    en: "Load calculated by the inverter (A), including the Smart Load, allocated in parallel operation; not a measured house consumption; separate from UPS/EPS output power."
   low: 650
   high: 656
   type: s32
@@ -3869,8 +3869,8 @@ entries:
     de: Lastleistung Phase B
     en: Load power phase B
   description:
-    de: "Vom Wechselrichter gemeldete Anlagen-/Lastleistung (B); getrennt von der Leistung am UPS/EPS-Ausgang."
-    en: "Site/load power reported by the inverter (phase B); separate from UPS/EPS output power."
+    de: "Vom Wechselrichter berechnete Last (B) einschließlich Smart Load, im Parallelbetrieb zugeteilt; kein gemessener Hausverbrauch; getrennt von der Leistung am UPS/EPS-Ausgang."
+    en: "Load calculated by the inverter (B), including the Smart Load, allocated in parallel operation; not a measured house consumption; separate from UPS/EPS output power."
   low: 651
   high: 657
   type: s32
@@ -3896,8 +3896,8 @@ entries:
     de: Lastleistung Phase C
     en: Load power phase C
   description:
-    de: "Vom Wechselrichter gemeldete Anlagen-/Lastleistung (C); getrennt von der Leistung am UPS/EPS-Ausgang."
-    en: "Site/load power reported by the inverter (phase C); separate from UPS/EPS output power."
+    de: "Vom Wechselrichter berechnete Last (C) einschließlich Smart Load, im Parallelbetrieb zugeteilt; kein gemessener Hausverbrauch; getrennt von der Leistung am UPS/EPS-Ausgang."
+    en: "Load calculated by the inverter (C), including the Smart Load, allocated in parallel operation; not a measured house consumption; separate from UPS/EPS output power."
   low: 652
   high: 658
   type: s32
@@ -3923,8 +3923,8 @@ entries:
     de: Lastleistung gesamt
     en: Load power total
   description:
-    de: "Vom Wechselrichter gemeldete Anlagen-/Lastleistung (gesamt); getrennt von der Leistung am UPS/EPS-Ausgang."
-    en: "Site/load power reported by the inverter (total); separate from UPS/EPS output power."
+    de: "Vom Wechselrichter berechnete Last (gesamt) einschließlich Smart Load, im Parallelbetrieb zugeteilt; kein gemessener Hausverbrauch; getrennt von der Leistung am UPS/EPS-Ausgang."
+    en: "Load calculated by the inverter (total), including the Smart Load, allocated in parallel operation; not a measured house consumption; separate from UPS/EPS output power."
   low: 653
   high: 659
   type: s32
@@ -4130,8 +4130,8 @@ entries:
     de: GEN-Anschlussleistung A
     en: GEN port power A
   description:
-    de: "Leistung am GEN-Anschluss, Phase A, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
-    en: "Power at the GEN port, phase A, signed, in W; the direction (import/export) is not interpreted."
+    de: "Leistung am GEN-Anschluss, Phase A, mit Vorzeichen in W; Richtung nicht gedeutet. Im Parallelbetrieb ein zugeteilter Anteil, auch bei nicht verdrahtetem GEN-Anschluss."
+    en: "Power at the GEN port, Phase A, signed, in W; direction not interpreted. In parallel operation an allocated share, also on units whose GEN port is not wired."
   low: 664
   high: 668
   type: s32
@@ -4163,8 +4163,8 @@ entries:
     de: GEN-Anschlussleistung B
     en: GEN port power B
   description:
-    de: "Leistung am GEN-Anschluss, Phase B, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
-    en: "Power at the GEN port, phase B, signed, in W; the direction (import/export) is not interpreted."
+    de: "Leistung am GEN-Anschluss, Phase B, mit Vorzeichen in W; Richtung nicht gedeutet. Im Parallelbetrieb ein zugeteilter Anteil, auch bei nicht verdrahtetem GEN-Anschluss."
+    en: "Power at the GEN port, Phase B, signed, in W; direction not interpreted. In parallel operation an allocated share, also on units whose GEN port is not wired."
   low: 665
   high: 669
   type: s32
@@ -4196,8 +4196,8 @@ entries:
     de: GEN-Anschlussleistung C
     en: GEN port power C
   description:
-    de: "Leistung am GEN-Anschluss, Phase C, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
-    en: "Power at the GEN port, phase C, signed, in W; the direction (import/export) is not interpreted."
+    de: "Leistung am GEN-Anschluss, Phase C, mit Vorzeichen in W; Richtung nicht gedeutet. Im Parallelbetrieb ein zugeteilter Anteil, auch bei nicht verdrahtetem GEN-Anschluss."
+    en: "Power at the GEN port, Phase C, signed, in W; direction not interpreted. In parallel operation an allocated share, also on units whose GEN port is not wired."
   low: 666
   high: 670
   type: s32
@@ -4229,8 +4229,8 @@ entries:
     de: GEN-Anschlussleistung gesamt
     en: GEN port power total
   description:
-    de: "Leistung am GEN-Anschluss, gesamt, mit Vorzeichen in W; die Richtung (Bezug/Einspeisung) wird nicht gedeutet."
-    en: "Power at the GEN port, total, signed, in W; the direction (import/export) is not interpreted."
+    de: "Leistung am GEN-Anschluss, gesamt, mit Vorzeichen in W; Richtung nicht gedeutet. Im Parallelbetrieb ein zugeteilter Anteil, auch bei nicht verdrahtetem GEN-Anschluss."
+    en: "Power at the GEN port, total, signed, in W; direction not interpreted. In parallel operation an allocated share, also on units whose GEN port is not wired."
   low: 667
   high: 671
   type: s32
@@ -5877,8 +5877,8 @@ entries:
     de: Lastenergie heute
     en: Load energy today
   description:
-    de: "Vom Wechselrichter gemeldete Lastenergie für heute."
-    en: "Load energy reported by the inverter for today."
+    de: "Vom Wechselrichter gemeldete Lastenergie für heute, berechnet (mit Smart Load) und im Parallelbetrieb zugeteilt; kein gemessener Hausverbrauch."
+    en: "Load energy reported by the inverter for today, calculated (with Smart Load) and allocated in parallel operation; not a measured house consumption."
   addr: 526
   type: u16
   scale_source: energy_resolution
@@ -6058,8 +6058,8 @@ entries:
     de: Lastenergie gesamt
     en: Load energy total
   description:
-    de: "Vom Wechselrichter gemeldete Lastenergie insgesamt."
-    en: "Load energy reported by the inverter in total."
+    de: "Vom Wechselrichter gemeldete Lastenergie insgesamt, berechnet (mit Smart Load) und im Parallelbetrieb zugeteilt; kein gemessener Hausverbrauch."
+    en: "Load energy reported by the inverter in total, calculated (with Smart Load) and allocated in parallel operation; not a measured house consumption."
   low: 527
   high: 528
   type: u32

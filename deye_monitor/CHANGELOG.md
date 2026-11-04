@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Plant load and GEN: wording only, no values change. The sensor descriptions, the Web UI plant card and the DOCS now say that the inverter calculates LOAD (including the Smart Load on GEN), that in parallel operation the per-unit LOAD and GEN values are allocated (also on units whose GEN port is not wired), and that the plant load power and energy are the sum of reported values, not a measured house consumption. The DOCS no longer recommend the load energy as house consumption for the Energy dashboard and add a note why no loss or efficiency sensor is offered.
+
 ## 0.5.4 — 2026-11-03
 
 - Ordinary PV zeros (shade, night, a quiet string) no longer prompt you to deselect the PV power, voltage and current sensors. The remaining "only 0" hint now reads "… was 0 in all n successful readings since this observation started. This alone does not prove that the sensor is missing or faulty." Read errors, placeholder and capability-conflict hints of PV sensors stay visible. Presentation only: no reads, values or sensor selection change.

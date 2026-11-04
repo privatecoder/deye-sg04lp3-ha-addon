@@ -276,6 +276,30 @@ def test_load_values_are_reported_plant_values_separate_from_ups_eps() -> None:
         assert "Lastausgang" not in de and "load output" not in en, key
 
 
+def test_load_and_gen_descriptions_say_calculated_and_allocated() -> None:
+    for key in ("load_power_a", "load_power_b", "load_power_c", "load_power_total"):
+        de, en = _desc(key)
+        assert "berechnete Last" in de and "Smart Load" in de, key
+        assert "kein gemessener Hausverbrauch" in de and "zugeteilt" in de, key
+        assert "calculated by the inverter" in en and "Smart Load" in en, key
+        assert "not a measured house consumption" in en and "allocated" in en, key
+    for key in ("load_energy_today", "load_energy_total"):
+        de, en = _desc(key)
+        assert "kein gemessener Hausverbrauch" in de and "zugeteilt" in de, key
+        assert "not a measured house consumption" in en and "allocated" in en, key
+    for key in ("gen_power_raw_a", "gen_power_raw_b", "gen_power_raw_c", "gen_power_raw_total"):
+        de, en = _desc(key)
+        assert "zugeteilter Anteil" in de and "nicht verdrahtetem" in de, key
+        assert "allocated share" in en and "not wired" in en, key
+
+
+def test_plant_card_notes_exist_in_both_languages() -> None:
+    i18n = (STATIC / "i18n.js").read_text(encoding="utf-8")
+    assert i18n.count("'totals.note_load'") == 2 and i18n.count("'totals.note_gen'") == 2
+    assert "Das ist kein gemessener Hausverbrauch" in i18n
+    assert "This is not a measured house consumption" in i18n
+
+
 def test_load_frequency_is_a_duplicate_of_the_inverter_frequency() -> None:
     de, en = _desc("load_frequency")
     assert "Duplizierter Wert der Inverterfrequenz" in de and "keine unabhängige Messung" in de

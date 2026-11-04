@@ -165,6 +165,8 @@ async def test_the_overview_shows_the_plant_card_and_the_setup_page_the_membersh
             card.locator('[data-total="plant_battery_charge_energy_total"]')
         ).to_contain_text("noch unbekannt")
         await expect(card.locator('li[data-member="deye2"]')).to_contain_text("veraltet")
+        note = card.locator("#plant-load-note")
+        await expect(note).to_contain_text("kein gemessener Hausverbrauch")
         await shot(page, "plant-card-light-de")
         await page.locator("#nav-plant").click()
         section = page.locator("#plant-totals")

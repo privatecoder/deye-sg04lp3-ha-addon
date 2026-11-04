@@ -100,6 +100,8 @@ export function overviewView() {
       h('header', { class: 'card-head' }, h('div', {}, h('h2', { id: 'plant-card-title' }, t('overview.plant')), h('p', { class: 'muted' }, t('overview.plant_sub', { n: totals.members.length })))),
       h('dl', { class: 'facts' },
         TOTAL_ROWS.filter(([key]) => (key !== 'plant_gen_power' || totals.gen) && (!key.startsWith('plant_grid_') || totals.grid)).map(([key, unit]) => fact(t(`totals.${key}`), h('span', { 'data-total': key }, totalsValue(totals.values[key], unit))))),
+      h('p', { class: 'note', id: 'plant-load-note' }, t('totals.note_load')),
+      totals.gen ? h('p', { class: 'note', id: 'plant-gen-note' }, t('totals.note_gen')) : null,
       h('ul', { class: 'members', 'aria-label': t('overview.plant_members') },
         totals.members.map((m) => h('li', { class: m.stale ? 'hint warn' : 'hint info', 'data-member': m.id },
           `${m.name}${m.role === 'master' ? ` (${t('totals.master')})` : ''}: `,
