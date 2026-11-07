@@ -7,12 +7,7 @@ from deye_monitor.profiles.schema import load_profile
 from deye_monitor.webapi import catalog_view
 
 PROFILE = load_profile("sg04lp3_lv_v105_8")
-NOT_OFFERED = (
-    "temp_dc_transformer",
-    "bms_offgrid_charge_limit",
-    "bms_offgrid_discharge_limit_raw",
-    "load_frequency",
-)
+NOT_OFFERED = ("load_frequency",)
 
 
 def test_firmware_placeholders_and_the_frequency_duplicate_are_not_offered() -> None:

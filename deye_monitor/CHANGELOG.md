@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Removed the sensors DC transformer temperature, BMS off-grid charge current and BMS off-grid discharge current: the firmware fills them with a fixed value, so they never measured anything.
 - Clarified LOAD/GEN descriptions and plant notes; values, aggregation and history are unchanged. LOAD is calculated and includes Smart Load in that mode; its GEN term can be allocated in parallel, and clamping can affect LOAD sums. GEN readings can be allocated shares even on units with unwired GEN ports. Reported LOAD totals are not independently metered house consumption. Documented the current GEN contributor filter, its possible omission of allocated shares, and limits of PV-energy and loss accounting.
 
 ## 0.5.4 — 2026-11-03

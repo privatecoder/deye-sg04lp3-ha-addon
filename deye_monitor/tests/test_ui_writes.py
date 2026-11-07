@@ -277,12 +277,7 @@ async def test_the_picker_notices_and_the_missing_sensors(
         assert await grid.locator(".chip.hint-notice").count() == 1
         bms = page.locator('.sensor[data-key="bms_discharge_voltage"] .sensor-notice')
         assert "BMS-Protokoll" in (await bms.text_content() or "")
-        for key in (
-            "temp_dc_transformer",
-            "bms_offgrid_charge_limit",
-            "bms_offgrid_discharge_limit_raw",
-            "load_frequency",
-        ):
+        for key in ("load_frequency",):
             assert await page.locator(f'.sensor[data-key="{key}"]').count() == 0, key
         # the settings section sits directly below the page head, above the steps
         order = await page.evaluate(

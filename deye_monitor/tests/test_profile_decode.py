@@ -59,7 +59,6 @@ def test_temperature_offsets(p: Profile) -> None:
     assert d(p, "bms_temperature", {217: 1000}) == 0.0
     assert d(p, "bms_temperature", {217: 800}) == -20.0
     assert d(p, "temp_heatsink", {541: 1200}) == 20.0
-    assert d(p, "temp_dc_transformer", {540: 1000}) == 0.0
 
 
 def fw(p: Profile, raw: int, main_firmware: int | None) -> object:
@@ -88,12 +87,6 @@ def test_battery_temperature_raw_zero_with_offset_is_not_available(p: Profile) -
     assert fw(p, 0, 0x1175) is None
     assert fw(p, 0, 0x1151) == 0.0  # no offset applied: a plain 0 C
     assert fw(p, 0, None) == 0.0
-
-
-def test_bms_offgrid_discharge_limit_is_a_current_like_r218(p: Profile) -> None:
-    assert d(p, "bms_offgrid_discharge_limit_raw", {219: 420}) == 420
-    assert d(p, "bms_offgrid_charge_limit", {218: 420}) == 420
-    assert p.entry("bms_offgrid_discharge_limit_raw").unit == "A"
 
 
 def test_generator_port_power_words_are_signed(p: Profile) -> None:

@@ -133,7 +133,7 @@ device loop and without the publisher.
   the inverter ones. The power sensors are for the live view (or for the Energy dashboard's
   "power" options).
 * **Parallel slaves.** On a unit whose R336 says "parallel on, not master" the battery temperature
-  (valid on the master only) and, when the BMS block R210-R219 reads entirely 0, the BMS entries
+  (valid on the master only) and, when the BMS block (R210-R217, R220-R227) reads entirely 0, the BMS entries
   are inactive: not polled, no entity, greyed in the selection with the reason; they become active
   again by themselves if the unit becomes master or leaves parallel mode. Never applied to
   independent inverters or cascades. A pass in which R336 cannot be read (missing or undecodable)
@@ -811,9 +811,8 @@ card (totals and the status of every member).
    | Parallel operation | parallel role and serial number | (slaves: BMS values and temperature stay inactive, the plant device carries SOC and temperature) |
 
    **Not offered at all** (the firmware writes a fixed value, or the value duplicates another):
-   the DC transformer temperature (R540, fixed 25.0 °C), the BMS off-grid charge/discharge limits
-   (R218/R219, literal 0) and the load frequency (R655, a copy of the inverter frequency R638,
-   which stays). A stored choice of one of them is dropped on loading. **Notices in the list:**
+   the load frequency (R655, a copy of the inverter frequency R638, which stays). A stored choice
+   of a sensor the profile no longer has is dropped on loading. **Notices in the list:**
    the BMS discharge-voltage limit (R211) depends on the BMS protocol and not every BMS provides
    it; the “selected grid power” values (R622-R625, R687-R690) are, depending on the configuration,
    only a copy of the internal grid power and must not be added to it.

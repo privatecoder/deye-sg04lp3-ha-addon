@@ -63,7 +63,6 @@ KEYS_A = (
     "fault_f13",
     "fault_f29",
     "fault_f41",
-    "temp_dc_transformer",
     "battery_power_raw",
     "battery2_soc",
     "battery2_voltage",
@@ -71,8 +70,6 @@ KEYS_A = (
     "battery2_temperature",
     "battery2_current",
     "battery2_negative_current",
-    "bms_offgrid_charge_limit",
-    "bms_offgrid_discharge_limit_raw",
     "grid_apparent_internal",
     "grid_apparent_external_r620",
     "grid_power_factor",
@@ -126,7 +123,7 @@ def state_de(key: str, *words: int) -> str | None:
 
 
 def test_every_row_is_registered_once() -> None:
-    assert len(KEYS_A) == len(set(KEYS_A)) == 100
+    assert len(KEYS_A) == len(set(KEYS_A)) == 97
     assert [k for k in KEYS_A if k not in STATES] == []
 
 
@@ -267,10 +264,6 @@ def test_aggregates_and_single_reports() -> None:
 
 
 def test_placeholders() -> None:
-    assert state("temp_dc_transformer", 1250) == "Not provided"
-    assert state("temp_dc_transformer", 700) == "Unconfirmed value"
-    assert state("bms_offgrid_charge_limit", 0) == "Not provided"
-    assert state("bms_offgrid_discharge_limit_raw", 30) == "Unconfirmed value"
     assert state("pv3_power", 0) == "Not provided"
     assert state("pv3_power", 4) == "Unconfirmed value"
     assert state("grid_apparent_internal", 0, 0) == "Not provided"

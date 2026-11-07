@@ -1580,35 +1580,6 @@ entries:
   confidence: document_only
   default_enabled: false
   notes: R557 bit 8 maps to F41 (C070/1175 cause/UI link). A previously stored cause may persist.
-- key: temp_dc_transformer
-  name:
-    de: Temperatur DC-Trafo
-    en: DC transformer temperature
-  description:
-    de: "Temperatur des DC-Transformators im Gerät."
-    en: "Temperature of the DC transformer inside the device."
-  addr: 540
-  type: u16
-  scale: 0.1
-  raw_offset: -1000
-  unit: °C
-  device_class: temperature
-  state_class: measurement
-  entity_category: diagnostic
-  category: status
-  point: diagnostic
-  group: status
-  tags:
-  - temperature
-  requires: {}
-  supported_on:
-  - sg04lp3_eu
-  support_status: unsupported_for_profile
-  release: profile_dependent
-  source: "V105.8 registers.json inverter: R540 (TXT 3331-3338)"
-  confidence: document_only
-  default_enabled: false
-  notes: "Not offered (owner decision, 0.3.2): the firmware overwrites the input with the fixed raw 1250 (25.0 °C) in the normal thermal-packet path (MCU2 1175 0x31676, 1151 0x2D66E; Codex fixed-values-1), so the value is a placeholder, not a measurement. This does not prove the absence of a physical sensor. (raw-1000)/10 per document offset example."
 - key: temp_heatsink
   name:
     de: Temperatur Kühlkörper
@@ -2236,71 +2207,6 @@ entries:
   confidence: document_only
   default_enabled: true
   notes: "(raw-1000)/10: raw 800 = -20 °C, 1000 = 0 °C, 1200 = 20 °C."
-- key: bms_offgrid_charge_limit
-  name:
-    de: BMS Off-Grid-Ladestrom
-    en: BMS off-grid charge current limit
-  description:
-    de: "Maximaler Ladestrom im Inselbetrieb laut Batteriemanagement (BMS)."
-    en: "Maximum charge current in island operation according to the BMS."
-  addr: 218
-  type: u16
-  scale: 1
-  unit: A
-  device_class: current
-  state_class: measurement
-  category: battery
-  point: bms
-  group: settings
-  tags:
-  - bms
-  requires:
-    all_of:
-    - feature: battery
-      equals: true
-    - feature: bms
-      equals: true
-  supported_on:
-  - sg04lp3_eu
-  support_status: unsupported_for_profile
-  release: profile_dependent
-  source: "V105.8 registers.json inverter: R218 (TXT 1689-1695)"
-  confidence: document_only
-  default_enabled: false
-  notes: "Not offered (owner decision, 0.3.2): MCU1 C070 writes the literal 0 into the BMS report fields behind R218/R219 (0x24E2A, 0x24E48/0x24E4A) whatever the BMS sends; a zero is never a real 0 A limit (Codex fixed-values-1)."
-- key: bms_offgrid_discharge_limit_raw
-  name:
-    de: BMS Off-Grid-Entladestrom
-    en: BMS off-grid discharge limit
-  description:
-    de: "Maximaler Entladestrom im Inselbetrieb laut Batteriemanagement (BMS)."
-    en: "Maximum discharge current in island operation according to the BMS."
-  addr: 219
-  type: u16
-  scale: 1
-  unit: A
-  device_class: current
-  state_class: measurement
-  category: battery
-  point: bms
-  group: settings
-  tags:
-  - bms
-  - raw
-  requires:
-    all_of:
-    - feature: battery
-      equals: true
-    - feature: bms
-      equals: true
-  supported_on:
-  - sg04lp3_eu
-  support_status: unsupported_for_profile
-  release: profile_dependent
-  source: "V105.8 registers.json inverter: R219 (TXT 1695-1702)"
-  confidence: document_only
-  default_enabled: false
-  notes: "Not offered (owner decision, 0.3.2): MCU1 C070 writes the literal 0 into the BMS report fields behind R218/R219 (0x24E2A, 0x24E48/0x24E4A) whatever the BMS sends (Codex fixed-values-1). Unit cell is blank in the document; A as for R218 (third-party dump: R218 = R219 = 420 A)."
 - key: grid_voltage_a
   name:
     de: Netzspannung Phase A

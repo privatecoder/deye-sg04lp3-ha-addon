@@ -93,6 +93,6 @@ async def test_the_bms_check_reads_in_chunks_when_the_read_limit_is_small(tmp_pa
         inv.route.max_read_registers = 4  # smaller than the ten-word BMS block
         await inv.step()
         assert set(inv.inactive) == SLAVE_KEYS
-        r.servers["gw1"].responder.regs[219] = 5  # a non-zero word in the last chunk
+        r.servers["gw1"].responder.regs[227] = 5  # a non-zero word in the last chunk
         await _next_identity_pass(r, inv)
         assert set(inv.inactive) == {"battery_temperature"}

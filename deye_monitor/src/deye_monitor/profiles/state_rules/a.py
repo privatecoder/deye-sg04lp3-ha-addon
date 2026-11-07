@@ -350,9 +350,6 @@ def _placeholder(placeholder: int = 0) -> Rule:
 
 _PLACEHOLDER_OPTIONS = (NOT_PROVIDED, UNCONFIRMED_VALUE)
 # measured sensors with a unit keep their number; the placeholder state is an attribute
-register("temp_dc_transformer", _placeholder(1250), mode="attributes")
-register("bms_offgrid_charge_limit", _placeholder(), mode="attributes")
-register("bms_offgrid_discharge_limit_raw", _placeholder(), mode="attributes")
 for _key in (
     "battery2_soc",
     "battery2_voltage",

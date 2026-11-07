@@ -1331,22 +1331,6 @@ SENSOR_HELP: Final[dict[str, tuple[str, str]]] = {
         "Rohes Alarmwort, wie es das BMS meldet. 0 beweist keine gesunde Batterie.",
         "Raw alarm word as the BMS reports it. Zero does not prove a healthy battery.",
     ),
-    "bms_offgrid_charge_limit": (
-        "Die Firmware schreibt hier unabhängig vom BMS den festen Wert 0 ein; 0 ist daher "
-        "nie ein echtes 0-A-Limit, sondern „nicht geliefert“. Mit den gewöhnlichen "
-        "BMS-Strombegrenzungen hat der Wert nichts zu tun.",
-        "The firmware writes the fixed value 0 here whatever the BMS sends; 0 is "
-        "therefore never a real 0 A limit but “not provided”. The value has nothing to do "
-        "with the ordinary BMS current limits.",
-    ),
-    "bms_offgrid_discharge_limit_raw": (
-        "Die Firmware schreibt hier unabhängig vom BMS den festen Wert 0 ein; 0 ist daher "
-        "nie ein echtes 0-A-Limit, sondern „nicht geliefert“. Mit den gewöhnlichen "
-        "BMS-Strombegrenzungen hat der Wert nichts zu tun.",
-        "The firmware writes the fixed value 0 here whatever the BMS sends; 0 is "
-        "therefore never a real 0 A limit but “not provided”. The value has nothing to do "
-        "with the ordinary BMS current limits.",
-    ),
     "force_off_grid_reported": (
         "Die konfigurierte Einstellung „Force Off-Grid“ (Inselbetrieb erzwingen, R179): "
         "0 = Auto, 1 = erzwungen. Es ist die Anforderung, nicht der Netzzustand. Bei 1 setzt die "
@@ -1494,14 +1478,6 @@ SENSOR_HELP: Final[dict[str, tuple[str, str]]] = {
         "Firmwareständen mit Nullen gefüllt. Ein Wert hier ist kein gemessener Laststrom.",
         "Documented as invalid and zero-filled in the analysed firmware builds. A value "
         "here is not a measured load current.",
-    ),
-    "temp_dc_transformer": (
-        "Die Firmware überschreibt den Wert im normalen Betrieb mit der festen Rohzahl "
-        "1250, also 25,0 °C. Er ist ein Platzhalter und keine Messung; ob ein physischer "
-        "Fühler fehlt, ist damit nicht bewiesen.",
-        "In normal operation the firmware overwrites the value with the fixed raw 1250, "
-        "i.e. 25.0 °C. It is a placeholder, not a measurement; this does not prove that "
-        "no physical sensor exists.",
     ),
     "battery_power_raw": (
         "Batterieleistung als Rohzahl: Einheit (1 W oder 10 W je Zählschritt) und "

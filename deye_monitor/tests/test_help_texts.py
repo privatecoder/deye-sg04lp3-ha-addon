@@ -97,7 +97,6 @@ def test_corrected_helps_state_the_qualified_semantics() -> None:
         "bms_charge_current_limit": (("0 A", "0 A"), ("nicht aktualisiert", "not refreshed")),
         "bms_charge_voltage": (("R210", "R210"), ("Hundertstelvolt", "centivolts")),
         "bms_discharge_voltage": (("R211", "R211"), ("Protokoll", "protocol")),
-        "bms_offgrid_charge_limit": (("nie ein echtes", "never a real"),),
         "bms_temperature": (("82 °C", "82 °C"), ("ungeklärt", "unresolved")),
         "battery_temperature": (("beobachteten", "observed"),),
         "bms_power_derived": (
