@@ -104,9 +104,10 @@ def test_blocks_never_bridge_unknown_addresses(p: Profile) -> None:
     keys = {"grid_voltage_a", "grid_frequency"}  # 598 .. 609, R601 is not in the profile
     for gap in (0, 3, 20, 100):
         assert blocks_of(plan(p, keys, max_gap=gap), "ac") == [(598, 1), (609, 1)]
-    known = plan(p, {"pv1_power", "pv1_voltage"}, max_gap=3)
-    assert blocks_of(known, "pv") == [(672, 5)]  # 673..675 are known profile addresses
-    assert blocks_of(plan(p, {"pv1_power", "pv1_voltage"}), "pv") == [(672, 1), (676, 1)]
+    known = plan(p, {"pv1_voltage", "pv2_current"}, max_gap=3)
+    assert blocks_of(known, "pv") == [(676, 4)]  # 677..678 are known profile addresses
+    # 674/675 are not in the profile (PV3/PV4 power left in 0.5.x): no bridge from R672 to R676
+    assert blocks_of(plan(p, {"pv1_power", "pv1_voltage"}, max_gap=3), "pv") == [(672, 1), (676, 1)]
     for b in known.blocks:
         # every address in a block is either needed or known to the profile
         assert all(
@@ -175,23 +176,17 @@ def test_budget(p: Profile, hw: HardwareProfile) -> None:
 # -- selection enforcement ------------------------------------------------------------------------
 
 
-def test_validate_selection_rejects_pv3_and_other_placeholders(p: Profile) -> None:
-    for key in (
-        "pv3_power",
-        "pv4_voltage",
-        "battery2_soc",
-        "grid_apparent_internal",
-        "pv1_energy_today_r530",
-    ):
+def test_validate_selection_rejects_placeholders(p: Profile) -> None:
+    for key in ("inverter_apparent_r637", "load_apparent_r654"):
         with pytest.raises(SelectionError) as exc:
             validate_selection(p, {"pv1_power", key})
         assert exc.value.rejected == {key: "placeholder"}
-    for key in ("battery2_current", "battery2_negative_current"):
+    for key in ("battery2_current",):
         with pytest.raises(SelectionError) as exc:
             validate_selection(p, {key})
         assert exc.value.rejected == {key: "unsupported_for_profile"}
-    with pytest.raises(SelectionError, match="pv3_power"):
-        plan(p, {"pv3_power"})  # the plan builder enforces it too
+    with pytest.raises(SelectionError, match="load_apparent_r654"):
+        plan(p, {"load_apparent_r654"})  # the plan builder enforces it too
 
 
 def test_validate_selection_unknown_and_internal(p: Profile) -> None:
@@ -356,10 +351,10 @@ def test_template_contains_only_selectable_default_entries(p: Profile, hw: Hardw
 
 
 def test_template_only_changes_defaults_never_rights(p: Profile, hw: HardwareProfile) -> None:
-    # a key excluded from the template (PV3, placeholder) stays rejected for every feature set
+    # a key excluded from the template (placeholder) stays rejected for every feature set
     for feats in (Features(), Features(gen_port_mode="ac_coupled"), Features(mppt1_used=False)):
-        assert "pv3_power" not in template_selection(p, hw, feats)
-        assert selection_problems(p, {"pv3_power"})
+        assert "load_apparent_r654" not in template_selection(p, hw, feats)
+        assert selection_problems(p, {"load_apparent_r654"})
     # a physical key excluded by features is still selectable (user may deviate from the template)
     off = tpl(p, hw, battery=False)
     assert "battery_soc" not in off

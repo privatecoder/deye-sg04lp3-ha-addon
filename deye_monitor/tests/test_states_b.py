@@ -24,7 +24,7 @@ def label(key: str, word: int) -> str | None:
 
 
 def test_every_row_of_part_b_has_a_rule() -> None:
-    assert len(B_KEYS) == 100
+    assert len(B_KEYS) == 98
     assert all(k in STATES for k in B_KEYS)
 
 

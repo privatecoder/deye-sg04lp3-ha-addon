@@ -41,7 +41,7 @@ from deye_monitor.store import JsonStore, LoadStatus
 
 log = logging.getLogger(__name__)
 
-PV_POWER_KEYS: Final = ("pv1_power", "pv2_power", "pv3_power", "pv4_power")
+PV_POWER_KEYS: Final = ("pv1_power", "pv2_power")
 STALE_FACTOR: Final = 3  # a value is stale after this many poll intervals (as expire_after)
 SERIES_FILE: Final = "plant-totals.json"
 _SERIES_KEY = re.compile(r"^plant_[a-z_]+_energy_total_(?P<series>g(?P<n>\d+))$")

@@ -42,8 +42,6 @@ def _tail(prefix: Label, *, de: str, en: str) -> Label:
 
 UNRESOLVED = (
     *(f"pv_ext_r{n}" for n in range(733, 749)),
-    "grid_side_energy_today_r501",
-    "grid_connected_time_today",
     "gen_runtime_today_r539",
     "gen_min_power_retention",
     "parallel_balancing_stop_soc_raw",  # R33-15: documented label only, effect unresolved
@@ -530,8 +528,6 @@ B_KEYS = (
     "pv_ext_r746",
     "pv_ext_r747",
     "pv_ext_r748",
-    "grid_side_energy_today_r501",
-    "grid_connected_time_today",
     "gen_runtime_today_r539",
     "remote_run_enable",
     "battery_chemistry",

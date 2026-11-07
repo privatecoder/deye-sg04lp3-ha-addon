@@ -21,7 +21,7 @@ from typing import Any, Final
 
 from deye_monitor.profiles.decode import Value
 
-PV_POWER_KEYS: Final = ("pv1_power", "pv2_power", "pv3_power", "pv4_power")
+PV_POWER_KEYS: Final = ("pv1_power", "pv2_power")
 PV_COUNTER_KEY: Final = "pv_energy_today"
 MAX_GAP_S: Final = 300.0
 MIN_INTEGRATED_KWH: Final = 2.0  # below this the sun is too weak or the data too short to judge

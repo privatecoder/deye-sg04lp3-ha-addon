@@ -1461,24 +1461,6 @@ SENSOR_HELP: Final[dict[str, tuple[str, str]]] = {
         "Whether it is measured at the GEN port, the load port or an extra meter is "
         "unresolved; it is not a verified GEN-port input.",
     ),
-    "load_current_invalid_a": (
-        "In der Herstellerbeschreibung als ungültig geführt und bei den untersuchten "
-        "Firmwareständen mit Nullen gefüllt. Ein Wert hier ist kein gemessener Laststrom.",
-        "Documented as invalid and zero-filled in the analysed firmware builds. A value "
-        "here is not a measured load current.",
-    ),
-    "load_current_invalid_b": (
-        "In der Herstellerbeschreibung als ungültig geführt und bei den untersuchten "
-        "Firmwareständen mit Nullen gefüllt. Ein Wert hier ist kein gemessener Laststrom.",
-        "Documented as invalid and zero-filled in the analysed firmware builds. A value "
-        "here is not a measured load current.",
-    ),
-    "load_current_invalid_c": (
-        "In der Herstellerbeschreibung als ungültig geführt und bei den untersuchten "
-        "Firmwareständen mit Nullen gefüllt. Ein Wert hier ist kein gemessener Laststrom.",
-        "Documented as invalid and zero-filled in the analysed firmware builds. A value "
-        "here is not a measured load current.",
-    ),
     "battery_power_raw": (
         "Batterieleistung als Rohzahl: Einheit (1 W oder 10 W je Zählschritt) und "
         "Richtung sind nicht bestätigt. Zur Auswertung eignet sich die abgeleitete "

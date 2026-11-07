@@ -146,31 +146,6 @@ def test_pv_hardware_decisions(profile: Profile) -> None:
             "pv2_current",
         )
     ] == [672, 673, 676, 677, 678, 679]
-    placeholders = {
-        674: "pv3_power",
-        675: "pv4_power",
-        680: "pv3_voltage",
-        681: "pv3_current",
-        682: "pv4_voltage",
-        683: "pv4_current",
-        530: "pv1_energy_today_r530",
-        531: "pv2_energy_today_r531",
-        532: "pv3_energy_today_r532",
-        533: "pv4_energy_today_r533",
-        718: "pv_total_power_r718",
-        719: "pv5_voltage_r719",
-        720: "pv6_voltage_r720",
-        721: "pv7_voltage_r721",
-    }
-    for addr, key in placeholders.items():
-        e = profile.entry(key)
-        assert (e.addr, e.support_status, e.default_enabled, e.selectable) == (
-            addr,
-            "placeholder",
-            False,
-            False,
-        )
-        assert all(ev.effect == "zero_fill" for ev in e.producer_evidence)
     for addr in range(722, 749):
         e = profile.entry(f"pv_ext_r{addr}")
         assert (e.support_status, e.release, e.default_enabled) == (
@@ -183,12 +158,7 @@ def test_pv_hardware_decisions(profile: Profile) -> None:
 
 def test_battery2_is_not_offered(profile: Profile) -> None:
     expected = {
-        589: "placeholder",
-        593: "placeholder",
-        595: "placeholder",
-        596: "placeholder",
         594: "unsupported_for_profile",
-        602: "unsupported_for_profile",
     }
     found = {e.addr: e for e in profile.entries if e.key.startswith("battery2_")}
     assert {a: e.support_status for a, e in found.items()} == expected
@@ -197,13 +167,8 @@ def test_battery2_is_not_offered(profile: Profile) -> None:
 
 def test_aliases_and_version_bound_fields(profile: Profile) -> None:
     for key in (
-        "grid_apparent_internal",
-        "grid_apparent_external_r620",
         "inverter_apparent_r637",
         "load_apparent_r654",
-        "load_current_invalid_a",
-        "load_current_invalid_b",
-        "load_current_invalid_c",
     ):
         e = profile.entry(key)
         assert e.support_status == "placeholder"
@@ -216,7 +181,6 @@ def test_aliases_and_version_bound_fields(profile: Profile) -> None:
     )
     effects = {ev.mcu2: ev.effect for ev in r709.producer_evidence}
     assert effects == {"1151": "zero_fill", "1175": "copy"}
-    assert profile.entry("grid_apparent_external_r620").addr == 620
     assert not [e for e in profile.entries if {620, 709} <= set(e.addresses)]
 
 

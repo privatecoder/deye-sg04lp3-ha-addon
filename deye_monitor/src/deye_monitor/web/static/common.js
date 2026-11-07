@@ -138,7 +138,7 @@ function energyChoice(inv) {
 // disconnected or switched off (an intermittent utility, an outage, a generator that is not
 // running). An exact list, never a prefix: energy counters, CT reports and settings stay out.
 const GRID_TELEMETRY = new Set([
-  'grid_voltage_a', 'grid_voltage_b', 'grid_voltage_c', 'grid_line_voltage_ca', 'grid_frequency',
+  'grid_voltage_a', 'grid_voltage_b', 'grid_voltage_c', 'grid_frequency',
   'grid_internal_current_a', 'grid_internal_current_b', 'grid_internal_current_c',
   'grid_external_current_a', 'grid_external_current_b', 'grid_external_current_c',
   'grid_internal_power_a', 'grid_internal_power_b', 'grid_internal_power_c', 'grid_internal_power_total',

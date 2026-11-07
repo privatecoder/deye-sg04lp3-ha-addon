@@ -105,7 +105,7 @@ async def test_set_selection_rejects_placeholders_and_keeps_the_old_selection(
         inv = r.inv("deye1")
         before = inv.selection
         with pytest.raises(SelectionError):
-            inv.set_selection({"pv3_power", "battery_soc"}, revision=3)
+            inv.set_selection({"battery2_current", "battery_soc"}, revision=3)
         assert inv.selection == before and inv.selection_revision == 0
 
 

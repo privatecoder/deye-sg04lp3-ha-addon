@@ -117,7 +117,6 @@ for _key in (
     "inverter_generation",
     "battery_power_raw",
     "battery2_current",
-    "battery2_negative_current",
     "grid_power_factor",
     "ev_charge_power_r709",
     *(f"pv_ext_r{n}" for n in range(722, 733)),
@@ -351,31 +350,8 @@ def _placeholder(placeholder: int = 0) -> Rule:
 _PLACEHOLDER_OPTIONS = (NOT_PROVIDED, UNCONFIRMED_VALUE)
 # measured sensors with a unit keep their number; the placeholder state is an attribute
 for _key in (
-    "battery2_soc",
-    "battery2_voltage",
-    "battery2_power",
-    "battery2_temperature",
-    "grid_apparent_internal",
-    "grid_apparent_external_r620",
     "inverter_apparent_r637",
-    "load_current_invalid_a",
-    "load_current_invalid_b",
-    "load_current_invalid_c",
     "load_apparent_r654",
-    "pv3_power",
-    "pv4_power",
-    "pv3_voltage",
-    "pv3_current",
-    "pv4_voltage",
-    "pv4_current",
-    "pv1_energy_today_r530",
-    "pv2_energy_today_r531",
-    "pv3_energy_today_r532",
-    "pv4_energy_today_r533",
-    "pv_total_power_r718",
-    "pv5_voltage_r719",
-    "pv6_voltage_r720",
-    "pv7_voltage_r721",
 ):
     register(_key, _placeholder(), options=_PLACEHOLDER_OPTIONS)
 

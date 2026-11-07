@@ -64,38 +64,14 @@ KEYS_A = (
     "fault_f29",
     "fault_f41",
     "battery_power_raw",
-    "battery2_soc",
-    "battery2_voltage",
-    "battery2_power",
-    "battery2_temperature",
     "battery2_current",
-    "battery2_negative_current",
-    "grid_apparent_internal",
-    "grid_apparent_external_r620",
     "grid_power_factor",
     "inverter_apparent_r637",
-    "load_current_invalid_a",
-    "load_current_invalid_b",
-    "load_current_invalid_c",
     "load_apparent_r654",
     "ac_solar_power_raw_a",
     "ac_solar_power_raw_b",
     "ac_solar_power_raw_c",
     "ev_charge_power_r709",
-    "pv3_power",
-    "pv4_power",
-    "pv3_voltage",
-    "pv3_current",
-    "pv4_voltage",
-    "pv4_current",
-    "pv1_energy_today_r530",
-    "pv2_energy_today_r531",
-    "pv3_energy_today_r532",
-    "pv4_energy_today_r533",
-    "pv_total_power_r718",
-    "pv5_voltage_r719",
-    "pv6_voltage_r720",
-    "pv7_voltage_r721",
     "pv_ext_r722",
     "pv_ext_r723",
     "pv_ext_r724",
@@ -123,7 +99,7 @@ def state_de(key: str, *words: int) -> str | None:
 
 
 def test_every_row_is_registered_once() -> None:
-    assert len(KEYS_A) == len(set(KEYS_A)) == 97
+    assert len(KEYS_A) == len(set(KEYS_A)) == 73
     assert [k for k in KEYS_A if k not in STATES] == []
 
 
@@ -264,11 +240,12 @@ def test_aggregates_and_single_reports() -> None:
 
 
 def test_placeholders() -> None:
-    assert state("pv3_power", 0) == "Not provided"
-    assert state("pv3_power", 4) == "Unconfirmed value"
-    assert state("grid_apparent_internal", 0, 0) == "Not provided"
-    assert state("grid_apparent_internal", 0, 5) == "Unconfirmed value"
-    assert state_de("load_current_invalid_a", 0) == "Nicht bereitgestellt"
+    n = len(P.entry("inverter_apparent_r637").addresses)
+    assert state("inverter_apparent_r637", *([0] * n)) == "Not provided"
+    assert state("inverter_apparent_r637", *([5] * n)) == "Unconfirmed value"
+    assert state_de(
+        "load_apparent_r654", *([0] * len(P.entry("load_apparent_r654").addresses))
+    ) == ("Nicht bereitgestellt")
     assert state("ac_solar_power_raw_a", 25) == "AC-Solar: magnitude 250 W"
     assert state_de("ac_solar_power_raw_b", 0) == "AC-Solar: Betrag 0 W"
 

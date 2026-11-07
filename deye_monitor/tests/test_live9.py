@@ -54,7 +54,6 @@ def test_physical_measurements_expected_non_zero_are_watched(key: str) -> None:
         "relay_inverter",  # binary sensor
         "parallel_enable",
         "battery_energy_charge_today",  # "today" counters are 0 after midnight
-        "pv1_energy_today_r530",
         "gen_voltage_a",  # an unused gen port reads 0
         "battery_current",  # idle battery
         "grid_selected_power_total",  # zero export

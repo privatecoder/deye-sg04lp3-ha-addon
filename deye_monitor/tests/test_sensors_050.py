@@ -442,12 +442,11 @@ def test_the_grid_telemetry_of_the_zero_only_hint_policy_is_an_exact_key_set() -
     js = (Path(__file__).parents[1] / "src/deye_monitor/web/static/common.js").read_text()
     block = js[js.index("const GRID_TELEMETRY") : js.index("]);", js.index("const GRID_TELEMETRY"))]
     keys = re.findall(r"'([a-z_]+)'", block)
-    assert len(keys) == 24 and len(set(keys)) == 24
+    assert len(keys) == 23 and len(set(keys)) == 23
     watched = {
         "grid_voltage_a",
         "grid_voltage_b",
         "grid_voltage_c",
-        "grid_line_voltage_ca",
         "grid_frequency",
     }
     for key in keys:
