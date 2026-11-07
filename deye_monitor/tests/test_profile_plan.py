@@ -5,7 +5,7 @@ import itertools
 import pytest
 
 from deye_monitor.config import PollConfig
-from deye_monitor.profiles.features import Features
+from deye_monitor.profiles.features import Features, GenPortMode
 from deye_monitor.profiles.hardware import HardwareProfile, load_hardware
 from deye_monitor.profiles.plan import (
     ReadPlan,
@@ -359,3 +359,20 @@ def test_template_only_changes_defaults_never_rights(p: Profile, hw: HardwarePro
     off = tpl(p, hw, battery=False)
     assert "battery_soc" not in off
     validate_selection(p, {"battery_soc"})
+
+
+def test_generator_relay_is_suggested_for_generator_and_smart_load_only(
+    p: Profile, hw: HardwareProfile
+) -> None:
+    entry = p.entry("relay_generator")
+    assert entry.point == "gen_port" and entry.entity_category == "diagnostic"
+    cases: tuple[tuple[GenPortMode, bool], ...] = (
+        ("generator", True),
+        ("smart_load", True),
+        ("ac_coupled", False),
+        ("unused", False),
+    )
+    for mode, suggested in cases:
+        template = template_selection(p, hw, Features(gen_port_mode=mode))
+        assert ("relay_generator" in template) is suggested, mode
+    validate_selection(p, {"relay_generator"})  # still selectable by hand

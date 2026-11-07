@@ -1279,9 +1279,11 @@ SENSOR_HELP: Final[dict[str, tuple[str, str]]] = {
     ),
     "relay_generator": (
         "Zeigt, ob die Firmware das Generator-Relais am GEN-Anschluss als eingeschaltet "
-        "führt. Es ist der Softwarezustand, keine mechanische Rückmeldung des Relais.",
+        "führt. Es ist der Softwarezustand, keine mechanische Rückmeldung des Relais. Im "
+        "Smart-Load-Modus zeigt er, ob der Smart-Load-Ausgang eingeschaltet ist.",
         "Shows whether the firmware holds the generator relay on the GEN port as on. This "
-        "is the software state, not mechanical feedback from the relay.",
+        "is the software state, not mechanical feedback from the relay. In Smart Load mode "
+        "it shows whether the Smart Load output is on.",
     ),
     "relay_grid_supply": (
         "Entspricht dem Bit „grid give power to relay“ der Herstellerbeschreibung. Ob "

@@ -1049,27 +1049,31 @@ entries:
     de: Relais Generator
     en: Generator relay
   description:
-    de: "Softwarezustand des Relais (Generatoranschluss); keine mechanische Rückmeldung."
-    en: "Software state of the generator connection relay; not mechanical feedback."
+    de: "Softwarezustand des Relais (Generatoranschluss), keine mechanische Rückmeldung; im Smart-Load-Modus zeigt er, ob der Smart-Load-Ausgang an ist."
+    en: "Software state of the generator connection relay, not mechanical feedback; in Smart Load mode it shows whether the Smart Load output is on."
   addr: 552
   type: bitfield
   mask: 8
   entity_category: diagnostic
   platform: binary_sensor
   category: status
-  point: diagnostic
+  point: gen_port
   group: status
   tags:
   - relay
-  requires: {}
+  requires:
+    feature: gen_port_mode
+    in:
+    - generator
+    - smart_load
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R552 (TXT 3435-3451)"
-  confidence: document_only
-  default_enabled: false
-  notes: Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded.
+  confidence: field_evidence
+  default_enabled: true
+  notes: "Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded. Field-confirmed: with Smart Load mode on the GEN port, the bit is set while the Smart Load output is on (GEN voltage present) and clear while it is off. Suggested by the installation description only for a generator or Smart Load on the GEN port; for AC-coupled PV the meaning of the bit is not confirmed."
 - key: relay_grid_supply
   name:
     de: "Relais „Grid give power“ (Zuordnung unbestätigt)"

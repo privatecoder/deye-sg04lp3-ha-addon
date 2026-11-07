@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The "Generator relay" sensor is now suggested when the GEN port is described as Generator or Smart Load. In Smart Load mode it shows whether the Smart Load output is on (confirmed on a real plant).
 - The plant PV energy total no longer drops when a member's PV energy counter is not selected or not yet read; it is unknown instead, so Home Assistant no longer counts the whole lifetime energy as one day.
 
 ## 0.5.5 — 2026-11-07
