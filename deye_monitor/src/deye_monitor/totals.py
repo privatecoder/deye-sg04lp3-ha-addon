@@ -184,7 +184,6 @@ METRICS: Final = (
         "kWh",
         "energy",
         "total_increasing",
-        optional=True,
     ),
     Metric(
         "plant_battery_charge_energy_total",
@@ -550,6 +549,8 @@ class PlantTotals:
             return None if any(p is None for p in parts) else sum(p for p in parts if p is not None)
         if metric.optional and not any(k in selected for k in metric.keys):
             return 0.0
+        if metric.kind == "energy" and metric.keys[0] not in selected:
+            return None  # a counter that is not selected is unknown, never a lower sum
         if metric.key == "plant_battery_power":
             volts = self._fresh(member, "battery_voltage", now)
             amps = self._fresh(member, "battery_current", now)

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The plant PV energy total no longer drops when a member's PV energy counter is not selected or not yet read; it is unknown instead, so Home Assistant no longer counts the whole lifetime energy as one day.
+
 ## 0.5.5 — 2026-11-07
 
 - Removed sensors that never measured anything because the firmware fills them with a fixed value: the DC transformer temperature, the BMS off-grid charge and discharge currents, the second battery values, PV3 to PV7 (power, voltage, current) and the PV daily counters of the individual strings, the internal and external apparent power, the grid line voltage C-A, the "invalid" load currents and two daily grid counters. Totals and other values do not change.

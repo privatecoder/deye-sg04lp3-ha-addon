@@ -175,6 +175,29 @@ def test_energy_totals_sum_the_counters(tmp_path: Path) -> None:
     assert r.value("plant_pv_energy_today") == 4.5
 
 
+def test_pv_energy_total_never_loses_a_member_that_has_not_selected_it(tmp_path: Path) -> None:
+    r = Rig(tmp_path, ids=("a", "b"))
+    for member, kwh in (("a", 100.0), ("b", 40.0)):
+        r.feed(member, pv_energy_total=kwh)
+    assert r.value("plant_pv_energy_total") == 140.0
+    # the selection of one member loses the counter for a cycle: unknown, never the lower 100
+    r.keys["b"] -= {"pv_energy_total"}
+    assert r.value("plant_pv_energy_total") is None
+    r.keys["b"] |= {"pv_energy_total"}
+    assert r.value("plant_pv_energy_total") == 140.0
+
+
+def test_pv_energy_total_is_unknown_until_every_member_has_read_it(tmp_path: Path) -> None:
+    r = Rig(tmp_path, ids=("a", "b"))
+    r.keys["b"] -= {"pv_energy_total"}
+    r.feed("a", pv_energy_total=100.0)
+    r.feed("b", pv_energy_today=1.0)
+    assert r.value("plant_pv_energy_total") is None
+    r2 = Rig(tmp_path / "x", ids=("a", "b"))
+    r2.feed("a", pv_energy_total=100.0)  # b selected it but has not read it yet
+    assert r2.value("plant_pv_energy_total") is None
+
+
 def test_battery_state_comes_from_the_master_only(tmp_path: Path) -> None:
     r = Rig(tmp_path)
     r.feed(

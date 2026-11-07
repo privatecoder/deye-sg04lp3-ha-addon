@@ -88,7 +88,9 @@ device loop and without the publisher.
   inverters ("Plant (totals)", below). They are computed from the newest value of each member; a
   member whose value is missing, `null` or older than three poll intervals makes the total
   `unknown` (never a partial sum). A member without PV inputs (none selected) adds 0 to the PV
-  totals.
+  power and the PV "today" total; an energy total (PV energy, battery charge/discharge, load
+  energy) is `unknown` while any member has not selected its counter or has not read it yet, so
+  a missing counter never lowers the total.
 
   | Sensor | Meaning |
   | --- | --- |
