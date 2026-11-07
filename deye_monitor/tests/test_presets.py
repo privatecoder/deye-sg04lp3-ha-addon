@@ -85,7 +85,12 @@ def expected(f: Features) -> dict[str, bool]:
     out["relay_grid"] = terminal
     out |= {k: True for k in ("load_voltage_a", "load_voltage_b", "load_voltage_c")}
     out |= {"load_power_total": True, "inverter_power_total": True}
-    out["inverter_frequency"] = bool(f.battery) or f.grid_port_use in ("unused", "generator")
+    out["inverter_frequency"] = (
+        bool(f.battery)
+        or f.grid_port_use in ("unused", "generator")
+        or f.gen_port_mode == "ac_coupled"
+    )
+    out["force_off_grid_reported"] = bool(f.battery) or not f.utility_grid
     out |= {
         k: utility
         for k in (
@@ -257,3 +262,115 @@ def test_the_grid_and_ev_texts_use_the_design_41_wording() -> None:
         "EV charge control",
     ):
         assert needle in js, needle
+
+
+# -- live-62: simple answer-driven suggestions ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("use", "measure", "want"),
+    [
+        ("utility", "ct", True),
+        ("utility", "ct_and_second_meter", True),
+        ("generator", "ct", True),
+        ("utility", "meter", False),
+        ("utility", "meter_and_second_meter", False),
+        ("utility", "none", False),
+        ("utility", "unknown", False),
+        ("unused", "ct", False),
+    ],
+)
+def test_the_ct_ratio_is_proposed_for_a_ct_on_a_used_grid_terminal_only(
+    use: str, measure: str, want: bool
+) -> None:
+    ops = _ops(utility_grid=use == "utility", grid_port_use=use, external_measurement=measure)
+    assert ("external_ct_ratio" in ops) is want
+
+
+@pytest.mark.parametrize("ev", ["grid_port", "load_port"])
+def test_a_described_ev_charger_proposes_the_ev_settings(ev: str) -> None:
+    ops = _ops(ev_charger=ev)
+    assert {"ev_location", "ev_free_work", "ev_max_power", "ev_offgrid_soc"} <= ops
+    ops = _ops(ev_charger=ev, battery_control_basis="voltage")
+    assert {"ev_location", "ev_free_work", "ev_max_power"} <= ops
+    assert "ev_offgrid_soc" not in ops
+    assert "ev_offgrid_soc" not in _ops(ev_charger=ev, battery=False)
+
+
+@pytest.mark.parametrize("ev", ["none", "unknown"])
+def test_no_or_unknown_ev_charger_proposes_no_ev_settings(ev: str) -> None:
+    assert not _ops(ev_charger=ev) & {
+        "ev_location",
+        "ev_free_work",
+        "ev_max_power",
+        "ev_offgrid_soc",
+    }
+
+
+def test_the_ev_power_register_is_never_a_template_sensor(p: Profile, hw: HardwareProfile) -> None:
+    for ev in ("grid_port", "load_port"):
+        assert "ev_charge_power_r709" not in template_selection(p, hw, Features(ev_charger=ev))
+
+
+@pytest.mark.parametrize(
+    ("basis", "soc", "volt"),
+    [
+        ("soc", True, False),
+        ("voltage", False, True),
+        ("none", False, False),
+        ("unknown", False, False),
+    ],
+)
+def test_the_tou_targets_follow_the_control_basis(basis: str, soc: bool, volt: bool) -> None:
+    ops = _ops(tou_used=True, battery_control_basis=basis)
+    assert ("tou_slot1_soc" in ops) is soc and ("tou_slot6_soc" in ops) is soc
+    assert ("tou_slot1_voltage" in ops) is volt and ("tou_slot6_voltage" in ops) is volt
+    assert {"tou_enable", "tou_slot1_start", "tou_slot1_power", "tou_slot1_grid_charge"} <= ops
+
+
+def test_ac_coupled_pv_proposes_the_threshold_pair_of_the_basis() -> None:
+    soc = _ops(gen_port_mode="ac_coupled")
+    assert {"smart_load_off_soc", "smart_load_on_soc", "ac_coupling_upper_frequency"} <= soc
+    assert not soc & {"smart_load_off_voltage", "smart_load_on_voltage", "smart_load_force"}
+    volt = _ops(gen_port_mode="ac_coupled", battery_control_basis="voltage")
+    assert {"smart_load_off_voltage", "smart_load_on_voltage"} <= volt
+    assert not volt & {"smart_load_off_soc", "smart_load_on_soc"}
+    none = _ops(gen_port_mode="ac_coupled", battery_control_basis="unknown")
+    assert not none & {"smart_load_off_soc", "smart_load_off_voltage"}
+    assert not _ops(gen_port_mode="ac_coupled", battery=False) & {
+        "smart_load_off_soc",
+        "smart_load_on_soc",
+    }
+
+
+def test_the_inverter_frequency_is_suggested_for_ac_coupling_without_a_battery(
+    p: Profile, hw: HardwareProfile
+) -> None:
+    f = Features(battery=False, bms=False, gen_port_mode="ac_coupled")
+    assert "inverter_frequency" in template_selection(p, hw, f)
+    assert "relay_generator" not in template_selection(p, hw, f)  # live-61 decision stays
+    plain = Features(battery=False, bms=False)
+    assert "inverter_frequency" not in template_selection(p, hw, plain)
+
+
+def test_the_two_configuration_readbacks_follow_their_answers(
+    p: Profile, hw: HardwareProfile
+) -> None:
+    for policy, want in (
+        ("export_allowed", True),
+        ("zero_export_load", True),
+        ("zero_export_external", True),
+        ("not_applicable", False),
+        ("unknown", False),
+    ):
+        t = template_selection(p, hw, Features(export_policy=policy))  # type: ignore[arg-type]
+        assert ("export_mode_setting" in t) is want, policy
+    island = Features(utility_grid=False, grid_port_use="unused", export_policy="export_allowed")
+    assert "export_mode_setting" not in template_selection(p, hw, island)
+    assert "force_off_grid_reported" in template_selection(p, hw, Features())
+    assert "force_off_grid_reported" not in template_selection(
+        p, hw, Features(battery=False, bms=False)
+    )
+    assert "force_off_grid_reported" in template_selection(
+        p, hw, Features(battery=False, bms=False, utility_grid=False, grid_port_use="unused")
+    )

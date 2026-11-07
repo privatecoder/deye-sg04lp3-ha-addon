@@ -140,7 +140,8 @@ def test_default_selection_of_the_always_relevant_reports() -> None:
     s = sel()
     # 0.5.2 (task 43): the signal report needs a described signal use, DRM and the optional
     # request reports are opt-in
-    assert not {"external_signal_reported", "force_off_grid_reported"} & s
+    assert "external_signal_reported" not in s
+    assert "force_off_grid_reported" in s  # a described battery: the request report is suggested
     assert not ({f"drm{i}_reported" for i in range(9)} | {"drm_status_raw"}) & s
     assert {"mppt_scanning_reported", "signal_island_mode_reported", "dc_input_power_total"} <= s
     assert {"battery_power_derived", "bms_power_derived", "bms_alarm_word", "bms_fault_word"} <= s
@@ -226,11 +227,15 @@ def test_tou_answer_selects_the_schedule_sensors() -> None:
 
 def test_other_answers_do_not_change_the_sensor_template() -> None:
     base = sel()
-    for name, value in (
-        ("export_policy", "zero_export_external"),
-        ("battery_control_basis", "soc"),
-    ):
-        assert sel(**{name: value}) == base
+    assert sel(battery_control_basis="soc") == base
+    # the export policy adds only the readable System Work Mode report, and only with a utility grid
+    assert sel(export_policy="zero_export_external") - base == {"export_mode_setting"}
+    assert sel(export_policy="not_applicable") == base == sel(export_policy="unknown")
+    island = {"utility_grid": False, "grid_port_use": "unused"}
+    assert "export_mode_setting" not in sel(export_policy="export_allowed", **island)
+    # the force off-grid request report follows a described battery or an island
+    assert "force_off_grid_reported" not in sel(battery=False, bms=False)
+    assert "force_off_grid_reported" in sel(battery=False, bms=False, **island)
 
 
 def test_the_signal_report_follows_a_described_signal_use() -> None:

@@ -3188,6 +3188,8 @@ entries:
       in:
       - unused
       - generator
+    - feature: gen_port_mode
+      equals: ac_coupled
   supported_on:
   - sg04lp3_eu
   support_status: supported
@@ -7925,8 +7927,8 @@ entries:
     de: "Force Off-Grid (Anforderung)"
     en: "Force Off-Grid (request)"
   description:
-    de: 'Anforderung Inselbetrieb: 0 = Auto, 1 = erzwungen; kein Netzzustand.'
-    en: 'Force off-grid request: 0 = Auto, 1 = forced; not the grid state.'
+    de: 'Konfigurierte Anforderung Inselbetrieb: 0 = Auto, 1 = erzwungen; keine beobachtete Netztrennung.'
+    en: 'Configured force off-grid request: 0 = Auto, 1 = forced; not an observed isolation from the grid.'
   addr: 179
   type: enum
   enum:
@@ -7940,14 +7942,19 @@ entries:
   category: settings
   point: diagnostic
   group: settings
-  requires: {}
+  requires:
+    any_of:
+    - feature: battery
+      equals: true
+    - feature: utility_grid
+      equals: false
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: 'V105.8 registers.json inverter: R179; coverage-1 sensors.json (add_decoded)'
   confidence: document_mapping_public_copy
-  default_enabled: false
+  default_enabled: true
   notes: 'Force off-grid request (R179): 0 = Auto, 1 = forced; not the grid state. Evidence: document
     mapping public copy.'
 - key: signal_island_mode_reported
@@ -8045,16 +8052,22 @@ entries:
   point: diagnostic
   group: settings
   requires:
-    feature: utility_grid
-    equals: true
+    all_of:
+    - feature: utility_grid
+      equals: true
+    - feature: export_policy
+      in:
+      - export_allowed
+      - zero_export_load
+      - zero_export_external
   supported_on:
   - sg04lp3_eu
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R142; coverage-1 settings.json (export-limit mode selector), consistency source for the installation question export_policy"
   confidence: document_enum_recovered_in_firmware
-  default_enabled: false
-  notes: Read for the installation description consistency hint only; never selected by default and never chooses an answer.
+  default_enabled: true
+  notes: Also read for the installation description consistency hint; suggested when a utility grid and an export policy are described. It never chooses an answer.
 - key: self_check_time_setting
   name:
     de: "Selbsttest-Zeit (Einstellung)"

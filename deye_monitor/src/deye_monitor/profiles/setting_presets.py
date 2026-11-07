@@ -32,15 +32,17 @@ _INTERNAL_BATTERY = (
     "battery_internal_resistance",
     "battery_charge_efficiency",
 )
+# the common ToU rows; the target kind (SOC or voltage) follows the control basis
 _TOU = (
     "tou_enable",
     *(f"tou_weekday_{tag}" for tag, *_ in WEEKDAYS),
     *(
         f"tou_slot{n}_{x}"
         for n in range(1, TOU_SLOTS + 1)
-        for x in ("start", "power", "soc", "grid_charge")
+        for x in ("start", "power", "grid_charge")
     ),
 )
+_EV = ("ev_location", "ev_free_work", "ev_max_power")
 
 
 def suggested_operations(
@@ -101,12 +103,20 @@ def suggested_operations(
         out.add("smart_load_force")
     if gen_mode == "ac_coupled":
         out.add("ac_coupling_upper_frequency")
+        # R134-R137 are shared with Smart Load; the descriptors already order them for AC coupling
+        # (OFF >= ON + hysteresis), so the pair that fits the basis is the same key pair
+        if battery and basis == "soc":
+            out.update(("smart_load_off_soc", "smart_load_on_soc"))
+        if battery and basis == "voltage":
+            out.update(("smart_load_off_voltage", "smart_load_on_voltage"))
     if gen_mode in ("generator", "smart_load", "ac_coupled"):
         out.add("gen_port_usage")
     if battery and gen_mode == "generator":
         out.add("generator_charge_current")
     if battery and answer("tou_used") is True:
         out.update(_TOU)
+        if basis == "soc":
+            out.update(f"tou_slot{n}_soc" for n in range(1, TOU_SLOTS + 1))
         if basis == "voltage":
             out.update(f"tou_slot{n}_voltage" for n in range(1, TOU_SLOTS + 1))
         if gen_mode == "generator":  # the generator-charge flag belongs to a generator on GEN
@@ -132,8 +142,16 @@ def suggested_operations(
             out.add("pv_sale_enable")
     if battery and bms is True:
         out.add("bms_loss_fault")
-    if utility and answer("external_measurement") not in (None, "none", "unknown"):
+    # the CT ratio calibrates a current transformer on a used GRID terminal: not a digital meter
+    if port_use in ("utility", "generator") and answer("external_measurement") in (
+        "ct",
+        "ct_and_second_meter",
+    ):
         out.add("external_ct_ratio")
+    if answer("ev_charger") in ("grid_port", "load_port"):
+        out.update(_EV)
+        if battery and basis == "soc":
+            out.add("ev_offgrid_soc")
     # the peak-shaving powers (R190 / R191) have no preselection predicate in the contract
     if battery or island:
         out.update(("force_off_grid", "signal_island_mode"))

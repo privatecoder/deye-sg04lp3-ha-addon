@@ -111,7 +111,7 @@ NUMBER_FEATURES: dict[Feature, tuple[int, int]] = {
 
 class Features(BaseModel):
     """Per-inverter plant features. Defaults describe a grid-tied single inverter with a
-    battery without CAN BMS and both MPPT inputs in use."""
+    battery with a communicating BMS and both MPPT inputs in use."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

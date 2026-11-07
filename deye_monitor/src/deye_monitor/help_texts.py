@@ -1335,11 +1335,12 @@ SENSOR_HELP: Final[dict[str, tuple[str, str]]] = {
     ),
     "force_off_grid_reported": (
         "Die konfigurierte Einstellung „Force Off-Grid“ (Inselbetrieb erzwingen, R179): "
-        "0 = Auto, 1 = erzwungen. Es ist die Anforderung, nicht der Netzzustand. Bei 1 setzt die "
-        "Firmware die Netzqualifizierung ständig zurück.",
+        "0 = Auto, 1 = erzwungen. Es ist die Anforderung, nicht der Netzzustand und keine "
+        "beobachtete Netztrennung. Bei 1 setzt die Firmware die Netzqualifizierung ständig "
+        "zurück.",
         "The configured “Force Off-Grid” setting (R179): 0 = Auto, 1 = forced. It is the "
-        "request, not the grid state. At 1 the firmware keeps resetting the grid "
-        "qualification.",
+        "request, not the grid state and not an observed isolation. At 1 the firmware "
+        "keeps resetting the grid qualification.",
     ),
     "signal_island_mode_reported": (
         "Die konfigurierte Einstellung „Signal Island Mode“ (R178, Bits 8–9; in der "

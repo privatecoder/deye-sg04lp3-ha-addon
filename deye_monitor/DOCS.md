@@ -805,11 +805,11 @@ card (totals and the status of every member).
    | Answer | Preselected | Not preselected |
    | --- | --- | --- |
    | Battery with BMS communication | BMS SOC, temperature, voltage, current, charge/discharge current limits, charge voltage; inverter battery voltage, current, power and energies | inverter battery SOC and temperature (same source), BMS discharge voltage |
-   | Battery without BMS | inverter battery SOC, temperature, voltage, current, energies | all BMS values |
-   | Public grid | grid voltage and frequency, selected grid power, grid energies | internal GRID-terminal power |
+   | Battery without BMS | inverter battery SOC, voltage, current, energies | all BMS values and the battery temperature (no probe is described) |
+   | Public grid | grid voltage and frequency, internal GRID-terminal power, selected grid power, grid energies | |
    | Generator on the GRID port | grid voltage and frequency, internal GRID-terminal power, inverter frequency | utility grid power and energy counters |
    | Island (grid port unused) | inverter frequency; no grid values | grid values |
-   | Any | load power and voltage L1-L3, inverter output power total, active warnings and faults, the named alarm bits | UPS/EPS power (equals the load power off-grid), raw alarm and fault words 1-4 |
+   | Any | load power and voltage L1-L3, inverter output power total, active warnings and faults | the individual alarm bits (the warning and fault lists cover them), UPS/EPS power (equals the load power off-grid), raw alarm and fault words 1-4 |
    | Parallel operation | parallel role and serial number | (slaves: BMS values and temperature stay inactive, the plant device carries SOC and temperature) |
 
    **Not offered at all** (the firmware writes a fixed value, or the value duplicates another):
