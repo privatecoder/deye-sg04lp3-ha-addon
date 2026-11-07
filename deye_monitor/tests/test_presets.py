@@ -323,9 +323,17 @@ def test_the_ev_power_register_is_never_a_template_sensor(p: Profile, hw: Hardwa
 )
 def test_the_tou_targets_follow_the_control_basis(basis: str, soc: bool, volt: bool) -> None:
     ops = _ops(tou_used=True, battery_control_basis=basis)
-    assert ("tou_slot1_soc" in ops) is soc and ("tou_slot6_soc" in ops) is soc
-    assert ("tou_slot1_voltage" in ops) is volt and ("tou_slot6_voltage" in ops) is volt
-    assert {"tou_enable", "tou_slot1_start", "tou_slot1_power", "tou_slot1_grid_charge"} <= ops
+    slots = range(1, 7)
+    assert {k for k in ops if k.startswith("tou_slot") and k.endswith("_soc")} == (
+        {f"tou_slot{n}_soc" for n in slots} if soc else set()
+    )
+    assert {k for k in ops if k.startswith("tou_slot") and k.endswith("_voltage")} == (
+        {f"tou_slot{n}_voltage" for n in slots} if volt else set()
+    )
+    common = {"tou_enable"} | {
+        f"tou_slot{n}_{x}" for n in slots for x in ("start", "power", "grid_charge")
+    }
+    assert common <= ops
 
 
 def test_ac_coupled_pv_proposes_the_threshold_pair_of_the_basis() -> None:

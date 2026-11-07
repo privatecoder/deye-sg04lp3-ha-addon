@@ -11,9 +11,11 @@ from deye_monitor.ha_discovery import Namespace, plant_components, validate_comp
 from deye_monitor.plant import plant_from_body, plant_to_body
 from deye_monitor.profiles.schema import load_profile
 from deye_monitor.totals import (
+    ENERGY_METRICS,
     METRIC_BY_KEY,
     METRICS,
     PLANT_INPUTS,
+    Metric,
     PlantSeries,
     PlantTotals,
     TotalsMember,
@@ -175,27 +177,51 @@ def test_energy_totals_sum_the_counters(tmp_path: Path) -> None:
     assert r.value("plant_pv_energy_today") == 4.5
 
 
-def test_pv_energy_total_never_loses_a_member_that_has_not_selected_it(tmp_path: Path) -> None:
+LIFETIME = [m for m in ENERGY_METRICS if m.state_class == "total_increasing"]
+
+
+def test_the_lifetime_energy_metrics_are_pv_battery_and_load() -> None:
+    assert {m.key for m in LIFETIME} == {
+        "plant_pv_energy_total",
+        "plant_battery_charge_energy_total",
+        "plant_battery_discharge_energy_total",
+        "plant_load_energy_total",
+    }
+
+
+@pytest.mark.parametrize("metric", LIFETIME, ids=lambda m: m.key)
+def test_an_energy_total_never_loses_a_member_that_has_not_selected_it(
+    tmp_path: Path, metric: Metric
+) -> None:
+    key = metric.keys[0]
     r = Rig(tmp_path, ids=("a", "b"))
     for member, kwh in (("a", 100.0), ("b", 40.0)):
-        r.feed(member, pv_energy_total=kwh)
-    assert r.value("plant_pv_energy_total") == 140.0
+        r.feed(member, **{key: kwh})
+    assert r.value(metric.key) == 140.0
     # the selection of one member loses the counter for a cycle: unknown, never the lower 100
-    r.keys["b"] -= {"pv_energy_total"}
-    assert r.value("plant_pv_energy_total") is None
-    r.keys["b"] |= {"pv_energy_total"}
-    assert r.value("plant_pv_energy_total") == 140.0
+    r.keys["b"] -= {key}
+    assert r.value(metric.key) is None
+    r.keys["b"] |= {key}
+    assert r.value(metric.key) == 140.0
+    # a null reading is unknown too, and the next real reading recovers the sum
+    r.feed("b", **{key: None})
+    assert r.value(metric.key) is None
+    r.feed("b", **{key: 41.0})
+    assert r.value(metric.key) == 141.0
 
 
-def test_pv_energy_total_is_unknown_until_every_member_has_read_it(tmp_path: Path) -> None:
+@pytest.mark.parametrize("metric", LIFETIME, ids=lambda m: m.key)
+def test_an_energy_total_is_unknown_until_every_member_has_read_it(
+    tmp_path: Path, metric: Metric
+) -> None:
+    key = metric.keys[0]
     r = Rig(tmp_path, ids=("a", "b"))
-    r.keys["b"] -= {"pv_energy_total"}
-    r.feed("a", pv_energy_total=100.0)
-    r.feed("b", pv_energy_today=1.0)
-    assert r.value("plant_pv_energy_total") is None
+    r.keys["b"] -= {key}
+    r.feed("a", **{key: 100.0})
+    assert r.value(metric.key) is None  # b has not selected the counter
     r2 = Rig(tmp_path / "x", ids=("a", "b"))
-    r2.feed("a", pv_energy_total=100.0)  # b selected it but has not read it yet
-    assert r2.value("plant_pv_energy_total") is None
+    r2.feed("a", **{key: 100.0})  # b selected it but has not read it yet
+    assert r2.value(metric.key) is None
 
 
 def test_battery_state_comes_from_the_master_only(tmp_path: Path) -> None:

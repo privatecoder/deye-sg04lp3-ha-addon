@@ -376,3 +376,19 @@ def test_generator_relay_is_suggested_for_generator_and_smart_load_only(
         template = template_selection(p, hw, Features(gen_port_mode=mode))
         assert ("relay_generator" in template) is suggested, mode
     validate_selection(p, {"relay_generator"})  # still selectable by hand
+
+
+def test_the_default_read_plan_with_the_force_off_grid_report(
+    p: Profile, hw: HardwareProfile
+) -> None:
+    from deye_monitor.device import BOOTSTRAP_KEYS
+
+    template = set(template_selection(p, hw, DEFAULT))
+    assert len(template) == 59 and "force_off_grid_reported" in template
+    full = plan(p, template | BOOTSTRAP_KEYS)
+    assert 179 in full.addresses  # R179, the force off-grid request
+    assert "export_mode_setting" in BOOTSTRAP_KEYS and 142 in plan(p, set(BOOTSTRAP_KEYS)).addresses
+    without = plan(p, (template - {"force_off_grid_reported"}) | BOOTSTRAP_KEYS)
+    assert full.addresses - without.addresses == {179}
+    assert without.addresses - full.addresses == set()
+    assert len(full.blocks) == len(without.blocks) == 42
