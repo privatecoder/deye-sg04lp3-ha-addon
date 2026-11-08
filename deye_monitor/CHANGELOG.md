@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The load power of each phase (L1-L3) and the inverter relay are now selected by default. The sensor list shows a sensor that you added and the template now also contains as "from template". The note for a parallel slave without BMS data is worded neutrally.
+- Two hints on the installation page: a parallel unit whose GEN answer is "Nothing" while the device reports a GEN mode (shared in parallel systems), and a signal output set to "Grid contactor" with an unused GRID terminal. The device's signal setting is now described as a configured request.
 - The "DSP protocol version" sensor is removed: it never selected the energy resolution, which is 0.1 kWh on all known firmware. The inverter diagnostics "Energy resolution raw word" and "last reading" are removed with it, and the app no longer reads R65. A saved selection that still names the sensor loads as before.
 
 ## 0.5.7 — 2026-11-08

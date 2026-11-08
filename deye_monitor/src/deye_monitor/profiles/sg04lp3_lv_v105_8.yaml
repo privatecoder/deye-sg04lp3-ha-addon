@@ -982,9 +982,9 @@ entries:
   support_status: supported
   release: profile_dependent
   source: "V105.8 registers.json inverter: R552 (TXT 3435-3451)"
-  confidence: document_only
-  default_enabled: false
-  notes: Software relay/contact state, not mechanical feedback. Only explicitly named bits are decoded.
+  confidence: firmware_supported_1175_producer;field_read_confirmed
+  default_enabled: true
+  notes: Software relay/contact state, not mechanical feedback. The MCU2 1175 producer sets this bit and a field read on a real plant shows it follows the inverter relay. Only explicitly named bits are decoded.
 - key: relay_grid
   name:
     de: Relais Netz
@@ -3401,7 +3401,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R650 (TXT 3803-3804), R656 (TXT 3818-3820)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: low 0xFFFF / high 0 = 65535 W, both 0xFFFF = -1 W."
 - key: load_power_b
   name:
@@ -3428,7 +3428,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R651 (TXT 3804-3806), R657 (TXT 3820-3822)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: low 0xFFFF / high 0 = 65535 W, both 0xFFFF = -1 W."
 - key: load_power_c
   name:
@@ -3455,7 +3455,7 @@ entries:
   release: confirmed
   source: "V105.8 registers.json inverter: R652 (TXT 3806-3808), R658 (TXT 3822-3824)"
   confidence: firmware_supported_1151_word_pair;physical_semantics_document_only
-  default_enabled: false
+  default_enabled: true
   notes: "Signed 32 bit: low 0xFFFF / high 0 = 65535 W, both 0xFFFF = -1 W."
 - key: load_power_total
   name:

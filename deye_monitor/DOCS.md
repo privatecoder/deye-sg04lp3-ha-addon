@@ -803,8 +803,8 @@ card (totals and the status of every member).
    | Public grid | grid voltage and frequency, internal GRID-terminal power, selected grid power, grid energies | |
    | Generator on the GRID port | grid voltage and frequency, internal GRID-terminal power, inverter frequency | utility grid power and energy counters |
    | Island (grid port unused) | inverter frequency; no grid values | grid values |
-   | Any | load power and voltage L1-L3, inverter output power total, active warnings and faults | the individual alarm bits (the warning and fault lists cover them), UPS/EPS power (output detail, not an additional load), raw alarm and fault words 1-4 |
-   | Parallel operation | parallel role and serial number | (slaves: BMS values and temperature stay inactive, the plant device carries SOC and temperature) |
+   | Any | load power (total and L1-L3) and voltage L1-L3, inverter output power total, inverter relay (software state), active warnings and faults | the individual alarm bits (the warning and fault lists cover them), UPS/EPS power (output detail, not an additional load), raw alarm and fault words 1-4 |
+   | Parallel operation | parallel role and serial number | (slaves: no local BMS data and no battery temperature; use the master's values, the plant device carries SOC and temperature) |
 
    **Not offered at all** (the firmware writes a fixed value, or the value duplicates another):
    the load frequency (R655, a copy of the inverter frequency R638, which stays). A stored choice

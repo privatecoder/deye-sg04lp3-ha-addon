@@ -556,3 +556,35 @@ async def test_feature_counter_edit_after_a_failed_refresh_is_kept_and_a_later_p
         await expect(page.locator(".banner.error")).to_be_visible()
         assert stack.plant.manager.selection("deye1").features.parallel is False
         s.errors.clear()
+
+
+async def test_two_answer_hints_for_a_parallel_unit_and_a_signal_output(
+    browser: Browser, tmp_path: Any
+) -> None:
+    from tests.device_helpers import device_regs, ep, inverter
+
+    # a parallel unit whose mode R133 says Smart Load and whose signal request R140 says "grid"
+    regs = device_regs(A, r336=3, r133=1, r140=1, r189=0)
+    async with ui_stack(
+        tmp_path,
+        endpoints=[ep("gw1", host="192.0.2.11")],
+        inverters=[inverter("deye1", "gw1")],
+        banks={"gw1": regs},
+    ) as stack:
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        page = s.page
+        gen = page.locator('fieldset[data-feature="gen_port_mode"]')
+        await gen.locator('input[value="unused"]').check()
+        await expect(gen).to_contain_text("In einem Parallelsystem kann dieser Modus geteilt sein")
+        await expect(gen.get_by_role("button", name="übernehmen")).to_have_count(0)
+        signal = page.locator('fieldset[data-feature="external_signal_use"]')
+        await expect(signal).to_contain_text(
+            "Konfigurierte Netz-/Gen-Signalanforderung: Netzschütz"
+        )
+        await expect(signal).not_to_contain_text("Schaltet der Signalausgang")
+        await signal.locator('input[value="grid_contactor"]').check()
+        grid = page.locator('fieldset[data-feature="grid"]')
+        await grid.get_by_label("Nichts – GRID bleibt ungenutzt").check()
+        await expect(signal).to_contain_text("Schaltet der Signalausgang dieses Geräts wirklich")
+        await s.check()

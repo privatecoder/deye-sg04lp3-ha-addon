@@ -674,9 +674,10 @@ class InverterRuntime:
     async def _check_parallel_slave(
         self, route: Route, words: Mapping[int, int], token: int
     ) -> None:
-        """Only the parallel master has the battery and its BMS: a slave reports garbage for the
-        battery temperature (R586) and zeros for the BMS block. On a slave those entries are
-        inactive (not polled, no entity); an all-zero BMS block on the master stays visible.
+        """The battery and its BMS are normally wired to the parallel master: a slave then reports
+        garbage for the battery temperature (R586) and zeros for the BMS block. On a slave those
+        entries are inactive (not polled, no entity); an all-zero BMS block on the master stays
+        visible.
 
         An unknown role (R336 missing or undecodable in this pass) keeps the established verdict
         untouched and infers nothing; only a valid master/standalone role clears it."""

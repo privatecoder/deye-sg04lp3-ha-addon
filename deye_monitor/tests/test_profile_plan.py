@@ -376,7 +376,7 @@ def test_the_default_read_plan_with_the_force_off_grid_report(
     from deye_monitor.device import BOOTSTRAP_KEYS
 
     template = set(template_selection(p, hw, DEFAULT))
-    assert len(template) == 59 and "force_off_grid_reported" in template
+    assert len(template) == 63 and "force_off_grid_reported" in template
     full = plan(p, template | BOOTSTRAP_KEYS)
     assert 179 in full.addresses  # R179, the force off-grid request
     assert "export_mode_setting" in BOOTSTRAP_KEYS and 142 in plan(p, set(BOOTSTRAP_KEYS)).addresses
@@ -384,3 +384,20 @@ def test_the_default_read_plan_with_the_force_off_grid_report(
     assert full.addresses - without.addresses == {179}
     assert without.addresses - full.addresses == set()
     assert len(full.blocks) == len(without.blocks) == 41
+
+
+def test_the_load_phases_and_the_inverter_relay_add_no_block(
+    p: Profile, hw: HardwareProfile
+) -> None:
+    from deye_monitor.device import BOOTSTRAP_KEYS
+
+    template = set(template_selection(p, hw, DEFAULT))
+    new = {"load_power_a", "load_power_b", "load_power_c", "relay_inverter"}
+    assert new <= template
+    ups = {"ups_power_a", "ups_power_b", "ups_power_c", "ups_power_total"}
+    assert not ups & template
+    before = plan(p, (template - new) | BOOTSTRAP_KEYS)
+    after = plan(p, template | BOOTSTRAP_KEYS)
+    assert len(before.blocks) == len(after.blocks) == 41
+    assert before.addresses <= after.addresses
+    assert 552 in before.addresses  # the relay bits share the status word that is already read

@@ -188,6 +188,24 @@ async def test_add_deselect_and_reset_a_sensor(browser: Browser, tmp_path: Path)
         await s.check()
 
 
+async def test_a_sensor_added_earlier_that_is_now_in_the_template_shows_from_template(
+    browser: Browser, tmp_path: Path
+) -> None:
+    async with ui_stack(tmp_path, running=False) as stack:
+        # saved explicitly before it became a default (load_power_a), plus a real addition
+        await stack.plant.manager.change(
+            0, {"deye1": Edit(add=frozenset({"load_power_a", "pv_ext_r722"}))}
+        )
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        page = s.page
+        await expect(row(page, "load_power_a")).to_contain_text("aus Vorlage")
+        await expect(row(page, "load_power_a")).not_to_contain_text("zusätzlich gewählt")
+        await page.get_by_label("Sensoren durchsuchen").fill("R722")
+        await expect(row(page, "pv_ext_r722")).to_contain_text("zusätzlich gewählt")
+        await s.check()
+
+
 async def test_stale_revision_keeps_the_draft(browser: Browser, tmp_path: Path) -> None:
     async with ui_stack(tmp_path, running=False) as stack:
         s = await open_ui(browser, stack)

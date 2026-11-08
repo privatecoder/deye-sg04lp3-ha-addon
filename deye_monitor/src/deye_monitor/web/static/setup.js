@@ -166,7 +166,7 @@ export function setupView(invId) {
 
   // -- step 1: plant features ---------------------------------------------------------------
 
-  function suggestion(names, current) {
+  function suggestion(names, current, says = 'setup.device_says') {
     const suggested = base.status.suggested_features || {};
     const name = names.find((n) => n in suggested);
     if (!name) return null;
@@ -175,7 +175,7 @@ export function setupView(invId) {
     if (matches) {
       mark.append(h('span', { class: 'chip match' }, t('setup.matches_device')));
     } else {
-      mark.append(h('span', { class: 'muted' }, t('setup.device_says', { value: t(`feat.value.${name}.${String(suggested[name])}`) })),
+      mark.append(h('span', { class: 'muted' }, t(says, { value: t(`feat.value.${name}.${String(suggested[name])}`) })),
         h('button', { class: 'link', type: 'button', disabled: !canEdit(), onClick: () => {
           if (name === 'grid_port_use') {
             setFeature('grid_port_use', suggested[name]);
@@ -259,7 +259,15 @@ export function setupView(invId) {
       name: 'gen_port_mode', legend: t('feat.gen.q'), help: t('feat.gen.help'),
       options: ['unused', 'generator', 'smart_load', 'ac_coupled'].map((v) => ({ value: v, label: t(`feat.gen.${v}`), help: t(`feat.gen.${v}_help`) })),
       current: () => f().gen_port_mode, choose: (v) => setFeature('gen_port_mode', v),
-      suggest: () => suggestion(['gen_port_mode'], (v) => f().gen_port_mode === v),
+      suggest: () => {
+        // A parallel system can share the configured GEN mode with a unit whose own GEN socket is
+        // unused: say so instead of offering a corrective-looking "take over" link.
+        const suggested = base.status.suggested_features || {};
+        if (suggested.parallel === true && f().gen_port_mode === 'unused' && ['generator', 'smart_load', 'ac_coupled'].includes(suggested.gen_port_mode)) {
+          return h('div', { class: 'suggest' }, h('span', { class: 'muted' }, t('setup.gen_parallel_note', { mode: t(`feat.value.gen_port_mode.${suggested.gen_port_mode}`) })));
+        }
+        return suggestion(['gen_port_mode'], (v) => f().gen_port_mode === v);
+      },
     });
     const parallel = radios({
       name: 'parallel', legend: t('feat.parallel.q'), help: t('feat.parallel.help'), options: boolOptions('parallel'),
@@ -277,7 +285,19 @@ export function setupView(invId) {
     const gridTerminal = () => ['utility', 'generator'].includes(f().grid_port_use);
     const exportPolicy = choice('export_policy', ['export_allowed', 'zero_export_load', 'zero_export_external', 'not_applicable', 'unknown'], () => f().utility_grid);
     const measurement = choice('external_measurement', ['none', 'ct', 'meter', 'ct_and_second_meter', 'meter_and_second_meter', 'unknown'], gridTerminal);
-    const signalUse = choice('external_signal_use', ['none', 'grid_contactor', 'generator_start', 'shared_grid_and_generator_logic', 'other', 'unknown']);
+    const signalUse = radios({
+      name: 'external_signal_use', legend: t('feat.external_signal_use.q'), help: t('feat.external_signal_use.help'),
+      options: ['none', 'grid_contactor', 'generator_start', 'shared_grid_and_generator_logic', 'other', 'unknown'].map((v) => ({ value: v, label: t(`feat.external_signal_use.${v}`), help: t(`feat.external_signal_use.${v}_help`) })),
+      current: () => f().external_signal_use, choose: (v) => setFeature('external_signal_use', v),
+      suggest: () => {
+        const mark = suggestion(['external_signal_use'], (v) => f().external_signal_use === v, 'setup.signal_says');
+        if (f().external_signal_use !== 'grid_contactor' || f().grid_port_use !== 'unused') return mark;
+        const box = h('div', {});
+        if (mark) box.append(mark);
+        box.append(h('p', { class: 'note' }, t('setup.signal_contactor_note')));
+        return box;
+      },
+    });
     const basis = choice('battery_control_basis', ['voltage', 'soc', 'none', 'unknown'], () => f().battery);
     const tou = radios({
       name: 'tou_used', legend: t('feat.tou_used.q'), help: t('feat.tou_used.help'), options: boolOptions('tou_used'),
@@ -476,7 +496,7 @@ export function setupView(invId) {
       let mark = '';
       let kind = '';
       if (removed.has(key)) { mark = t('sensor.state.removed'); kind = 'removed'; }
-      else if (added.has(key)) { mark = t('sensor.state.added'); kind = 'added'; }
+      else if (added.has(key) && !tpl.has(key)) { mark = t('sensor.state.added'); kind = 'added'; }
       else if (tpl.has(key)) { mark = t('sensor.state.template'); kind = 'template'; }
       r.state.textContent = mark;
       r.state.className = `sensor-state ${kind}`;
