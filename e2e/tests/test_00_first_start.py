@@ -30,7 +30,6 @@ def allowed_blocks() -> set[tuple[int, int]]:
         frozenset(BOOTSTRAP_KEYS),
         Features(),
         max_read_registers=60,
-        energy_auto=True,
     )
     return {(b.start, b.count) for b in plan.blocks} | {(3, 5), (3, 6)}
 

@@ -397,11 +397,6 @@ INVERTER_DIAGNOSTICS: Final = (
     InverterDiagnostic("transport_cooldown", "Transport cooldown"),
     InverterDiagnostic("last_success", "Last successful read", "timestamp"),
 )
-# Only present while R65 is read and reported (not with a user-chosen energy resolution).
-R65_DIAGNOSTICS: Final = (
-    InverterDiagnostic("r65_raw", "Energy resolution raw word", "number"),
-    InverterDiagnostic("r65_status", "Energy resolution last reading"),
-)
 ENERGY_SOURCES: Final = {
     "override": "user choice",
     "r65": "R65 (before 0.5.1)",  # a record written by an older version
@@ -446,7 +441,7 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     """The curated diagnostic values of one inverter from ``InverterRuntime.diagnostics()``.
     Only the fields below are ever read (no pass-through of arbitrary dictionaries, no secrets);
     anything unknown or malformed is ``None``."""
-    out: dict[str, Any] = {d.suffix: None for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS)}
+    out: dict[str, Any] = {d.suffix: None for d in INVERTER_DIAGNOSTICS}
     out[CONFLICT_LIST_KEY] = []
     out["state"] = _text(diag.get("state")) if isinstance(diag, Mapping) else None
     out["reason"] = _text(diag.get("reason")) if isinstance(diag, Mapping) else None
@@ -463,10 +458,6 @@ def inverter_diagnostic_values(diag: Mapping[str, Any] | None) -> dict[str, Any]
     words = sub("identity").get("firmware_words")
     out["firmware_mcu1"] = firmware_board(words, "mcu1")
     out["firmware_mcu2"] = firmware_board(words, "mcu2")
-    r65 = sub("r65")
-    out["r65_raw"] = _number(r65.get("raw"))
-    ok = r65.get("last_read_ok")
-    out["r65_status"] = None if not isinstance(ok, bool) else ("ok" if ok else "failed")
     energy = sub("energy")
     out["energy_resolution"] = _number(energy.get("effective_resolution"))
     source = _text(energy.get("source"))
@@ -599,15 +590,15 @@ def plant_components(
 
 
 def inverter_diagnostic_components(
-    ns: Namespace, inverter_id: str, states: tuple[str, ...], *, show_r65: bool
+    ns: Namespace, inverter_id: str, states: tuple[str, ...]
 ) -> dict[str, dict[str, Any]]:
     """Diagnostic entities of one inverter's own device. They stay available while the inverter is
     offline (the state and the reason are exactly what one looks at then): their availability is
-    the app's only. ``show_r65``: the device reports R65 and it is read."""
+    the app's only."""
     device_id = ns.inverter_device_id(inverter_id)
     expire = math.ceil(3 * APP_HEARTBEAT_S)
     out: dict[str, dict[str, Any]] = {}
-    for d in (*INVERTER_DIAGNOSTICS, *(R65_DIAGNOSTICS if show_r65 else ())):
+    for d in INVERTER_DIAGNOSTICS:
         key = f"diag_{d.suffix}"
         comp: dict[str, Any] = {
             "platform": "sensor",

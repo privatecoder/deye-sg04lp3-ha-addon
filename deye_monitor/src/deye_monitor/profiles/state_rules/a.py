@@ -159,20 +159,6 @@ register("output_phase_arrangement", by_field(_PHASES), options=options_of(_PHAS
 _REGION = {0: Label("EU", "EU"), 1: Label("UL", "UL"), 2: Label("JP", "JP")}
 register("grid_standard_region", by_field(_REGION), options=options_of(_REGION, UNKNOWN))
 
-_DSP_UNCONFIRMED = Label("Unbestätigt", "Unconfirmed")
-
-
-def _dsp_protocol(entry: Entry, words: Words) -> Result:
-    word = words[0]
-    if word == 0xFFFF:
-        return NOT_REPORTED
-    if word == 0:
-        return _DSP_UNCONFIRMED
-    return Label(f"DSP-Protokollkennung {word:04X}", f"DSP protocol ID {word:04X}")
-
-
-register("dsp_protocol_version", _dsp_protocol)
-
 # -- topology ---------------------------------------------------------------------------------
 
 _STANDALONE = Label("Einzelbetrieb", "Standalone")

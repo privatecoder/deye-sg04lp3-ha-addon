@@ -28,7 +28,7 @@ async def test_override_tenth_with_invalid_r65_publishes_tenths(tmp_path: Path) 
     assert await run(tmp_path, "0.1") == (0.1, round(RAW * 0.1, 6))
 
 
-async def test_diagnostics_carry_resolution_source_r65_and_plausibility(tmp_path: Path) -> None:
+async def test_diagnostics_carry_resolution_source_and_plausibility(tmp_path: Path) -> None:
     from deye_monitor.webapi import status_view
 
     async with rig(
@@ -43,7 +43,7 @@ async def test_diagnostics_carry_resolution_source_r65_and_plausibility(tmp_path
         assert status["energy"]["effective_resolution"] == 0.1
         assert status["energy"]["source"] == "override"
         assert status["energy"]["plausibility"]["state"] == "unknown"
-        assert "raw" in status["r65"]
+        assert "r65" not in status
 
 
 async def test_counted_power_keys_need_every_active_mppt_and_no_ac_coupling(tmp_path: Path) -> None:

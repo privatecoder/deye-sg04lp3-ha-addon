@@ -35,7 +35,6 @@ def plan(
     keys: set[str],
     *,
     max_read_registers: int = 60,
-    energy_auto: bool = True,
     max_gap: int = 0,
     poll: PollConfig | None = None,
     response_time_s: float = 0.25,
@@ -45,7 +44,6 @@ def plan(
         keys,
         DEFAULT,
         max_read_registers=max_read_registers,
-        energy_auto=energy_auto,
         max_gap=max_gap,
         poll=poll,
         response_time_s=response_time_s,
@@ -63,7 +61,6 @@ def test_empty_selection_reads_only_mandatory_identity_and_health(p: Profile) ->
     pl = plan(p, set())
     assert {b.group for b in pl.blocks} == {"identity", "status"}
     assert pl.keys == pl.mandatory_keys
-    assert not pl.reads_r65
     assert 65 not in pl.addresses
     assert {3, 4, 5, 6, 7, 336, 500, 551, 552, 553, 554, 555, 556, 557, 558} <= pl.addresses
     assert not pl.addresses & {598, 650, 672, 514, 586}
@@ -86,18 +83,13 @@ def test_non_adjacent_pairs_are_planned_in_the_same_cycle(p: Profile) -> None:
     assert pl.addresses >= {636, 694, 653, 659}
 
 
-def test_energy_without_auto_does_not_read_r65(p: Profile) -> None:
+def test_energy_does_not_read_r65(p: Profile) -> None:
+    # the energy resolution is 0.1 kWh (or the manual choice): no register selects it
     keys = {"battery_energy_charge_today", "pv_energy_total"}
-    off = plan(p, keys, energy_auto=False)
-    assert not off.reads_r65
-    assert 65 not in off.addresses
-    assert "dsp_protocol_version" not in off.keys
-    on = plan(p, keys, energy_auto=True)
-    assert on.reads_r65
-    assert 65 in on.addresses
-    assert "dsp_protocol_version" in on.keys
-    # auto without any energy entity: no R65 either
-    assert 65 not in plan(p, {"battery_soc"}, energy_auto=True).addresses
+    pl = plan(p, keys)
+    assert 65 not in pl.addresses
+    assert not any(e.addr == 65 for e in p.entries)
+    assert 65 not in plan(p, {"battery_soc"}).addresses
 
 
 def test_blocks_never_bridge_unknown_addresses(p: Profile) -> None:
@@ -117,7 +109,7 @@ def test_blocks_never_bridge_unknown_addresses(p: Profile) -> None:
 
 def test_blocks_respect_the_register_limit(p: Profile, hw: HardwareProfile) -> None:
     keys = set(template_selection(p, hw, DEFAULT))
-    needed = {a for k in keys | {"dsp_protocol_version"} for a in p.entry(k).addresses}
+    needed = {a for k in keys for a in p.entry(k).addresses}
     for limit in (1, 2, 7, 60, 125):
         pl = plan(p, keys, max_read_registers=limit, max_gap=10)
         assert all(1 <= b.count <= limit for b in pl.blocks)
@@ -391,4 +383,4 @@ def test_the_default_read_plan_with_the_force_off_grid_report(
     without = plan(p, (template - {"force_off_grid_reported"}) | BOOTSTRAP_KEYS)
     assert full.addresses - without.addresses == {179}
     assert without.addresses - full.addresses == set()
-    assert len(full.blocks) == len(without.blocks) == 42
+    assert len(full.blocks) == len(without.blocks) == 41

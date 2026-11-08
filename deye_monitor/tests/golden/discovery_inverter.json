@@ -220,36 +220,6 @@
    "unique_id": "deye_ab12cd34_deye1_diag_path",
    "value_template": "{{ value_json.get('path') if value_json is mapping else none }}"
   },
-  "diag_r65_raw": {
-   "availability": [
-    {
-     "topic": "deye/ab12cd34/status"
-    }
-   ],
-   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_r65_raw",
-   "entity_category": "diagnostic",
-   "expire_after": 90,
-   "name": "Energy resolution raw word",
-   "platform": "sensor",
-   "state_topic": "deye/ab12cd34/deye1/diagnostics",
-   "unique_id": "deye_ab12cd34_deye1_diag_r65_raw",
-   "value_template": "{{ value_json.get('r65_raw') if value_json is mapping else none }}"
-  },
-  "diag_r65_status": {
-   "availability": [
-    {
-     "topic": "deye/ab12cd34/status"
-    }
-   ],
-   "default_entity_id": "sensor.deye_ab12cd34_deye1_diag_r65_status",
-   "entity_category": "diagnostic",
-   "expire_after": 90,
-   "name": "Energy resolution last reading",
-   "platform": "sensor",
-   "state_topic": "deye/ab12cd34/deye1/diagnostics",
-   "unique_id": "deye_ab12cd34_deye1_diag_r65_status",
-   "value_template": "{{ value_json.get('r65_status') if value_json is mapping else none }}"
-  },
   "diag_reason": {
    "availability": [
     {

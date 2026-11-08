@@ -232,7 +232,7 @@ def test_every_entry_decodes_to_something_for_zero_words(p: Profile) -> None:
     for e in p.entries:
         words = dict.fromkeys(e.addresses, 0)
         value = decode(e, words, energy_resolution=0.1)
-        if e.is_not_reported(0):  # a declared sentinel (R65 = 0): unknown, never a value
+        if e.is_not_reported(0):  # a declared sentinel: unknown, never a value
             assert value is None, e.key
         elif e.type != "ascii":
             assert value is not None, e.key
@@ -258,8 +258,6 @@ def test_not_reported_words_are_unknown_per_field(p: Profile) -> None:
     assert d(p, "phase_count", {22: 0xFFFF}) is None
     assert d(p, "battery_input_code", {24: 0xFFFF}) is None
     assert d(p, "battery_input_code", {24: 5}) is None  # undefined code
-    assert d(p, "dsp_protocol_version", {65: 0xFFFF}) is None
-    assert d(p, "dsp_protocol_version", {65: 0x0104}) == 0x0104
     assert d(p, "battery_soc", {588: 0xFFFF}) == 65535  # no global 0xFFFF rule
     assert d(p, "mppt_count", {22: 0x0203}) == 2 and d(p, "phase_count", {22: 0x0203}) == 3
     assert d(p, "device_type", {0: 0x0500}) == "three_phase_lv_hybrid"

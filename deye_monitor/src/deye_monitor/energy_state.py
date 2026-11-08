@@ -1,7 +1,7 @@
 """Energy resolution state and statistics series (SPEC §5, DR2-02, N2-01).
 
 The effective resolution (kWh per count) is the profile default (``auto``) or the override
-(``profiles.energy.effective_resolution``). R65 is a diagnostic only and never selects it; records
+(``profiles.energy.effective_resolution``). R65 never selected it and is no longer read; records
 written before 0.5.1 may still carry ``source="r65"``.
 
 A statistics series ends when the effective factor changes or when another physical inverter

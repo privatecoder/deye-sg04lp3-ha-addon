@@ -76,7 +76,6 @@ class InverterSpec:
     profile: Profile
     hardware: HardwareProfile
     max_read_registers: int
-    energy_auto: bool
     poll: PollConfig
     response_time_s: float = 0.25
     gap_s: float = 0.05
@@ -235,7 +234,6 @@ def plan_for(spec: InverterSpec, selection: InverterSelection) -> ReadPlan:
             selection.active | BOOTSTRAP_KEYS,
             selection.features,
             max_read_registers=spec.max_read_registers,
-            energy_auto=spec.energy_auto,
             poll=spec.poll,
             response_time_s=spec.response_time_s,
             gap_s=spec.gap_s,
@@ -731,7 +729,6 @@ def specs_from_config(cfg: AppConfig) -> dict[str, InverterSpec]:
             profile=profile,
             hardware=load_hardware(profile.hardware),
             max_read_registers=ep.read_block_limit,
-            energy_auto=inv.energy_resolution.value == "auto",
             poll=inv.poll,
             response_time_s=min(0.25, ep.timeout_s),
             # the same effective bus gap the runtime scheduler uses: the largest of the endpoints

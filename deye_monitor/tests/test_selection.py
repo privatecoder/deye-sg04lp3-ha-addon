@@ -380,6 +380,26 @@ def test_loading_reports_and_discards_unknown_keys(tmp_path: Path) -> None:
     assert placeholder not in sel.effective
 
 
+def test_a_saved_selection_that_names_the_removed_dsp_sensor_still_loads(tmp_path: Path) -> None:
+    from deye_monitor.selection import SLOT_FORMAT, _checksum
+
+    doc = {
+        "revision": 2,
+        "inverters": {
+            "deye1": {"features": {}, "added": ["dsp_protocol_version", "pv1_power"], "removed": []}
+        },
+    }
+    slot = {"format": SLOT_FORMAT, "seq": 1, "checksum": _checksum(1, doc), "body": doc}
+    (tmp_path / "selection.a.json").write_text(json.dumps({"schema_version": 1, "data": slot}))
+    m = manager_at(tmp_path)
+    assert ("unknown_entry", "deye1.dsp_protocol_version") in {
+        (p.code, p.subject) for p in m.store.problems
+    }
+    sel = m.selection("deye1")
+    assert sel.added == {"pv1_power"} and "dsp_protocol_version" not in sel.effective
+    assert 65 not in m.plan("deye1").addresses
+
+
 async def test_unsupported_status_is_not_stored_back(tmp_path: Path) -> None:
     m = manager_at(tmp_path)
     await m.change(0, {"deye1": Edit(add=frozenset({"gen_voltage_a"}))})

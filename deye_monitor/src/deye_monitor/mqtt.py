@@ -248,7 +248,6 @@ class _Inverter:
     entries: dict[str, Entry] = field(default_factory=dict)
     diagnostics: Mapping[str, Any] | None = None  # newest event payload of the device loop
     dropped: frozenset[str] = frozenset()  # selected entries the device does not report
-    r65_shown: bool = False  # R65 is read and reported: its diagnostics exist
 
     @property
     def wants_online(self) -> bool:
@@ -403,9 +402,8 @@ class MqttPublisher:
         self._wake.set()
 
     def _note_unreported(self, rec: _Inverter, diagnostics: Mapping[str, Any]) -> None:
-        """Entries the device does not report get no entity. The R65 diagnostics exist only while
-        R65 is read and reported (not with a user-chosen energy resolution); the discovery
-        follows when that changes."""
+        """Entries the device does not report get no entity; the discovery follows when that
+        changes."""
         unreported = diagnostics.get("unreported")
         found = unreported if isinstance(unreported, Mapping) else {}
         profile = rec.info.profile
@@ -417,11 +415,8 @@ class MqttPublisher:
         inactive = diagnostics.get("inactive")
         if isinstance(inactive, Mapping):  # not applicable on this unit (parallel slave)
             dropped |= frozenset(k for k in inactive if isinstance(k, str))
-        r65 = diagnostics.get("r65")
-        read = isinstance(r65, Mapping) and r65.get("last_read_ok") is not None
-        shown = read and profile.energy_resolution_key not in found
-        if dropped != rec.dropped or shown != rec.r65_shown:
-            rec.dropped, rec.r65_shown = dropped, shown
+        if dropped != rec.dropped:
+            rec.dropped = dropped
             self._discovery_dirty = True
 
     @staticmethod
@@ -555,9 +550,7 @@ class MqttPublisher:
                     profile=rec.info.profile,
                 )
                 components[ckey] = comp
-            components.update(
-                inverter_diagnostic_components(ns, inverter_id, states, show_r65=rec.r65_shown)
-            )
+            components.update(inverter_diagnostic_components(ns, inverter_id, states))
             if self.plane is not None:
                 topic = ns.discovery_topic(ns.inverter_device_id(inverter_id))
                 stored = self._store.data.get("devices", {}).get(topic, {}).get("components", {})

@@ -46,7 +46,7 @@ def test_island_template_has_ac_voltage_frequency_and_eps_power(
 ) -> None:
     template = template_selection(p, hw, ISLAND)
     assert template >= ISLAND_KEYS
-    plan = build_read_plan(p, template, ISLAND, max_read_registers=60, energy_auto=True)
+    plan = build_read_plan(p, template, ISLAND, max_read_registers=60)
     assert plan.addresses >= ISLAND_ADDRESSES
     # measurement points keep their names: nothing is equated or added
     assert p.entry("load_voltage_a").point == "ups_load"
@@ -83,12 +83,8 @@ def test_grid_mode_template_is_unchanged(p: Profile, hw: HardwareProfile) -> Non
 
 
 def test_island_budget_is_reported_per_inverter(p: Profile, hw: HardwareProfile) -> None:
-    island = build_read_plan(
-        p, template_selection(p, hw, ISLAND), ISLAND, max_read_registers=60, energy_auto=True
-    )
-    grid = build_read_plan(
-        p, template_selection(p, hw, GRID), GRID, max_read_registers=60, energy_auto=True
-    )
+    island = build_read_plan(p, template_selection(p, hw, ISLAND), ISLAND, max_read_registers=60)
+    grid = build_read_plan(p, template_selection(p, hw, GRID), GRID, max_read_registers=60)
     assert island.budget.per_group["ac"].blocks > 0
     assert not island.budget.overloaded
     # the island template has its own cost, reported per inverter (never aggregated here)
@@ -129,29 +125,26 @@ def test_decoder_accepts_only_the_validated_energy_factors(p: Profile, bad: Any)
 @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf, 0.0, -0.25])
 def test_budget_response_time_must_be_finite_and_positive(p: Profile, bad: float) -> None:
     with pytest.raises(ValueError, match="response_time_s"):
-        build_read_plan(
-            p, set(), GRID, max_read_registers=60, energy_auto=True, response_time_s=bad
-        )
+        build_read_plan(p, set(), GRID, max_read_registers=60, response_time_s=bad)
 
 
 @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf, -0.01])
 def test_budget_gap_must_be_finite_and_not_negative(p: Profile, bad: float) -> None:
     with pytest.raises(ValueError, match="gap_s"):
-        build_read_plan(p, set(), GRID, max_read_registers=60, energy_auto=True, gap_s=bad)
+        build_read_plan(p, set(), GRID, max_read_registers=60, gap_s=bad)
 
 
 def test_budget_gap_zero_is_valid_and_never_hides_an_overload(
     p: Profile, hw: HardwareProfile
 ) -> None:
     keys = template_selection(p, hw, GRID)
-    plan = build_read_plan(p, keys, GRID, max_read_registers=60, energy_auto=True, gap_s=0.0)
+    plan = build_read_plan(p, keys, GRID, max_read_registers=60, gap_s=0.0)
     assert math.isfinite(plan.budget.utilisation) and not plan.budget.overloaded
     heavy = build_read_plan(
         p,
         keys,
         GRID,
         max_read_registers=60,
-        energy_auto=True,
         gap_s=0.0,
         response_time_s=5.0,
         poll=PollConfig(fast_s=1, energy_s=1, settings_s=1, identity_s=1),
@@ -162,58 +155,21 @@ def test_budget_gap_zero_is_valid_and_never_hides_an_overload(
 # -- T5-03 -----------------------------------------------------------------------------------------
 
 
-def plan_for(p: Profile, keys: set[str], *, auto: bool) -> Any:
-    return build_read_plan(p, keys, GRID, max_read_registers=60, energy_auto=auto)
+def plan_for(p: Profile, keys: set[str]) -> Any:
+    return build_read_plan(p, keys, GRID, max_read_registers=60)
 
 
-def test_r65_is_no_longer_a_default_diagnostic(p: Profile, hw: HardwareProfile) -> None:
-    assert not p.entry("dsp_protocol_version").default_enabled
-    assert "dsp_protocol_version" not in template_selection(p, hw, GRID)
-    assert "dsp_protocol_version" not in template_selection(p, hw, ISLAND)
-    assert "R65" in (p.entry("dsp_protocol_version").notes or "")
+def test_r65_is_not_in_the_profile_and_never_read(p: Profile, hw: HardwareProfile) -> None:
+    assert not any(e.addr == 65 for e in p.entries)
+    assert "dsp_protocol_version" not in {e.key for e in p.entries}
+    energy = {"battery_energy_charge_today", "pv_energy_total"}
+    for keys in (set(), {"battery_soc"}, energy, template_selection(p, hw, GRID)):
+        assert 65 not in plan_for(p, set(keys)).addresses
 
 
-def test_r65_flags_follow_the_actual_read_set(p: Profile) -> None:
-    energy = {"battery_energy_charge_today"}
-    # automatic energy without an explicit R65 choice: pulled in as a dependency
-    plan = plan_for(p, energy, auto=True)
-    assert plan.reads_r65 and plan.r65_required_for_energy and 65 in plan.addresses
-    assert "dsp_protocol_version" in plan.keys
-    # manual override: not required, not read
-    plan = plan_for(p, energy, auto=False)
-    assert not plan.reads_r65 and not plan.r65_required_for_energy and 65 not in plan.addresses
-    # only the R65 diagnostic chosen (override or not): read, but never required for energy
-    for auto in (True, False):
-        plan = plan_for(p, {"dsp_protocol_version"}, auto=auto)
-        assert plan.reads_r65 and not plan.r65_required_for_energy and 65 in plan.addresses
-    # explicit R65 plus manual override with energy: read because chosen, not required
-    plan = plan_for(p, energy | {"dsp_protocol_version"}, auto=False)
-    assert plan.reads_r65 and not plan.r65_required_for_energy
-    # no energy at all, auto: neither
-    plan = plan_for(p, {"battery_soc"}, auto=True)
-    assert not plan.reads_r65 and not plan.r65_required_for_energy
-    # empty selection
-    plan = plan_for(p, set(), auto=True)
-    assert not plan.reads_r65 and not plan.r65_required_for_energy and 65 not in plan.addresses
-
-
-def test_every_flag_agrees_with_the_blocks(p: Profile, hw: HardwareProfile) -> None:
-    for keys in (
-        set(),
-        {"dsp_protocol_version"},
-        {"pv_energy_total"},
-        template_selection(p, hw, GRID),
-    ):
-        for auto in (True, False):
-            plan = plan_for(p, set(keys), auto=auto)
-            assert plan.reads_r65 == (65 in plan.addresses)
-            assert plan.r65_required_for_energy <= plan.reads_r65
-
-
-def test_a_missing_r65_is_never_read_as_zero(p: Profile) -> None:
+def test_a_missing_energy_resolution_is_never_read_as_zero(p: Profile) -> None:
     entry = p.entry("battery_energy_charge_today")
     assert decode(entry, {514: 100}, energy_resolution=None) is None
-    assert decode(p.entry("dsp_protocol_version"), {}) is None
 
 
 # -- T5-04 -----------------------------------------------------------------------------------------

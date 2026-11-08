@@ -33,7 +33,6 @@ KEYS_A = (
     "grid_standard_region",
     "fan_config",
     "inverter_generation",
-    "dsp_protocol_version",
     "parallel_enable",
     "parallel_master",
     "parallel_phase",
@@ -99,7 +98,7 @@ def state_de(key: str, *words: int) -> str | None:
 
 
 def test_every_row_is_registered_once() -> None:
-    assert len(KEYS_A) == len(set(KEYS_A)) == 73
+    assert len(KEYS_A) == len(set(KEYS_A)) == 72
     assert [k for k in KEYS_A if k not in STATES] == []
 
 
@@ -174,9 +173,6 @@ def test_counts_and_codes() -> None:
     assert state("output_phase_arrangement", 1) == "Split phase"
     assert state("grid_standard_region", 2) == "JP"
     assert state("grid_standard_region", 3) == "Unknown"
-    assert state("dsp_protocol_version", 0xFFFF) == "Not reported"
-    assert state("dsp_protocol_version", 0x0105) == "DSP protocol ID 0105"
-    assert state("dsp_protocol_version", 0) == "Unconfirmed"
 
 
 def test_topology_and_status() -> None:

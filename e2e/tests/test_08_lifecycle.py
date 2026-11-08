@@ -115,28 +115,22 @@ async def instance_c(running):
 async def test_a_changed_r65_changes_no_generation(running, instance_c):
     app, fakes = instance_c
     fake = fakes["gen"]
-    fake.regs[65] = 0x0105  # R65 is a diagnostic only (0.5.1): it never selects the resolution
-    fake.drop_connections()  # (R65 is read again after a reconnect)
+    fake.regs[65] = 0x0105  # R65 is not read at all: it never selects the resolution
+    fake.fail_ranges.append((65, 66))  # a read of R65 would be answered with an exception
+    fake.drop_connections()
 
-    async def r65_shown():
+    async def running_again():
         inv = (await app.inverters())["c_gen"]["status"]
-        return inv["state"] == "running" and (inv.get("r65") or {}).get("raw") == 0x0105
+        return inv["state"] == "running"
 
-    await until(r65_shown, "the changed R65 is read and shown as a diagnostic", 150, 1)
+    await until(running_again, "the inverter reads again after the reconnect", 150, 1)
 
     async def factor_unchanged():
         energy = (await app.inverters())["c_gen"]["status"]["energy"]
         return energy["effective_resolution"] == 0.1 and energy["source"] == "profile"
 
     assert await factor_unchanged()
-    fake.fail_ranges.append((65, 66))  # the diagnostic read of R65 fails as well ...
-    fake.drop_connections()
-
-    async def failing_read_observed():
-        return fake.hits.get(65, 0) >= 1  # the fake answered a read of R65 with an exception
-
-    await until(failing_read_observed, "the read of R65 was attempted and failed", 150, 0.5)
-    assert await factor_unchanged()  # ... which neither changes the factor nor holds energy back
+    assert fake.hits.get(65, 0) == 0  # R65 was never requested
     fake.fail_ranges.clear()
     fake.regs[65] = 0x0104  # restore the fake for the following tests
     assert energy_file(app)["c_gen"]["generation"] == 0

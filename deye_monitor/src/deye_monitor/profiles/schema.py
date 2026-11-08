@@ -495,7 +495,6 @@ class Profile(_Model):
     profile: str
     protocol_revision: str
     hardware: str
-    energy_resolution_key: str
     groups: dict[Group, GroupConfig]
     entries: tuple[Entry, ...]
     revision: str = ""  # SHA-256 of the YAML bytes, set by the loader
@@ -523,12 +522,6 @@ class Profile(_Model):
                 problems.append(f"{e.key}: supported_on must list {self.hardware}")
         problems += self._address_problems()
         problems += self._derived_problems()
-        by_key = {e.key: e for e in self.entries}
-        r65 = by_key.get(self.energy_resolution_key)
-        if r65 is None or r65.addr != 65 or r65.mask is not None:
-            problems.append("energy_resolution_key must name the unmasked R65 entry")
-        if r65 is not None and r65.support_status != "supported":
-            problems.append("the R65 entry must be supported")
         if problems:
             raise ValueError("; ".join(problems))
         return self

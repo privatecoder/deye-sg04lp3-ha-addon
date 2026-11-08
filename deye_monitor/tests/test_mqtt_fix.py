@@ -16,7 +16,6 @@ from deye_monitor.device import InverterState
 from deye_monitor.ha_discovery import (
     CONFLICT_LIST_KEY,
     INVERTER_DIAGNOSTICS,
-    R65_DIAGNOSTICS,
     app_components,
     firmware_board,
     inverter_diagnostic_components,
@@ -167,7 +166,6 @@ def full_diag(**over: Any) -> dict[str, Any]:
             "firmware_words": {15: 0x1001, 17: 0x1000, 18: 0x0070},
             "role": {"parallel_enable": True, "master": False, "phase": "B"},
         },
-        "r65": {"raw": 0x0104, "last_read_ok": True},
         "energy": {
             "effective_resolution": 0.1,
             "source": "profile",
@@ -188,7 +186,6 @@ def test_every_contract_field_is_derived_and_unknown_is_null() -> None:
     assert v["path"] == "primary:gw1" and v["serial"] == A
     assert v["firmware_mcu1"] == "1000-0070" and v["firmware_mcu2"] == "????-1001-????"
     assert "role" not in v
-    assert v["r65_raw"] == 0x0104 and v["r65_status"] == "ok"
     assert v["energy_resolution"] == 0.1 and v["energy_source"] == "profile default 0.1 kWh"
     assert v["energy_status"] == "confirmed" and v["energy_series"] == "x7k2m9q4g0"
     assert v["capability_conflicts"] == 1
@@ -213,8 +210,6 @@ def test_energy_status_shows_blocking() -> None:
     blocked = inverter_diagnostic_values(full_diag(energy={"blocked": "energy_store_corrupt"}))
     assert blocked["energy_status"] == "blocked: energy_store_corrupt"
     assert blocked["energy_resolution"] is None  # unknown stays null, never 0
-    failed = inverter_diagnostic_values(full_diag(r65={"raw": 0x0104, "last_read_ok": False}))
-    assert failed["r65_status"] == "failed" and failed["r65_raw"] == 0x0104  # last VALID reading
 
 
 def test_diagnostics_are_curated_not_passed_through() -> None:
@@ -231,9 +226,9 @@ def test_diagnostics_are_curated_not_passed_through() -> None:
     )
     v = inverter_diagnostic_values(hostile)
     text = json.dumps(v, allow_nan=False)
-    assert "s3cret" not in text and set(v) == {
-        d.suffix for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS)
-    } | {CONFLICT_LIST_KEY}
+    assert "s3cret" not in text and set(v) == {d.suffix for d in INVERTER_DIAGNOSTICS} | {
+        CONFLICT_LIST_KEY
+    }
     assert len(v["serial"]) <= 120 and v["bus_utilisation"] is None
     assert v["energy_resolution"] is None and v["energy_series"] is None
     assert v["energy_source"] is None and v["transport_timeouts"] is None
@@ -243,8 +238,8 @@ def test_diagnostics_are_curated_not_passed_through() -> None:
 
 def test_inverter_device_has_diagnostic_entities_for_every_contract_field() -> None:
     states = tuple(x.value for x in InverterState)
-    comps = inverter_diagnostic_components(NS, "deye1", states, show_r65=True)
-    for d in (*INVERTER_DIAGNOSTICS, *R65_DIAGNOSTICS):
+    comps = inverter_diagnostic_components(NS, "deye1", states)
+    for d in INVERTER_DIAGNOSTICS:
         comp = comps[f"diag_{d.suffix}"]
         assert comp["entity_category"] == "diagnostic" and comp["platform"] == "sensor"
         assert comp["state_topic"] == NS.inverter_diagnostics_topic("deye1")
@@ -261,11 +256,7 @@ def test_inverter_device_has_diagnostic_entities_for_every_contract_field() -> N
     assert comps["diag_firmware_mcu2"]["name"] == "Firmware MCU2"
     assert "diag_firmware" not in comps
     assert "diag_role" not in comps  # the parallel role duplicates the inverter's own entities
-    assert not [
-        k
-        for k in inverter_diagnostic_components(NS, "deye1", states, show_r65=False)
-        if k.startswith("diag_r65")
-    ]
+    assert not [k for k in comps if k.startswith("diag_r65")]  # the DSP protocol word is gone
 
 
 def test_the_app_device_keeps_only_app_wide_entities() -> None:
@@ -298,9 +289,8 @@ async def test_required_energy_diagnostics_are_not_discarded(tmp_path: Path) -> 
         running(rig)
         rig.pub.on_diagnostics("deye1", {"event": "energy_changed", **live})
         topic = NS.inverter_diagnostics_topic("deye1")
-        await settle(lambda: conn.last(topic).json().get("r65_raw"))
+        await settle(lambda: conn.last(topic).json().get("energy_resolution"))
         body = conn.last(topic).json()
-        assert body["r65_raw"] == 0x0104
         assert body["energy_resolution"] == 0.1
         assert body["energy_source"] == "profile default 0.1 kWh"
         assert body["energy_series"] == "x7k2m9q4g0"
@@ -335,20 +325,15 @@ async def test_secret_never_reaches_the_published_diagnostics(tmp_path: Path) ->
         assert all(b"s3cret" not in s.payload for s in conn.sent)
 
 
-async def test_device_layer_tracks_r65_serial_and_cooldown(tmp_path: Path) -> None:
+async def test_device_layer_tracks_serial_and_cooldown(tmp_path: Path) -> None:
     async with plant(tmp_path) as p:
         inv = p.rig.inv("deye1")
-        assert inv.diagnostics()["r65"] == {"raw": None, "last_read_ok": None}
+        assert "r65" not in inv.diagnostics()
         await inv.step()
         d = inv.diagnostics()
-        assert d["r65"] == {"raw": 0x0104, "last_read_ok": True}
         assert d["bound_serial"] == A and d["cooldown_active"] is False
-        # a failed later reading keeps the last valid raw value but reports the failure
-        inv._note_r65(None)
-        d = inv.diagnostics()
-        assert d["r65"] == {"raw": 0x0104, "last_read_ok": False}
         values = inverter_diagnostic_values(d)
-        assert values["r65_status"] == "failed" and values["serial"] == A
+        assert values["serial"] == A
         assert values["firmware_mcu1"] == "1000-0070"
         assert values["firmware_mcu2"] == "002B-1001-0022"
 

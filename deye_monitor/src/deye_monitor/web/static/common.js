@@ -154,7 +154,7 @@ function gridTerminalUsed(inv) {
 }
 
 // Hints for one inverter: capability conflicts, observations and energy migration. The energy
-// resolution line (factor, source, R65 raw) is a diagnostic: only the sensor page asks for it.
+// resolution line (factor, source) is a diagnostic: only the sensor page asks for it.
 export function hintsOf(inv, { diagnostics = false } = {}) {
   const s = inv.status;
   const out = [];
@@ -165,9 +165,8 @@ export function hintsOf(inv, { diagnostics = false } = {}) {
   if (hardware) out.push({ kind: 'info', text: hardware });
   const energyNow = s.energy || {};
   if (diagnostics && energyNow.effective_resolution != null) {
-    const r65 = s.r65 && s.r65.raw != null ? `0x${Number(s.r65.raw).toString(16).toUpperCase().padStart(4, '0')}` : t('hint.energy.r65_none');
     const source = t(`hint.energy.source.${{ profile: 'profile', override: 'override' }[energyNow.source] || 'profile'}`);
-    out.push({ kind: 'info', text: t('hint.energy.diag', { factor: energyNow.effective_resolution, source, r65 }) });
+    out.push({ kind: 'info', text: t('hint.energy.diag', { factor: energyNow.effective_resolution, source }) });
   }
   const check = energyNow.plausibility || {};
   if (check.state === 'counter_too_high' || check.state === 'counter_too_low') {

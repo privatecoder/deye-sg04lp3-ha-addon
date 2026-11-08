@@ -54,16 +54,12 @@ def bad_entry(**over: Any) -> str:
 
 
 def profile_dict(*entries: dict[str, Any]) -> dict[str, Any]:
-    r65 = entry_dict(
-        key="dsp", addr=65, type="raw", scale=None, group="identity", default_enabled=True
-    )
     return {
         "profile": "t",
         "protocol_revision": "x",
         "hardware": "sg04lp3_eu",
-        "energy_resolution_key": "dsp",
         "groups": {"identity": {"poll": "identity_s"}, "status": {"poll": "fast_s"}},
-        "entries": [r65, *entries],
+        "entries": list(entries),
     }
 
 
@@ -249,8 +245,7 @@ def test_identity_and_role_entries(profile: Profile) -> None:
     assert profile.entry("rated_power").addresses == (20, 21)
     assert (profile.entry("mppt_count").mask, profile.entry("phase_count").mask) == (0xFF00, 0x00FF)
     assert profile.entry("battery_input_code").addr == 24
-    assert profile.entry("dsp_protocol_version").addr == 65
-    assert profile.energy_resolution_key == "dsp_protocol_version"
+    assert not any(e.addr == 65 for e in profile.entries)
     roles = {
         k: profile.entry(k)
         for k in ("parallel_enable", "parallel_master", "parallel_phase", "parallel_sn")
@@ -272,7 +267,6 @@ def test_mandatory_set_is_identity_and_health(profile: Profile) -> None:
         "parallel_sn",
     } <= mandatory
     assert all(profile.entry(k).group in ("identity", "status") for k in mandatory)
-    assert "dsp_protocol_version" not in mandatory  # only read when energy is selected (SPEC 9.3)
 
 
 def test_fault_words_and_known_bits(profile: Profile) -> None:
@@ -446,8 +440,6 @@ def test_profile_level_negatives() -> None:
     assert "supported_on must list" in bad_profile(
         entry_dict(key="a", addr=2, supported_on=["other"])
     )
-    assert "R65" in bad_profile(entry_dict(key="a", addr=2), energy_resolution_key="a")
-    assert "R65" in bad_profile(entry_dict(key="a", addr=2), energy_resolution_key="missing")
 
 
 def test_profile_allows_documented_overlaps() -> None:

@@ -45,13 +45,13 @@ def test_the_runbook_has_no_option_examples_any_more() -> None:
     assert "Appendix A" not in RUNBOOK
 
 
-def _plan_blocks(keys: list[str], tmp_path: Path) -> tuple[int, int, bool, set[int]]:
+def _plan_blocks(keys: list[str], tmp_path: Path) -> tuple[int, int, set[int]]:
     cfg = plant_config()
     manager = SelectionManager(SelectionStore(tmp_path, specs_from_config(cfg)))
     template = manager.selection("deye1").template
     edit = Edit(remove=frozenset(template - set(keys)), add=frozenset(set(keys) - template))
     plan = manager.dry_run({"deye1": edit})["deye1"][2]
-    return len(plan.blocks), len(template), plan.reads_r65, set(plan.addresses)
+    return len(plan.blocks), len(template), set(plan.addresses)
 
 
 MINIMAL = [
@@ -64,8 +64,8 @@ MORE = ["battery_voltage", "battery_soc", "inverter_frequency", "pv1_power", "pv
 
 
 def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None:
-    blocks, template_size, r65, addresses = _plan_blocks(MINIMAL, tmp_path)
-    assert blocks == 16 and not r65
+    blocks, template_size, addresses = _plan_blocks(MINIMAL, tmp_path)
+    assert blocks == 16 and 65 not in addresses
     assert "**4 sensors, 16 polling blocks**" in RUNBOOK and "**16 read blocks**" in RUNBOOK
     # no energy, battery, AC or PV registers; the internal identity/status/settings reads only
     assert addresses == {
@@ -101,8 +101,8 @@ def test_the_documented_read_plan_sizes_are_the_planners(tmp_path: Path) -> None
     for chosen in (MINIMAL, MINIMAL + MORE):
         assert all(PROFILE.entry(k).selectable for k in chosen)
     (tmp_path / "more").mkdir()
-    more_blocks, _, r65_more, _ = _plan_blocks(MINIMAL + MORE, tmp_path / "more")
-    assert more_blocks == 19 and not r65_more
+    more_blocks, _, more_addresses = _plan_blocks(MINIMAL + MORE, tmp_path / "more")
+    assert more_blocks == 19 and 65 not in more_addresses
     assert "**11 sensors, 19 polling blocks**" in RUNBOOK
     assert f"{template_size} sensors" in RUNBOOK
 
@@ -111,8 +111,8 @@ def test_the_default_template_figures_in_the_runbook(tmp_path: Path) -> None:
     cfg = plant_config()
     manager = SelectionManager(SelectionStore(tmp_path, specs_from_config(cfg)))
     plan = manager.plan("deye1")
-    assert len(plan.blocks) == 42 and plan.reads_r65
-    assert "42 read blocks" in RUNBOOK
+    assert len(plan.blocks) == 41 and 65 not in plan.addresses
+    assert "41 read blocks" in RUNBOOK
 
 
 def test_the_documented_diagnostic_entities_exist() -> None:
@@ -120,8 +120,7 @@ def test_the_documented_diagnostic_entities_exist() -> None:
     states = tuple(x.value for x in InverterState)
     app = {c["default_entity_id"] for c in app_components(ns).values()}
     per_inverter = {
-        c["default_entity_id"]
-        for c in inverter_diagnostic_components(ns, "deye1", states, show_r65=True).values()
+        c["default_entity_id"] for c in inverter_diagnostic_components(ns, "deye1", states).values()
     }
     ids = app | per_inverter
     documented = set(re.findall(r"`(sensor\.deye_deyetest1_[a-z0-9_]+)`", RUNBOOK))

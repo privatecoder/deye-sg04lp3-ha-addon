@@ -51,11 +51,11 @@ def override_of(rig: PlantRig) -> str:
 @pytest.mark.parametrize(
     ("override", "line"),
     [
-        (None, "0.1 kWh pro Schritt, Quelle: Profilstandard 0,1 kWh, R65 roh: 0xFFFF"),
-        ("1", "1 kWh pro Schritt, Quelle: deine Wahl (Override), R65 roh:"),
+        (None, "0.1 kWh pro Schritt, Quelle: Profilstandard 0,1 kWh."),
+        ("1", "1 kWh pro Schritt, Quelle: deine Wahl (Override)."),
     ],
 )
-async def test_the_sensor_page_shows_resolution_source_and_r65_raw(
+async def test_the_sensor_page_shows_resolution_and_source(
     browser: Browser,  # noqa: F811
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

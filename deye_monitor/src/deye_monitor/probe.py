@@ -124,7 +124,6 @@ def identity_blocks(max_read_registers: int) -> list[tuple[int, int]]:
         frozenset(),
         Features(),
         max_read_registers=max_read_registers,
-        energy_auto=False,
     )
     return [(b.start, b.count) for b in plan.blocks if b.group == "identity"]
 

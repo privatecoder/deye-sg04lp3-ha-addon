@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
 
-from deye_monitor.config import EnergyResolution, InverterConfig
+from deye_monitor.config import InverterConfig
 from deye_monitor.energy_check import EnergyPlausibility
 from deye_monitor.energy_state import EnergyTracker
 from deye_monitor.identity import (
@@ -70,7 +70,6 @@ log = logging.getLogger(__name__)
 IDENTITY_GROUP = "identity"
 INTERNAL_ERROR = "internal_error"
 SERIAL_START = 3
-R65 = 65
 _CAPABILITY_WORDS = (0, 15, 17, 18, 20, 21, 22, 24)
 _READ_ERRORS = (TransportError, ModbusError, V5LoggerError, QueueFull)
 _PV_POINTS = frozenset({"pv"})
@@ -270,10 +269,6 @@ class InverterRuntime:
         # connection epoch); separate from the last-known ``identity_info["role"]`` above
         self._role_evidence: tuple[str, float, int, int] | None = None
         self.last_success_wall: float | None = None
-        self.r65_raw: int | None = (
-            None  # last VALID R65 reading (never invented, never 0 by default)
-        )
-        self.r65_ok: bool | None = None  # did the latest R65 read deliver a value? None = not read
         self.bus_utilisation: Callable[[], float] | None = None
         self.daylight = daylight
         self.energy = energy
@@ -342,7 +337,6 @@ class InverterRuntime:
             "suggested_features": dict(self.suggested_features),
             "identity": dict(self.identity_info),
             "bound_serial": self.book.bound(self.id),
-            "r65": {"raw": self.r65_raw, "last_read_ok": self.r65_ok},
             "cooldown_active": bool(getattr(self.route.transport, "cooldown_active", False)),
             "last_success_wall": self.last_success_wall,
             "bus_utilisation": self.bus_utilisation() if self.bus_utilisation else None,
@@ -417,7 +411,6 @@ class InverterRuntime:
             frozenset(selection) | BOOTSTRAP_KEYS,
             self.features,
             max_read_registers=route.max_read_registers,
-            energy_auto=self.cfg.energy_resolution is EnergyResolution.AUTO,
             poll=self.cfg.poll,
             response_time_s=route.response_time_s,
             gap_s=route.bus_gap_s,
@@ -430,7 +423,6 @@ class InverterRuntime:
             frozenset(selection) | BOOTSTRAP_KEYS,
             self.features,
             max_read_registers=self.route.max_read_registers,
-            energy_auto=self.cfg.energy_resolution is EnergyResolution.AUTO,
         )
 
     def set_selection(self, selection: Collection[str], revision: int) -> None:
@@ -445,9 +437,6 @@ class InverterRuntime:
         self._plans.clear()
         self._due.clear()
         self.observations = {k: v for k, v in self.observations.items() if k in new}
-        if self.state is InverterState.RUNNING:
-            self.needs_identity = True  # R65 may have become necessary: identify again
-            self._next_identify_at = self.clock()
         self._wake.set()
 
     def request_refresh(self) -> None:
@@ -660,8 +649,6 @@ class InverterRuntime:
     def _after_identity(self, route: Route, read: _GroupRead, now: float, serial: str) -> None:
         route.verified_epoch = read.epoch
         self._check_capabilities(read.words, serial)
-        if self._plan(route).reads_r65:
-            self._note_r65(read.words.get(R65))
         self._observe_energy(serial, now)
         self.needs_identity = False
         self.fails = 0 if read.error is None else self.fails + 1
@@ -834,11 +821,6 @@ class InverterRuntime:
                 entry = self.profile.entry(key)
                 if entry.scale_source:
                     self._due[entry.group] = now
-
-    def _note_r65(self, value: int | None) -> None:
-        self.r65_ok = value is not None
-        if value is not None:
-            self.r65_raw = value
 
     # -- data cycles --------------------------------------------------------------------------
 
@@ -1227,7 +1209,6 @@ class InverterRuntime:
                 self.selection | BOOTSTRAP_KEYS,
                 self.features,
                 max_read_registers=route.max_read_registers,
-                energy_auto=self.cfg.energy_resolution is EnergyResolution.AUTO,
                 unreported=self.unreported.keys() | self.inactive.keys(),
                 poll=self.cfg.poll,
                 response_time_s=route.response_time_s,
@@ -1248,9 +1229,6 @@ class InverterRuntime:
             self._set(InverterState.OFFLINE, why)
 
     def _invalidate(self) -> None:
-        # R65 diagnostics belong to the identity/connection they were read from: unknown again
-        self.r65_raw = None
-        self.r65_ok = None
         self.needs_identity = True
         self.energy.invalidate()
         self._due.clear()

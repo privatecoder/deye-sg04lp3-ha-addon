@@ -298,14 +298,13 @@ def test_the_hint_reads_are_released_entries_in_the_slow_group() -> None:
 
 def test_the_default_plan_stays_inside_the_bus_budget() -> None:
     f = Features()
-    plan = build_read_plan(P, sel() | BOOTSTRAP_KEYS, f, max_read_registers=60, energy_auto=True)
+    plan = build_read_plan(P, sel() | BOOTSTRAP_KEYS, f, max_read_registers=60)
     assert not plan.budget.overloaded and plan.budget.utilisation < 0.7
     plan = build_read_plan(
         P,
         sel(gen_port_mode="ac_coupled", external_measurement="ct", tou_used=True) | BOOTSTRAP_KEYS,
         Features(),
         max_read_registers=20,
-        energy_auto=True,
     )
     assert not plan.budget.overloaded
 
@@ -359,9 +358,7 @@ def test_an_inactive_mppt_term_is_not_a_read_dependency() -> None:
     assert set(entry.addresses_for(single)) < set(entry.addresses)
     dropped = set(entry.addresses) - set(entry.addresses_for(single))
     plans = {
-        name: build_read_plan(
-            P, {"dc_input_power_total"}, f, max_read_registers=125, energy_auto=False
-        )
+        name: build_read_plan(P, {"dc_input_power_total"}, f, max_read_registers=125)
         for name, f in (("both", both), ("single", single))
     }
     assert dropped
@@ -427,14 +424,12 @@ def test_protection_word_help_states_the_evidence_not_a_health_claim() -> None:
 
 def test_protection_words_are_planned_and_stay_in_budget() -> None:
     keys = sel() | BOOTSTRAP_KEYS | set(PROTECTION_WORDS)
-    plan = build_read_plan(P, keys, Features(), max_read_registers=60, energy_auto=True)
+    plan = build_read_plan(P, keys, Features(), max_read_registers=60)
     needed = {a for k in PROTECTION_WORDS for a in P.entry(k).addresses}
     planned = {a for b in plan.blocks for a in range(b.start, b.start + b.count)}
     assert needed <= planned
     assert not plan.budget.overloaded and plan.budget.utilisation < 0.7
-    baseline = build_read_plan(
-        P, sel() | BOOTSTRAP_KEYS, Features(), max_read_registers=60, energy_auto=True
-    )
+    baseline = build_read_plan(P, sel() | BOOTSTRAP_KEYS, Features(), max_read_registers=60)
     assert plan.budget.utilisation >= baseline.budget.utilisation
 
 

@@ -41,7 +41,7 @@ async def test_auto_is_the_profile_default_whatever_r65_says(tmp_path: Path) -> 
             assert inv.energy.resolution == 0.1
             snap = inv.diagnostics()["energy"]
             assert snap["source"] == "profile" and snap["effective_resolution"] == 0.1
-            assert "raw" in inv.diagnostics()["r65"]  # shown as a diagnostic only
+            assert 65 not in inv.current_plan().addresses  # R65 is not read at all
             assert persisted(tmp_path / str(n)) == {
                 "effective_resolution": 0.1,
                 "source": "profile",
@@ -86,9 +86,7 @@ async def test_override_needs_no_r65(tmp_path: Path) -> None:
         inv = r.inv("deye1")
         assert inv.cfg.energy_resolution is EnergyResolution.ONE
         await inv.step()
-        # no extra R65 read for the resolution (R65 itself is only read because the diagnostic
-        # entity "dsp_protocol_version" is selected by default)
-        assert not inv.current_plan().reads_r65
+        assert 65 not in inv.current_plan().addresses
         assert energy_values(r.sink)[-1] == RAW  # 1 kWh per count although R65 would say 0.1
         assert persisted(tmp_path) == {
             "effective_resolution": 1.0,

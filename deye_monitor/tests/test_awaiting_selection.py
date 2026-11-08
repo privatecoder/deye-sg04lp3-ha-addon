@@ -30,7 +30,7 @@ def test_a_fresh_installation_is_awaiting_and_activates_nothing(tmp_path: Path) 
     plan = m.plan("deye1")
     assert not (plan.addresses & TEMPLATE_ONLY)
     assert plan.addresses >= {500, 336, 111, 133, 189}  # mandatory identity/status and bootstrap
-    assert not plan.reads_r65
+    assert 65 not in plan.addresses
 
 
 def test_without_require_choice_nothing_changes(tmp_path: Path) -> None:
@@ -70,7 +70,6 @@ async def test_runtime_reads_only_the_basics_until_the_choice_and_then_the_templ
             frozenset(BOOTSTRAP_KEYS),
             inv.features,
             max_read_registers=inv.route.max_read_registers,
-            energy_auto=True,
         ).addresses
         assert plan_addresses == expected
         await p.manager.change(0, {"deye1": Edit(choose=True)})

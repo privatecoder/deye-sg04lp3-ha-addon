@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The "DSP protocol version" sensor is removed: it never selected the energy resolution, which is 0.1 kWh on all known firmware. The inverter diagnostics "Energy resolution raw word" and "last reading" are removed with it, and the app no longer reads R65. A saved selection that still names the sensor loads as before.
+
 ## 0.5.7 — 2026-11-08
 
 - The plant card on the overview uses the full card width: values sit right-aligned next to their labels, and wide windows show two columns, so long labels no longer wrap.

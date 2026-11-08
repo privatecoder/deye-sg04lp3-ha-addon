@@ -62,7 +62,7 @@ def comp(key: str, series: str = "g0") -> tuple[str, dict[str, Any]]:
 
 def inverter_doc(series: str = "g0", serial: str | None = "2401234567") -> dict[str, Any]:
     components = dict(comp(k, series) for k in SELECTION)
-    components |= inverter_diagnostic_components(NS, "deye1", STATES, show_r65=True)
+    components |= inverter_diagnostic_components(NS, "deye1", STATES)
     meta = DeviceMeta(NS.inverter_device_id("deye1"), "Deye 1", "inverter", "deye1", serial)
     return device_document(NS, meta, components)
 
@@ -432,7 +432,7 @@ def test_state_payload_counts_replaced_values_and_ignores_unselected_keys() -> N
 
 
 def test_a_diagnostic_keeps_its_own_availability_but_a_cleanup_replay_does_not() -> None:
-    comps = inverter_diagnostic_components(NS, "deye1", STATES, show_r65=False)
+    comps = inverter_diagnostic_components(NS, "deye1", STATES)
     meta = DeviceMeta(NS.inverter_device_id("deye1"), "Deye 1", "inverter", "deye1", None)
     state = comps["diag_state"]
     assert state["availability"] == [{"topic": NS.app_status_topic}]  # not the inverter's topic

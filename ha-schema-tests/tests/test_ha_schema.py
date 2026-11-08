@@ -279,7 +279,6 @@ def test_real_binary_sensor_handler() -> None:
 def test_inverter_diagnostics_render_numbers_text_timestamps_and_conflict_attributes() -> None:
     comps = load("discovery_inverter.json")["components"]
     payload = {
-        "r65_raw": 260,
         "energy_resolution": 0.1,
         "energy_series": "x7k2m9q4g0",
         "capability_conflicts": 1,

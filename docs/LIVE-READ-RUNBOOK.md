@@ -68,18 +68,18 @@ Do not start an additional debug app or Modbus console in parallel. Local poller
 
 ### 3.1 First start: "Please choose sensors"
 
-As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 59 sensors and 42 read blocks including energy and R65) – and no inverter entities are created, only the diagnostic entities of the inverter's device.
+As long as a selection has **never** been saved for an inverter, the app reads only the mandatory identity and status registers and the internal hint registers (see below) – **no sensors of the default template** (otherwise it would be 59 sensors and 41 read blocks including energy) – and no inverter entities are created, only the diagnostic entities of the inverter's device.
 
 1. Start the app (the app options stay empty except `instance_id`) and create the connection and inverter in the setup wizard of the web interface (stage 1, section 4).
 2. In the web interface (sidebar **Deye Monitor**) the inverter's card shows **"Please choose sensors"** after identification. Open **"Choose now"** there (or **Set up sensors**).
 3. Answer step 1 "Describe your plant" **truthfully** (island/grid, battery yes/no, BMS, GEN port, PV inputs, parallel operation). A note "The device setting reports …" is **no proof of the installation** and changes nothing by itself; your answers stay saved.
 4. Step 2 "Choose sensors": **"Basics only"** selects `serial_number` (serial number), `operating_state` (operating state), `active_warnings` and `active_faults` (the decoded warnings and faults) and deselects everything else; **"Deselect all"** selects nothing. Both are ordinary deviations from the template (individually resettable, preserved across later changes to the plant description).
-5. The bar at the bottom shows the **polling load**, "What saving changes" the sensors that drop out. Expected for "Basics only": **4 sensors, 16 polling blocks**, load "low", no energy, no R65, no battery/AC/PV group.
+5. The bar at the bottom shows the **polling load**, "What saving changes" the sensors that drop out. Expected for "Basics only": **4 sensors, 16 polling blocks**, load "low", no energy, no battery/AC/PV group.
 6. **Save.** The selection counts as saved only once it is stored durably; after that the note "Please choose sensors" disappears and normal reading begins – with the small selection.
 
 If you want the template unchanged, use **"Accept the template unchanged"**; not recommended for this test.
 
-"Identity and status only" additionally comprises necessary **internal read** queries: R0, R3–7, R11–18, R20–22, R24, R336 as well as R500 and R551–558. For the feature hints the app also reads R98, R111, R133 and R189 and, for the consistency hints of the installation questions, R140, R142, R146 and R344 (group "Settings", diagnostics only). These are no write accesses. With `max_read_registers=20` and without gap bridging this gives **16 read blocks** per complete plan (identity 6, status 2, settings 8), not 12 requests every 30 seconds: each group has its own interval; identification and recovery may trigger additional probes. R65 is not needed in this selection. In the state "Please choose sensors" the same mandatory and hint registers are read.
+"Identity and status only" additionally comprises necessary **internal read** queries: R0, R3–7, R11–18, R20–22, R24, R336 as well as R500 and R551–558. For the feature hints the app also reads R98, R111, R133 and R189 and, for the consistency hints of the installation questions, R140, R142, R146 and R344 (group "Settings", diagnostics only). These are no write accesses. With `max_read_registers=20` and without gap bridging this gives **16 read blocks** per complete plan (identity 6, status 2, settings 8), not 12 requests every 30 seconds: each group has its own interval; identification and recovery may trigger additional probes. In the state "Please choose sensors" the same mandatory and hint registers are read.
 
 ## 4. Stage 1 – one inverter, gateway only
 
@@ -95,8 +95,8 @@ Setup is done in the web interface (sidebar **Deye Monitor**): with an empty pla
 5. After saving the inverter, polling begins immediately. From now on keep logs, abort criteria and independent monitoring in view at the same time. The inverter first reads only identity and status (section 3.1); then save the minimal selection.
 6. Within the first minutes check identification, bound SN and fresh status data (section 7: state "Online", entity `…_serial` = `expected_serial`). `ready` in the log only confirms started loops, not successful device contact. On a wrong SN/quarantine ("Quarantined") stop immediately, check the assignment outside the app; **no identity reset** to bypass an error.
 7. Observe for 15 minutes. Expected: recurring successful FC03 cycles without a growing queue, repeated cooldowns or new faults. Power values unchanged for minutes are not a test failure with this selection: no power values are read yet.
-8. With a stable course, additionally enable `battery_voltage`, `battery_soc`, `inverter_frequency`, `pv1_power`, `pv2_power` in the web interface (search, tick the checkbox) and check the preview. Expected: **11 sensors, 19 polling blocks** (additionally battery 1, AC 1, PV 1), still without energy and R65. Save and observe for 15 minutes, preferably in daylight. No diagnostic release for PV3–PV10 or battery 2 (the expert raw values stay deselected).
-9. Select energy only afterwards and separately (energy counters via the web interface search "Energy"), check the effective resolution (diagnostic R65 raw is information only) and wait for at least one energy cycle. Do not change the path together with the sensor selection: only one influencing factor per change. Afterwards stop the app and log the last approved state.
+8. With a stable course, additionally enable `battery_voltage`, `battery_soc`, `inverter_frequency`, `pv1_power`, `pv2_power` in the web interface (search, tick the checkbox) and check the preview. Expected: **11 sensors, 19 polling blocks** (additionally battery 1, AC 1, PV 1), still without energy. Save and observe for 15 minutes, preferably in daylight. No diagnostic release for PV3–PV10 or battery 2 (the expert raw values stay deselected).
+9. Select energy only afterwards and separately (energy counters via the web interface search "Energy"), check the effective resolution and wait for at least one energy cycle. Do not change the path together with the sensor selection: only one influencing factor per change. Afterwards stop the app and log the last approved state.
 
 `mqtt: {}` uses the already configured Supervisor MQTT service; it does not start a broker. Missing HA entities with a working connection are to be investigated separately, without forcing faster device polling. Use `info` at first; only if needed a limited debug window, and before passing on remove IPs/SNs/credentials from logs.
 
@@ -106,7 +106,7 @@ Only after a successful gateway stage. Under **Set up plant** create a second co
 
 Observe each selection for at least 15 minutes and several normal cloud upload cycles. An existing gateway autopoller may keep working although this app uses only the logger: note this state in the comparison. There is no documented universal client/polling limit for your logger/firmware combination.
 
-Compare the **inverter SN exactly**, also static raw data/firmware identifier, R22/R24 and – only if read – R65. A transport change must neither substitute another physical device nor treat the energy statistics as a new physical source (with the same SN and the same resolution the energy series is kept). With known recovery/persistence problems stop, do not delete files.
+Compare the **inverter SN exactly**, also static raw data/firmware identifier, R22/R24. A transport change must neither substitute another physical device nor treat the energy statistics as a new physical source (with the same SN and the same resolution the energy series is kept). With known recovery/persistence problems stop, do not delete files.
 
 Compare dynamic values in time windows with timestamp, minimum/maximum and operating state. PV/power values captured one after the other need not be exactly equal; changing sun and load are normal. Cloud values may be considerably older. Both paths read the same inverter and are not two independent measuring devices. An unchanged counter or status does not prove frozen data; natural changes of an additional measured value give better hints. No load/switching attempts to "stimulate".
 
@@ -140,7 +140,6 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | `sensor.deye_deyetest1_deye1_diag_serial` | Bound inverter SN = `expected_serial`, unique per device. |
 | `sensor.deye_deyetest1_deye1_diag_firmware_mcu1` | Firmware of the communication/HMI board (MCU1, R17-R18), like the Deye cloud: `1001-C070`. |
 | `sensor.deye_deyetest1_deye1_diag_firmware_mcu2` | Firmware of the control board (MCU2, R14-R15-R11), like the Deye cloud: `2005-1175-1807`. |
-| `sensor.deye_deyetest1_deye1_diag_r65_raw` / `…_r65_status` | Energy resolution raw word and whether the last reading worked. Only present while R65 is read and reported (diagnostic only; not on a device that reports `0xFFFF`). |
 | `sensor.deye_deyetest1_deye1_diag_energy_resolution` / `…_energy_source` / `…_energy_status` | Effective resolution (kWh/step), source (`profile` default or `override`, the user choice). |
 | `sensor.deye_deyetest1_deye1_diag_energy_series` | Current energy series (`g0`, `g1`, … or `<token>g0`). |
 | `sensor.deye_deyetest1_deye1_diag_capability_conflicts` | Number of conflicts with the hardware profile; the list is in the attribute `conflicts`. |
@@ -155,7 +154,7 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 | --- | --- |
 | Identity | `expected_serial` = bound inverter SN (`…_serial`). Logger SN separate. Active endpoint (`…_path`), last successful cycle (`…_last_success`) and state visible; no `quarantined`/`blocked`. |
 | R22 / R24 | R22: high byte MPPT count, low byte phase count; the profile expects 2/3, i.e. `0x0203`. This is an expectation, not a value already measured on your devices. R24: 0 or 1 means one battery input according to the document, 2 means two. No pack/BMS counter. Document `…_capability_conflicts` and do not release the affected measurements. |
-| R65 / energy | If energy is selected: record the effective factor and its source (`profile` default 0.1 kWh/step, or `override`) and the R65 raw value, which is shown for information only and never selects the factor. Missing is not 0. No override merely to "make it fit". |
+| Energy resolution | If energy is selected: record the effective factor and its source (`profile` default 0.1 kWh/step, or `override`). Missing is not 0. No override merely to "make it fit". |
 | Energy series | With unchanged SN and resolution `…_energy_series` stays stable across restart and transport change. A confirmed change of resolution, a different device or a deliberately confirmed loss of history begins a new series (old entity is dropped, its statistics stay in HA, unconnected to the new one). On loss of the energy history the energy is locked (`energy_history_missing`/`…_inconsistent`/`energy_store_corrupt`) and on the explicit reset a random 8-character token begins. Do not delete `/data` yourself. |
 | Load / errors | Number of read blocks per group and total load in the web interface, `…_bus_utilisation`, timeouts, reconnects, cooldown. The plan budget is an estimate; foreign pollers/cloud/cache are not included. "Overloaded", a growing queue or repeated recovery are no reason for faster retries. |
 | Quality in HA | Missing/invalid data appears as `unknown` (single value) or `unavailable` (group falls silent after three intervals or app/inverter offline), never as invented zero values. After a reconnect no old instantaneous values as a fresh measurement. `Online` alone does not prove the freshness of every group. |
@@ -167,7 +166,7 @@ Everything that belongs to one inverter sits on **that inverter's own device** (
 
 ### Checking the energy resolution
 
-The automatic resolution is the profile default of 0.1 kWh per step for every SG04LP3 firmware; the R65 raw word is shown in the diagnostics for information only. If the daily energy does not match the inverter display or the cloud:
+The automatic resolution is the profile default of 0.1 kWh per step for every SG04LP3 firmware. If the daily energy does not match the inverter display or the cloud:
 
 1. Record the effective factor and source (sensor page diagnostics) and compare **the same counter** (e.g. PV today) at a known time with the inverter display or the cloud.
 2. If it is off by a factor of ten, set **Set up plant → Inverter → Energy resolution** to 1 kWh (or back to 0.1 kWh). The app's note "Choose 0.1 kWh / Choose 1 kWh" offers the same change only when the PV power, fully integrated over equal fresh windows, points to a factor of ten; it is never applied without a click. This changes the app configuration only; nothing is written to the device.
@@ -221,7 +220,7 @@ Also excluded "just briefly": R80 OFF/ON, "No Battery" R111, parallel roles/coun
 
 ## 10. Result sheet and evidence
 
-Per stage note: date/time, approved commit/image digest, HA/Supervisor version, real endpoints/unit IDs/SNs, selection revision and read plan (number of sensors/blocks per the web interface), other active pollers, duration, number of successful/failed cycles, maximum response time/queue, R22/R24, where applicable R65/factor/energy series, cloud gaps, new faults and the time of the app stop. Mark unknown values as **not checked**. Do not include credentials in the result sheet.
+Per stage note: date/time, approved commit/image digest, HA/Supervisor version, real endpoints/unit IDs/SNs, selection revision and read plan (number of sensors/blocks per the web interface), other active pollers, duration, number of successful/failed cycles, maximum response time/queue, R22/R24, where applicable factor/energy series, cloud gaps, new faults and the time of the app stop. Mark unknown values as **not checked**. Do not include credentials in the result sheet.
 
 **Passed** means only: this specific version/read set worked over the observed time on the checked paths without new anomalies. It proves neither writability nor uninterrupted slave/master switchover, maximum poll rate or the equivalence of all CON sockets.
 

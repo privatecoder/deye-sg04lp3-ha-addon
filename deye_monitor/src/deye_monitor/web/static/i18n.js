@@ -132,10 +132,9 @@ const de = {
   'hint.energy.choose_one': '1 kWh wählen',
   'hint.energy.chosen': 'Energieauflösung gespeichert; die Energiewerte beginnen eine neue Statistikreihe.',
   'hint.energy.blocked': 'Die Energiezähler sind angehalten, bis die Auflösung geklärt ist.',
-  'hint.energy.diag': 'Energieauflösung: {factor} kWh pro Schritt, Quelle: {source}, R65 roh: {r65}.',
+  'hint.energy.diag': 'Energieauflösung: {factor} kWh pro Schritt, Quelle: {source}.',
   'hint.energy.source.override': 'deine Wahl (Override)',
   'hint.energy.source.profile': 'Profilstandard 0,1 kWh',
-  'hint.energy.r65_none': 'nicht gelesen',
   'hint.energy.too_high': 'Der Tageszähler „PV-Energie heute“ ist etwa {ratio}-mal so hoch wie die über die PV-Leistung aufsummierte Energie ({counter} kWh gegenüber {integrated} kWh seit dem Start). Die Energieauflösung ist vermutlich falsch eingestellt. Prüfe sie in der Anlagen-Einstellung des Wechselrichters; es wird nichts automatisch geändert.',
   'hint.energy.too_low': 'Der Tageszähler „PV-Energie heute“ ist nur etwa {ratio}-mal so hoch wie die über die PV-Leistung aufsummierte Energie ({counter} kWh gegenüber {integrated} kWh seit dem Start). Die Energieauflösung ist vermutlich falsch eingestellt. Prüfe sie in der Anlagen-Einstellung des Wechselrichters; es wird nichts automatisch geändert.',
 
@@ -1190,10 +1189,9 @@ const en = {
   'hint.energy.choose_one': 'Choose 1 kWh',
   'hint.energy.chosen': 'Energy resolution saved; the energy values start a new statistics series.',
   'hint.energy.blocked': 'The energy counters are paused until the resolution is clarified.',
-  'hint.energy.diag': 'Energy resolution: {factor} kWh per step, source: {source}, R65 raw: {r65}.',
+  'hint.energy.diag': 'Energy resolution: {factor} kWh per step, source: {source}.',
   'hint.energy.source.override': 'your choice (override)',
   'hint.energy.source.profile': 'profile default 0.1 kWh',
-  'hint.energy.r65_none': 'not read',
   'hint.energy.too_high': 'The daily counter "PV energy today" is about {ratio} times the energy the PV power adds up to ({counter} kWh against {integrated} kWh since the start). The energy resolution is probably set wrongly. Check it in the inverter\'s plant setting; nothing is changed automatically.',
   'hint.energy.too_low': 'The daily counter "PV energy today" is only about {ratio} times the energy the PV power adds up to ({counter} kWh against {integrated} kWh since the start). The energy resolution is probably set wrongly. Check it in the inverter\'s plant setting; nothing is changed automatically.',
 

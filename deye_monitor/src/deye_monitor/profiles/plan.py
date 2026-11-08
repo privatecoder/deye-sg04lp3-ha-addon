@@ -108,8 +108,6 @@ class ReadPlan:
     keys: frozenset[str]  # every entry the plan can decode (selected + mandatory)
     mandatory_keys: frozenset[str]
     dependencies: Mapping[str, tuple[int, ...]]
-    reads_r65: bool  # address 65 is in the read set (any reason: dependency or explicit choice)
-    r65_required_for_energy: bool  # an energy entity needs R65 (automatic resolution only)
     budget: PlanBudget
 
     @property
@@ -123,7 +121,6 @@ def build_read_plan(
     features: Features,
     *,
     max_read_registers: int,
-    energy_auto: bool,
     max_gap: int = 0,
     unreported: Collection[str] = (),
     poll: PollConfig | None = None,
@@ -138,7 +135,7 @@ def build_read_plan(
     bridging up to that many addresses between needed ones, but only when every bridged address
     is known to the profile; the default reads exactly the needed words. ``unreported`` are
     entries the device does not report (``unreported_entries``): they are not read any more; a
-    mandatory entry or the R65 dependency of the automatic energy resolution stays.
+    mandatory entry stays.
     """
     if not 1 <= max_read_registers <= MAX_REGISTERS_PER_READ:
         raise ValueError("max_read_registers must be 1..125")
@@ -153,9 +150,6 @@ def build_read_plan(
     by_key = {e.key: e for e in profile.entries}
     mandatory = frozenset(e.key for e in profile.entries if e.mandatory)
     keys = (set(selected_keys) - set(unreported)) | mandatory
-    r65_required = energy_auto and any(by_key[k].scale_source for k in selected_keys)
-    if r65_required:
-        keys.add(profile.energy_resolution_key)
 
     def reads(k: str) -> tuple[int, ...]:
         # the state rule's context registers are read with the entry (e.g. the ToU branch R146)
@@ -173,8 +167,6 @@ def build_read_plan(
         keys=frozenset(keys),
         mandatory_keys=mandatory,
         dependencies=deps,
-        reads_r65=any(65 in by_key[k].addresses_for(features) for k in keys),
-        r65_required_for_energy=r65_required,
         budget=_budget(profile, blocks, poll or PollConfig(), response_time_s, gap_s),
     )
 

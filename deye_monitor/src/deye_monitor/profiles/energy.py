@@ -12,7 +12,7 @@ def effective_resolution(override: EnergyResolution) -> float:
 
     Owner decision (0.5.1): 0.1 kWh on every SG04LP3 firmware. The firmware analysis (Codex r65-1)
     supports it for MCU2 1151 and 1175 and found no R65 selector in a bounded search (1185: exports
-    only). R65 is a diagnostic only and never selects the factor.
+    only). No register selects the factor; R65 is not read.
     """
     if override is EnergyResolution.TENTH:
         return 0.1

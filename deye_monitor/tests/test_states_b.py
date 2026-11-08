@@ -290,8 +290,6 @@ def test_a_selected_slot_flags_entry_reads_the_branch_register() -> None:
     from deye_monitor.profiles.features import Features
     from deye_monitor.profiles.plan import build_read_plan
 
-    plan = build_read_plan(
-        P, {"tou_slot3_flags_raw"}, Features(), max_read_registers=60, energy_auto=False
-    )
+    plan = build_read_plan(P, {"tou_slot3_flags_raw"}, Features(), max_read_registers=60)
     assert 146 in plan.addresses and 174 in plan.addresses
     assert plan.dependencies["tou_slot3_flags_raw"] == (174, 146)

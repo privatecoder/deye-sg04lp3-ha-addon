@@ -12,7 +12,7 @@ import pytest
 
 from deye_monitor.mqtt import PublisherSettings
 from deye_monitor.selection import ChangeError, Edit
-from tests.device_helpers import device_regs, ep, inverter, rig, serial_words
+from tests.device_helpers import device_regs, ep, inverter
 from tests.selection_helpers import newest_slot, no_selection_files, plant
 from tests.test_selection import manager_at
 from tests.test_webapi import client
@@ -215,25 +215,6 @@ async def test_preview_budget_uses_runtime_route_and_reports_total_bus_load(
 
 
 # -- R6-05 -----------------------------------------------------------------------------------
-
-
-async def test_diagnostics_do_not_reuse_previous_inverter_r65(tmp_path: Path) -> None:
-    from deye_monitor.ha_discovery import inverter_diagnostic_values
-
-    a, b = "2401234567", "9999999999"
-    async with rig([ep("g")], [inverter("i", "g")], {"g": device_regs(a)}, tmp_path) as r:
-        inv = r.inv("i")
-        await inv.step()
-        assert inv.diagnostics()["r65"] == {"raw": 260, "last_read_ok": True}
-        inv.set_selection(set(), 1)  # R65 is no longer required
-        assert inv.rebind()
-        assert inv.diagnostics()["r65"] == {"raw": None, "last_read_ok": None}
-        r.servers["g"].responder.regs.update(serial_words(b))
-        await inv.step()
-        d = inv.diagnostics()
-        out = inverter_diagnostic_values(d)
-        assert d["bound_serial"] == b
-        assert out["r65_status"] is None and out["r65_raw"] is None
 
 
 async def test_explicit_missing_binding_is_not_filled_from_seen_serial(tmp_path: Path) -> None:
