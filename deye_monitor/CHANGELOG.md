@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.8 — 2026-11-08
 
 - The load power of each phase (L1-L3) and the inverter relay are now selected by default. The sensor list shows a sensor that you added and the template now also contains as "from template". The note for a parallel slave without BMS data is worded neutrally.
 - Two hints on the installation page: a parallel unit whose GEN answer is "Nothing" while the device reports a GEN mode (shared in parallel systems), and a signal output set to "Grid contactor" with an unused GRID terminal. The device's signal setting is now described as a configured request.
