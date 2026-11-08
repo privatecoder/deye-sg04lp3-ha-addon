@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The plant card on the overview uses the full card width: values sit right-aligned next to their labels, and wide windows show two columns, so long labels no longer wrap.
+
 ## 0.5.6 — 2026-11-08
 
 - Better suggestions from the installation description: the CT ratio only for a described CT on a used GRID terminal, EV settings for a described EV charger, Time of Use targets that match SOC or voltage control, and thresholds for AC-coupled PV on the GEN port. Two configuration readbacks are now suggested: the System Work Mode (export mode) and the force off-grid request. The help texts of the GEN, battery communication and signal output questions are clearer.
