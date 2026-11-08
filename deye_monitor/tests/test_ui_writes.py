@@ -254,9 +254,12 @@ async def test_a_slave_cannot_be_written_and_points_to_the_master(
         plant_view = await open_page(browser, url + "#/plant")
         page = plant_view.page
         slave = page.locator('article.inverter[data-inverter="deye1"] details.writes-section')
+        await expect(slave).not_to_have_attribute("open", "")  # collapsed on load
+        await slave.locator("summary").click()
         await expect(slave.locator(".slave-locked")).to_be_visible()
         await expect(slave.locator('input[data-operation="grid_charge_current"]')).to_be_disabled()
         master = page.locator('article.inverter[data-inverter="deye2"] details.writes-section')
+        await master.locator("summary").click()
         await expect(master.locator('input[data-operation="grid_charge_current"]')).to_be_enabled()
         assert all(f.responder.writes == [] for f in rig.servers.values())
         await s.check()

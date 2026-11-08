@@ -171,7 +171,7 @@ export function writesSection(inv, { onChanged }) {
   const summary = cfg.allow_writes && cfg.operations.length
     ? t('writes.summary_on', { n: cfg.operations.length })
     : t('writes.summary_off');
-  return h('details', { class: 'writes-section', 'data-writes': inv.id, open: cfg.allow_writes || undefined },
+  return h('details', { class: 'writes-section', 'data-writes': inv.id },
     h('summary', {}, h('span', { class: 'writes-title' }, t('plant.inv.writes')), ' ', h('span', { class: `chip ${cfg.allow_writes && cfg.operations.length ? 'warn' : ''}` }, summary)),
     h('p', { class: 'help' }, t('writes.intro')),
     entityLine(inv.id),

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The plant card on the overview uses the full card width: values sit right-aligned next to their labels, and wide windows show two columns, so long labels no longer wrap.
+- The "Writes" block of each inverter on the setup page now starts collapsed; its chip still shows how many settings are released.
 
 ## 0.5.6 — 2026-11-08
 
