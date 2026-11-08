@@ -416,6 +416,14 @@ settings added in 0.5.0 follow below and are listed in full in SPEC 10.9. Everyt
 
 Values must be exact: a fractional or non-finite number is refused, nothing is rounded or clamped.
 
+- **Signal Island Mode and N–PE transfers.** Signal Island Mode selects the inverter's island N–PE bonding
+  policy; its readback is not contact feedback, and no register reports the bond. Owner measurements on a
+  SUN-12K-SG04LP3 with MAIN 2005-1128-1807 / HMI 1001-C031 show LOAD N losing its earth reference for up to a few
+  hundred milliseconds when the grid returns, with RCD trips reported
+  ([Akkudoktor thread](https://akkudoktor.net/t/ansteuerung-pe-n-relay-fehlerhaft-sun-12k-sg04lp3-eu-sun-30k-sg01hp3-eu-am2/29040)).
+  A Deye comparison reports much shorter gaps on MAIN 2006-1172-1807 (about 10 ms); later builds are not
+  verified. A GRID source that is connected only now and then, such as a charging contactor, triggers these
+  transfers each time it switches. The app implements no workaround.
 - **Model limit.** The limit of the four current settings is the app policy (5K 120 A, 6K 130 A,
   8K 185 A, 10K 210 A, 12K 240 A), selected from the rated power the inverter reports (registers
   20/21, exactly 5, 6, 8, 10 or 12 kW). For the charge and discharge current (R108/R109) the

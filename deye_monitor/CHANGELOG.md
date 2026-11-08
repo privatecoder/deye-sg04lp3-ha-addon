@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Docs: note on Signal Island Mode and reported N–PE bond gaps during grid transfers (measured on MAIN 1128, improved on 1172 per Deye).
+
 ## 0.5.8 — 2026-11-08
 
 - The load power of each phase (L1-L3) and the inverter relay are now selected by default. The sensor list shows a sensor that you added and the template now also contains as "from template". The note for a parallel slave without BMS data is worded neutrally.
