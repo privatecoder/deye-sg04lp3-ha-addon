@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.9 — 2026-11-09
 
-- Fix: plant GEN power in parallel plants sums every inverter's reported GEN share (the firmware splits the GEN port power across all members; 652 W was shown for a ~2.6 kW Smart Load). Every member reads its share for the total, also with an unused GEN socket; nothing extra is selected or published. In a parallel plant the optional per-device GEN total is named "GEN reported share" (an allocated share, not the current through this unit's socket) and the internal read counts in the polling-budget preview.
+- Fix: plant GEN power in parallel plants sums every inverter's reported GEN share (the firmware splits the GEN port power across all members; 652 W was shown for a ~2.6 kW Smart Load). Every member reads its share for the total, also with an unused GEN socket; nothing extra is selected or published. In a parallel plant the optional per-device GEN total is named "GEN reported share" / "GEN-Anteil (gemeldet)" in the sensor list and in Home Assistant (an allocated share, not the current through this unit's socket) and the internal read counts in the polling-budget preview.
 - Docs: note on Signal Island Mode and reported N–PE bond gaps during grid transfers (measured on MAIN 1128, improved on 1172 per Deye).
 
 ## 0.5.8 — 2026-11-08
