@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from deye_monitor.app import PLANT_GEN_KEY
-from deye_monitor.selection import Edit
+from deye_monitor.selection import PLANT_GEN_KEY, Edit
 from tests.selection_helpers import plant
 
 KEY_ADDRESSES = {667, 671}  # low and high word of the signed 32-bit value
