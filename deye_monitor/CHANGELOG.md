@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.10 — 2026-11-09
 
 - New diagnostic sensor "Plant DC/AC power difference": PV input + battery power − inverter AC output over all members, as a 5-minute mean (calculated from reported DC and AC values; includes standby consumption, losses within these measuring points, measurement deviations and energy exchanged between parallel units; not an efficiency). It is unknown while any member lacks one of the inputs.
 
