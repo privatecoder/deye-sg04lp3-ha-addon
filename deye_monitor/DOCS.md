@@ -111,9 +111,11 @@ device loop and without the publisher.
   LOAD. These plant LOAD sums are not independently metered house consumption; verify their
   physical scope with your own meter. In parallel, GEN readings can be assigned shares of the
   plant GEN power, including on units with unwired GEN ports; they are not necessarily local
-  terminal measurements. *Plant GEN port power* sums only the members whose description names a
-  GEN use. Allocated shares on other members may be omitted, so this sum may not represent total
-  plant GEN power. Do not mark an unwired port as used to compensate.
+  terminal measurements. *Plant GEN port power* is calculated from all parallel inverters'
+  reported GEN shares, including members with an unused GEN socket; it is not an independent meter
+  at the wired port, and it is unknown while any member's share is missing. The per-device GEN
+  total in a parallel plant ("GEN reported share") is an allocated share of the plant's GEN power,
+  not the current through that unit's socket. Do not mark an unwired port as used to compensate.
 
   **Loss / efficiency.** No physical loss or efficiency sensor is offered. LOAD is calculated, may
   include allocated GEN power, and is affected by clamps. In Smart Load mode, subtracting both
@@ -436,6 +438,8 @@ Values must be exact: a fractional or non-finite number is refused, nothing is r
   R111 is 0 (voltage mode). The mode is read fresh every time; it is never changed by the app.
 - **Smart Load.** The four Smart Load settings also need the GEN port to be configured as Smart
   Load (R133). OFF must stay below ON (a rule of this app, not a proven firmware check).
+  An unused GEN socket is not isolated: in parallel plants with Smart Load, the GEN outputs of all
+  members may be energised (owner reads show about 230 V on unwired slave GEN terminals).
 - **Protection thresholds.** Shutdown, low and restart SOC are checked against a fresh read of the
   other two: shutdown < low < restart. The app does not claim a safe minimum; the limits come from
   the commissioning of your battery. The current values are not a specification.

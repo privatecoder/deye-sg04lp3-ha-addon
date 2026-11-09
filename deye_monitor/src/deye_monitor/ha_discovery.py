@@ -274,6 +274,9 @@ def _template(key: str, platform: str, series: str | None = None) -> str:
     return f"{{{{ value_json.get('{key}') if value_json is mapping else none }}}}"
 
 
+PARALLEL_GEN_SHARE_NAME = "GEN reported share"
+
+
 def inverter_component(
     ns: Namespace,
     inverter_id: str,
@@ -282,11 +285,17 @@ def inverter_component(
     series: str,
     poll: PollConfig,
     profile: Profile,
+    parallel: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """(component key, discovery component) of one selected profile entry."""
     device_id = ns.inverter_device_id(inverter_id)
     ckey = component_key(entry, series)
-    name = entry.name.en
+    # in a parallel plant the GEN total is the share the firmware allocates to this unit
+    name = (
+        PARALLEL_GEN_SHARE_NAME
+        if parallel and entry.key == "gen_power_raw_total"
+        else entry.name.en
+    )
     comp: dict[str, Any] = {
         "platform": entry.platform,
         "unique_id": f"{device_id}_{ckey}",

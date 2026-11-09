@@ -604,3 +604,11 @@ def test_write_entity_names_carry_no_register() -> None:
 
     assert entity_name("GRID charge current (R128)") == "GRID charge current"
     assert entity_name("ToU schedule enable (R146 bit 0)") == "ToU schedule enable"
+
+
+def test_a_parallel_member_names_the_gen_total_a_reported_share() -> None:
+    entry = PROFILE.entry("gen_power_raw_total")
+    args = (NS, "inv1", entry)
+    kw = {"series": "g0", "poll": PollConfig(), "profile": PROFILE}
+    assert inverter_component(*args, **kw)[1]["name"] == "GEN port power total"
+    assert inverter_component(*args, **kw, parallel=True)[1]["name"] == "GEN reported share"

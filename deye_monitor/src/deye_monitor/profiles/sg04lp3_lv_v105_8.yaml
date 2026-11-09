@@ -3768,8 +3768,8 @@ entries:
     de: GEN-Anschlussleistung gesamt
     en: GEN port power total
   description:
-    de: "Gemeldete GEN-Leistung (gesamt), mit Vorzeichen in W; Richtung nicht gedeutet. Im Parallelbetrieb ggf. zugeteilter Anteil, auch bei nicht verdrahtetem GEN-Anschluss."
-    en: "Reported GEN power (total), signed W; direction not interpreted. In parallel it can be an allocated share, even with an unwired GEN port."
+    de: "Gemeldete GEN-Leistung, mit Vorzeichen in W. Im Parallelbetrieb ggf. zugeteilter Anteil der Anlage (nicht der Strom durch diesen Anschluss), auch bei nicht verdrahtetem GEN-Anschluss."
+    en: "Reported GEN power (total), signed W; direction not interpreted. In parallel it can be an allocated share of the plant (not the current through this socket), even with an unwired GEN port."
   low: 667
   high: 671
   type: s32

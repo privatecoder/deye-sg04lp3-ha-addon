@@ -107,6 +107,7 @@ class InverterInfo:
     name: str
     profile: Profile
     poll: PollConfig
+    parallel: bool = False  # a member of a parallel plant
 
 
 STOP_RESERVE_S = 5.0
@@ -364,7 +365,9 @@ class MqttPublisher:
             self.dropped_stale += 1
             return
         rec.epoch = snapshot.lifecycle_epoch
-        self._slots[(inverter_id, snapshot.group)] = _Slot(snapshot, dict(values))
+        shown = {k: v for k, v in values.items() if k in rec.entries}  # plant-only reads stay out
+        if shown:
+            self._slots[(inverter_id, snapshot.group)] = _Slot(snapshot, shown)
         if self.totals is not None and not snapshot.failed:
             self.totals.update(inverter_id, values, self._clock())
         elif self.totals is not None:
@@ -548,6 +551,7 @@ class MqttPublisher:
                     series=rec.series,
                     poll=rec.info.poll,
                     profile=rec.info.profile,
+                    parallel=rec.info.parallel,
                 )
                 components[ckey] = comp
             components.update(inverter_diagnostic_components(ns, inverter_id, states))

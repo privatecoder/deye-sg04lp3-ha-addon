@@ -390,65 +390,54 @@ def test_plant_components_are_valid_stable_and_series_guarded() -> None:
     assert comps["plant_members"]["state_class"] == "measurement"
 
 
-def test_gen_power_adds_the_members_signed_and_counts_members_without_gen_use_as_zero(
-    tmp_path: Path,
-) -> None:
-    rig = Rig(tmp_path)
-    for i in ("m", "s1", "s2"):
+def test_gen_power_sums_every_members_reported_share(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, ids=("m", "s1", "s2", "s3"))
+    for i in rig.keys:
         rig.fast(i, load=100)
     assert rig.totals.gen_active() is False
-    assert rig.value("plant_gen_power") == 0  # no GEN use anywhere: adds 0, not published
-    rig.gen = {"m", "s1", "s2"}
-    for i in rig.gen:
+    assert rig.value("plant_gen_power") == 0  # no GEN use anywhere: not published
+    rig.gen = {"m"}  # the slaves are described as unused but still report a share
+    for i in rig.keys:
         rig.keys[i].add("gen_power_raw_total")
-    rig.feed("m", gen_power_raw_total=1200)
-    rig.feed("s1", gen_power_raw_total=-300)
-    rig.feed("s2", gen_power_raw_total=50)
+        rig.feed(i, gen_power_raw_total=652)
     assert rig.totals.gen_active() is True
     assert rig.totals.view(rig.now)["gen"] is True
-    assert rig.value("plant_gen_power") == 950  # signed, direction not interpreted
+    assert rig.value("plant_gen_power") == 2608
+    rig.feed("s1", gen_power_raw_total=-300)  # unequal shares are summed as reported
+    assert rig.value("plant_gen_power") == 652 * 3 - 300
 
 
-def test_gen_power_of_a_member_without_gen_use_adds_zero_even_if_its_sensor_is_selected(
-    tmp_path: Path,
-) -> None:
-    rig = Rig(tmp_path)
-    for i in ("m", "s1", "s2"):
+def test_parallel_gen_power_is_unknown_while_any_share_is_missing(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, ids=("m", "s1"))
+    for i in rig.keys:
         rig.fast(i, load=100)
-    rig.gen = {"m"}
-    rig.keys["m"].add("gen_power_raw_total")
-    rig.feed("m", gen_power_raw_total=700)
-    rig.feed("s1", gen_power_raw_total=999)  # no GEN use: not counted
-    assert rig.value("plant_gen_power") == 700
-
-
-def test_gen_power_is_unknown_when_a_member_with_gen_use_has_not_selected_the_sensor(
-    tmp_path: Path,
-) -> None:
-    rig = Rig(tmp_path)
-    for i in ("m", "s1", "s2"):
-        rig.fast(i, load=100)
-    rig.gen = {"m", "s1"}
-    rig.keys["m"].add("gen_power_raw_total")
-    rig.feed("m", gen_power_raw_total=700)
-    assert rig.value("plant_gen_power") is None  # s1: GEN use but no selection, never silent 0
-    assert "s1" in rig.totals.stale_members(rig.now)
-    assert rig.value("plant_load_power") == 300  # the other totals are unaffected
-
-
-def test_gen_power_is_unknown_for_a_stale_or_missing_member_value(tmp_path: Path) -> None:
-    rig = Rig(tmp_path)
-    for i in ("m", "s1", "s2"):
-        rig.fast(i, load=100)
-    rig.gen = {"m", "s1"}
-    for i in rig.gen:
         rig.keys[i].add("gen_power_raw_total")
-    rig.feed("m", gen_power_raw_total=700)
-    assert rig.value("plant_gen_power") is None  # s1 has not delivered yet
-    rig.feed("s1", gen_power_raw_total=10)
-    assert rig.value("plant_gen_power") == 710
-    rig.now += 10_000  # far past three poll intervals of the group
+    rig.gen = {"m"}
+    rig.feed("m", gen_power_raw_total=650)
+    assert rig.value("plant_gen_power") is None  # s1 delivered nothing yet
+    rig.feed("s1", gen_power_raw_total=650)
+    assert rig.value("plant_gen_power") == 1300
+    rig.keys["s1"].discard("gen_power_raw_total")  # not read any more: the cache is not a value
     assert rig.value("plant_gen_power") is None
+    rig.keys["s1"].add("gen_power_raw_total")
+    rig.totals.set_online("s1", False)
+    assert rig.value("plant_gen_power") is None
+    rig.totals.set_online("s1", True)
+    rig.now += 10_000  # stale
+    assert rig.value("plant_gen_power") is None
+
+
+def test_standalone_gen_power_is_the_members_own_value(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, ids=("only",), roles={"only": "standalone"})
+    rig.fast("only", load=100)
+    rig.gen = {"only"}
+    assert rig.value("plant_gen_power") is None  # used GEN port, sensor not selected
+    rig.keys["only"].add("gen_power_raw_total")
+    assert rig.value("plant_gen_power") is None  # not delivered yet
+    rig.feed("only", gen_power_raw_total=-300)
+    assert rig.value("plant_gen_power") == -300  # signed, direction not interpreted
+    rig.gen = set()
+    assert rig.value("plant_gen_power") == 0
 
 
 def test_the_gen_component_exists_only_when_a_member_describes_a_gen_use() -> None:

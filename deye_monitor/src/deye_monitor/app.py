@@ -36,6 +36,7 @@ from deye_monitor.plant import PlantService, PlantStore, SwitchError
 from deye_monitor.profiles.plan import SelectionError
 from deye_monitor.runtime import Runtime
 from deye_monitor.selection import (
+    PLANT_GEN_KEY,
     STALE_CODES,
     InverterSelection,
     InverterSpec,
@@ -66,13 +67,33 @@ def open_discovery_store(path: Path) -> JsonStore:
     return store
 
 
+def plant_members(cfg: AppConfig) -> set[str]:
+    """The members of a parallel plant (two or more inverters in the plant totals), else none."""
+    members = set(cfg.totals.members(cfg.inverters)) if cfg.totals.active(cfg.inverters) else set()
+    return members if len(members) > 1 else set()
+
+
+def apply_plant_keys(cfg: AppConfig, runtime: Runtime) -> None:
+    """Every member of a parallel plant with a GEN use reads its GEN share for the plant total,
+    also where its own GEN port is described as unused (the firmware reports each member a share).
+    Nothing is selected or published for it."""
+    invs = runtime.inverters
+    members = plant_members(cfg)
+    wanted = any(invs[i].features.gen_port_mode != "unused" for i in members)
+    for i, inv in invs.items():
+        inv.set_plant_keys({PLANT_GEN_KEY} if wanted and i in members else ())
+
+
 class LiveApplier:
     """Adopts a persisted selection revision: publisher first (it drops everything older), then
     the inverter loop (it rebuilds its plan and discards reads that were in flight)."""
 
-    def __init__(self, runtime: Runtime, publisher: MqttPublisher | None) -> None:
+    def __init__(
+        self, runtime: Runtime, publisher: MqttPublisher | None, cfg: AppConfig | None = None
+    ) -> None:
         self.runtime = runtime
         self.publisher = publisher
+        self.cfg = cfg
 
     def prepare(
         self, inverter_id: str, selection: InverterSelection, *, selection_changed: bool
@@ -91,6 +112,8 @@ class LiveApplier:
         inv = self.runtime.inverters[inverter_id]
         inv.features = selection.features
         inv.awaiting_selection = not selection.chosen
+        if self.cfg is not None:
+            apply_plant_keys(self.cfg, self.runtime)
         if not selection_changed:
             return
         if self.publisher is not None:
@@ -125,7 +148,10 @@ def build_publisher(
     store = open_discovery_store(data_dir(directory) / "discovery.json")
     publisher = MqttPublisher(
         ns,
-        [InverterInfo(i.id, i.name, invs[i.id].profile, i.poll) for i in cfg.inverters],
+        [
+            InverterInfo(i.id, i.name, invs[i.id].profile, i.poll, i.id in plant_members(cfg))
+            for i in cfg.inverters
+        ],
         store,
         factory or aiomqtt_factory(ns, mqtt, settings),
         birth_topic=mqtt.birth_topic,
@@ -190,7 +216,9 @@ def build_totals(
         ],
         PlantSeries(data_dir(directory), known),
         keys_of=lambda i: (
-            invs[i].selection - frozenset(invs[i].unreported) - frozenset(invs[i].inactive)
+            (invs[i].selection | invs[i].plant_keys)
+            - frozenset(invs[i].unreported)
+            - frozenset(invs[i].inactive)
         ),
         role_of=lambda i: _parallel_role(runtime, i),
         reference_role_of=lambda i: _reference_role(runtime, cfg, i),
@@ -257,6 +285,7 @@ class Application:
         )
         for inverter_id, inv in runtime.inverters.items():
             inv.awaiting_selection = not self.manager.selection(inverter_id).chosen
+        apply_plant_keys(cfg, runtime)
         runtime.writes.plant_revision = lambda: self.plant_revision()
         publisher: MqttPublisher | None = None
         if self.mqtt.host is None:
@@ -264,7 +293,7 @@ class Application:
         else:
             publisher = build_publisher(cfg, runtime, self.mqtt, self.instance_id)
         self.relay.target = publisher if publisher is not None and not provisional else NullSink()
-        self.manager.attach(LiveApplier(runtime, publisher))
+        self.manager.attach(LiveApplier(runtime, publisher, cfg))
         self.cfg, self.runtime, self.publisher = cfg, runtime, publisher
         self.unaccepted = provisional
         if self.web is not None:

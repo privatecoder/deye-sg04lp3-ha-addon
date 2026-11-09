@@ -253,6 +253,8 @@ class InverterRuntime:
         self.hardware = hardware
         self.features = features
         self.selection = frozenset(selection)
+        # reads for the plant totals only: never published, never part of the user's selection
+        self.plant_keys: frozenset[str] = frozenset()
         self.book = book
         self.capability_store = capability_store
         self.sink: StateSink = sink or NullSink()
@@ -408,7 +410,7 @@ class InverterRuntime:
         route = self.route
         return build_read_plan(
             self.profile,
-            frozenset(selection) | BOOTSTRAP_KEYS,
+            frozenset(selection) | BOOTSTRAP_KEYS | self.plant_keys,
             self.features,
             max_read_registers=route.max_read_registers,
             poll=self.cfg.poll,
@@ -437,6 +439,16 @@ class InverterRuntime:
         self._plans.clear()
         self._due.clear()
         self.observations = {k: v for k, v in self.observations.items() if k in new}
+        self._wake.set()
+
+    def set_plant_keys(self, keys: Collection[str]) -> None:
+        """The entries the plant totals need beyond the selection (read, not published)."""
+        new = frozenset(keys)
+        if new == self.plant_keys:
+            return
+        self.plant_keys = new
+        self._plans.clear()
+        self._due.clear()
         self._wake.set()
 
     def request_refresh(self) -> None:
@@ -924,7 +936,7 @@ class InverterRuntime:
         dropped |= set(self.inactive)
         keys = [
             k
-            for k in sorted(self.selection)
+            for k in sorted(self.selection | self.plant_keys)
             if self.profile.entry(k).group == group and k not in dropped
         ]
         if failed:
@@ -1207,7 +1219,7 @@ class InverterRuntime:
         if plan is None:
             plan = build_read_plan(
                 self.profile,
-                self.selection | BOOTSTRAP_KEYS,
+                self.selection | BOOTSTRAP_KEYS | self.plant_keys,
                 self.features,
                 max_read_registers=route.max_read_registers,
                 unreported=self.unreported.keys() | self.inactive.keys(),

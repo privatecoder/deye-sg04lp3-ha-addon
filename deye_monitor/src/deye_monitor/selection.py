@@ -79,6 +79,7 @@ class InverterSpec:
     poll: PollConfig
     response_time_s: float = 0.25
     gap_s: float = 0.05
+    plant_member: bool = False  # one of two or more members of the plant totals
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +207,20 @@ def make_features(values: Mapping[str, Any], base: Features | None = None) -> Fe
     return Features(**merged)
 
 
+PLANT_GEN_KEY = "gen_power_raw_total"
+
+
+def plant_read_keys(
+    spec: InverterSpec, features_of: Mapping[str, Features], specs: Mapping[str, InverterSpec]
+) -> frozenset[str]:
+    """The internal reads of the plant totals for ``spec``: in a parallel plant with a GEN use
+    every member reads its GEN share, also where its own GEN port is described as unused."""
+    if not spec.plant_member:
+        return frozenset()
+    gen = any(features_of[i].gen_port_mode != "unused" for i, s in specs.items() if s.plant_member)
+    return frozenset({PLANT_GEN_KEY}) if gen else frozenset()
+
+
 def resolve(spec: InverterSpec, record: Record) -> InverterSelection:
     """Effective selection of ``record``. Placeholders, unsupported and internal entries are
     rejected here, server-side, whatever a client sent; unresolved entries pass only as the raw
@@ -226,12 +241,16 @@ def resolve(spec: InverterSpec, record: Record) -> InverterSelection:
     )
 
 
-def plan_for(spec: InverterSpec, selection: InverterSelection) -> ReadPlan:
-    """The read plan (including the mandatory and bootstrap reads) and its budget."""
+def plan_for(
+    spec: InverterSpec,
+    selection: InverterSelection,
+    plant_keys: frozenset[str] = frozenset(),
+) -> ReadPlan:
+    """The read plan (mandatory, bootstrap and internal plant reads included) and its budget."""
     try:
         return build_read_plan(
             spec.profile,
-            selection.active | BOOTSTRAP_KEYS,
+            selection.active | BOOTSTRAP_KEYS | plant_keys,
             selection.features,
             max_read_registers=spec.max_read_registers,
             poll=spec.poll,
@@ -606,20 +625,32 @@ class SelectionManager:
         return {i: self.selection(i) for i in self.store.specs}
 
     def plan(self, inverter_id: str, selection: InverterSelection | None = None) -> ReadPlan:
-        return plan_for(self.store.specs[inverter_id], selection or self.selection(inverter_id))
+        features = {i: r.features for i, r in self.store.records.items()}
+        spec = self.store.specs[inverter_id]
+        return plan_for(
+            spec,
+            selection or self.selection(inverter_id),
+            plant_read_keys(spec, features, self.store.specs),
+        )
 
     def dry_run(
         self, edits: Mapping[str, Edit]
     ) -> dict[str, tuple[Record, InverterSelection, ReadPlan]]:
         """Validate ``edits`` completely (records, selection, read plan) without any side effect."""
         out: dict[str, tuple[Record, InverterSelection, ReadPlan]] = {}
+        staged: dict[str, tuple[Record, InverterSelection]] = {}
         for inverter_id, edit in edits.items():
             spec = self.store.specs.get(inverter_id)
             if spec is None:
                 raise ChangeError("unknown_inverter", 404, inverter=inverter_id[:64])
             record = apply_edit(spec, self.store.records[inverter_id], edit)
-            selection = resolve(spec, record)
-            out[inverter_id] = (record, selection, plan_for(spec, selection))
+            staged[inverter_id] = (record, resolve(spec, record))
+        features = {i: r.features for i, r in self.store.records.items()}
+        features.update({i: record.features for i, (record, _) in staged.items()})
+        for inverter_id, (record, selection) in staged.items():
+            spec = self.store.specs[inverter_id]
+            plant = plant_read_keys(spec, features, self.store.specs)
+            out[inverter_id] = (record, selection, plan_for(spec, selection, plant))
         return out
 
     async def change(self, expected_revision: int, edits: Mapping[str, Edit]) -> ChangeResult:
@@ -721,6 +752,7 @@ class SelectionManager:
 
 def specs_from_config(cfg: AppConfig) -> dict[str, InverterSpec]:
     out: dict[str, InverterSpec] = {}
+    members = set(cfg.totals.members(cfg.inverters)) if cfg.totals.active(cfg.inverters) else set()
     for inv in cfg.inverters:
         profile = load_profile(inv.profile)
         ep = cfg.endpoint(inv.endpoint)
@@ -734,5 +766,6 @@ def specs_from_config(cfg: AppConfig) -> dict[str, InverterSpec]:
             # the same effective bus gap the runtime scheduler uses: the largest of the endpoints
             # that share the canonical bus
             gap_s=max(e.request_gap_ms for e in cfg.endpoints if e.bus == ep.bus) / 1000,
+            plant_member=len(members) > 1 and inv.id in members,
         )
     return out

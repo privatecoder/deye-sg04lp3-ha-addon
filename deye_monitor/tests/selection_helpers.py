@@ -63,7 +63,7 @@ async def plant(
     ) as r:
         for inverter_id, inv in r.runtime.inverters.items():
             inv.awaiting_selection = not manager.selection(inverter_id).chosen
-        applier = LiveApplier(r.runtime, None)
+        applier = LiveApplier(r.runtime, None, r.cfg)
         manager.attach(applier)
         yield Plant(r, manager, applier)
 

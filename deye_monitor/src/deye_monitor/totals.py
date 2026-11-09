@@ -7,9 +7,12 @@ into ``PlantTotals``; the totals are computed from the newest value of each memb
   the total unknown (``None``): a partial sum is never shown as a total;
 * PV power and PV energy are the exception for a member without PV inputs (nothing selected):
   that member adds 0;
-* GEN port power (release 0.5.3): a member whose installation description has no GEN use adds 0; a
-  member with a GEN use but without the sensor selected makes the total unknown (a missing
-  selection is not a measured 0). The metric exists only while a member describes a GEN use;
+* GEN port power: the metric exists only while a member describes a GEN use. A single-member plant
+  reports its own GEN power (release 0.5.3: no GEN use adds 0; a GEN use without the sensor
+  selected is unknown, not a measured 0). In a parallel plant the firmware splits the GEN port
+  power across the members and reports each one its share, also on an unused GEN socket: the total
+  is the sum of every member's reported share (read for the totals only, not published) and is
+  unknown while any member's share is missing, never a partial sum;
 * GRID diagnostics (release 0.5.3, predicate G: a member describes a used GRID port, utility or
   generator): the terminal power sums the members' internal GRID power with the same used / unused /
   unselected semantics as the GEN power; voltage and frequency are the value of one reference member
@@ -532,7 +535,8 @@ class PlantTotals:
     def _member_value(self, metric: Metric, member: TotalsMember, now: float) -> float | None:
         selected = self._keys_of(member.id)
         if metric.key == "plant_gen_power":
-            if not self._gen_use_of(member.id):
+            # a parallel plant sums every member's reported share, also of an unused GEN port
+            if not (self.gen_active() if len(self.members) > 1 else self._gen_use_of(member.id)):
                 return 0.0
             if "gen_power_raw_total" not in selected or not self._online[member.id]:
                 return None  # a used port without a usable input is unknown, not a cached value
