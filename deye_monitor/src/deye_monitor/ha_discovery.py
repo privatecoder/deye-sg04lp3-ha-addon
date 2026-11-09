@@ -274,7 +274,9 @@ def _template(key: str, platform: str, series: str | None = None) -> str:
     return f"{{{{ value_json.get('{key}') if value_json is mapping else none }}}}"
 
 
-PARALLEL_GEN_SHARE_NAME = "GEN reported share"
+# the GEN total of a member of a parallel plant is the share allocated to it (HA entity and web UI)
+PARALLEL_GEN_SHARE = {"de": "GEN-Anteil (gemeldet)", "en": "GEN reported share"}
+PARALLEL_GEN_SHARE_KEY = "gen_power_raw_total"
 
 
 def inverter_component(
@@ -292,8 +294,8 @@ def inverter_component(
     ckey = component_key(entry, series)
     # in a parallel plant the GEN total is the share the firmware allocates to this unit
     name = (
-        PARALLEL_GEN_SHARE_NAME
-        if parallel and entry.key == "gen_power_raw_total"
+        PARALLEL_GEN_SHARE["en"]
+        if parallel and entry.key == PARALLEL_GEN_SHARE_KEY
         else entry.name.en
     )
     comp: dict[str, Any] = {

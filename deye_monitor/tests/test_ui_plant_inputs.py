@@ -125,3 +125,23 @@ async def test_only_zero_hint_is_not_shown_for_plant_total_inputs(
         await expect(card).not_to_contain_text("Netzspannung")  # GRID is described: 0 is expected
         await expect(card).not_to_contain_text("Lastleistung gesamt")
         await s.check()
+
+
+async def test_a_parallel_member_names_the_gen_total_a_reported_share(
+    browser: Browser,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    async with ui_stack(tmp_path) as stack:
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        page = s.page
+        await page.get_by_label("Sensoren durchsuchen").fill("gen_power_raw_total")
+        await expect(row(page, "gen_power_raw_total")).to_contain_text("GEN-Anschlussleistung")
+        await page.close()  # no plant totals: the single-inverter name stays
+        stack.api.publisher = StubPublisher(VIEW)  # type: ignore[assignment]
+        s = await open_ui(browser, stack)
+        await open_setup(s)
+        page = s.page
+        await page.get_by_label("Sensoren durchsuchen").fill("gen_power_raw_total")
+        await expect(row(page, "gen_power_raw_total")).to_contain_text("GEN-Anteil (gemeldet)")
+        await expect(row(page, "gen_power_raw_total")).not_to_contain_text("Anschlussleistung")

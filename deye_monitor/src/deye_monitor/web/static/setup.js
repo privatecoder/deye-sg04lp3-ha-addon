@@ -6,7 +6,7 @@ import { ApiError, api } from './api.js';
 import { t, errorText, localName, localText } from './i18n.js';
 import { h, uid, modal, toast, debounce } from './ui.js';
 import { state, canEdit, inverterById, profileOf, loadInverters, loadSession, mutate } from './state.js';
-import { helpButton, stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList, plantInputsOf, plantTotalName } from './common.js';
+import { helpButton, stateChip, reasonText, levelChip, busChip, loadProgress, budgetLevel, hintsOf, hintBody, sensorList, plantInputsOf, plantTotalName, shownEntry } from './common.js';
 import { openTransfer } from './transfer.js';
 import { writesPanel } from './writes.js';
 
@@ -351,6 +351,7 @@ export function setupView(invId) {
   // -- step 2: sensors ------------------------------------------------------------------------
 
   function sensorRow(entry, expert) {
+    entry = shownEntry(base, entry);
     const id = uid('sensor');
     const input = h('input', { type: 'checkbox', id, 'aria-describedby': `${id}-desc ${id}-state`, disabled: !canEdit(), onChange: (e) => setKey(entry.key, e.target.checked) });
     const state_ = h('span', { class: 'sensor-state', id: `${id}-state` });

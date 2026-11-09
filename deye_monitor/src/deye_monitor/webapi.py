@@ -40,6 +40,7 @@ from deye_monitor.config import (
     plant_problems,
 )
 from deye_monitor.device import CONFLICT_POINTS, InverterRuntime
+from deye_monitor.ha_discovery import PARALLEL_GEN_SHARE, PARALLEL_GEN_SHARE_KEY
 from deye_monitor.help_texts import sensor_help
 from deye_monitor.mqtt import MqttPublisher
 from deye_monitor.mqtt_settings import SettingsPlane
@@ -220,6 +221,8 @@ def entry_view(e: Entry) -> dict[str, Any]:
     return {
         "key": e.key,
         "name": {"de": e.name.de, "en": e.name.en},
+        # the name in a member of a parallel plant (the UI decides by the plant membership)
+        "parallel_name": dict(PARALLEL_GEN_SHARE) if e.key == PARALLEL_GEN_SHARE_KEY else None,
         "description": (
             {"de": e.description.de, "en": e.description.en} if e.description else None
         ),

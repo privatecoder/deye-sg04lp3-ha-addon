@@ -91,6 +91,13 @@ export function sensorName(inv, key) {
   return entry ? localName(entry) : key;
 }
 
+// The entry as this inverter shows it: a member of a parallel plant names the GEN total a share.
+export function shownEntry(inv, entry) {
+  const totals = state.totals;
+  const parallel = totals && totals.active && (totals.members || []).length > 1 && totals.members.some((m) => m.id === inv.id);
+  return parallel && entry.parallel_name ? { ...entry, name: entry.parallel_name } : entry;
+}
+
 // The plant totals an entry feeds on this inverter: only a member of the plant totals delivers
 // inputs, and the master-only ones (battery state, BMS) only while it is (or may be) the master.
 export function plantInputsOf(inv, entry) {
