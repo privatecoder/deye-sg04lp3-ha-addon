@@ -67,6 +67,7 @@ class Rig:
         self.keys = {i: set(SELECTED) for i in ids}
         self.gen: set[str] = set()  # members whose description has a GEN port use
         self.grid: set[str] = set()  # members whose description has a used GRID port
+        self.mppt: dict[str, tuple[bool, bool]] = {}  # used MPPT channels (default: both)
         self.totals = PlantTotals(
             [TotalsMember(i, i.upper(), PROFILE, POLL) for i in ids],
             PlantSeries(tmp_path),
@@ -75,6 +76,7 @@ class Rig:
             member_series_of=lambda i: self.series[i],
             gen_use_of=lambda i: i in self.gen,
             grid_use_of=lambda i: i in self.grid,
+            mppt_used_of=lambda i: self.mppt.get(i, (True, True)),
         )
         for i in ids:
             self.totals.set_online(i, True)

@@ -81,7 +81,7 @@ export function overviewView() {
   }
 
   const TOTAL_ROWS = [
-    ['plant_pv_power', 'W'], ['plant_load_power', 'W'], ['plant_battery_power', 'W'], ['plant_inverter_power', 'W'], ['plant_gen_power', 'W'],
+    ['plant_pv_power', 'W'], ['plant_load_power', 'W'], ['plant_battery_power', 'W'], ['plant_inverter_power', 'W'], ['plant_dc_ac_power_difference', 'W'], ['plant_gen_power', 'W'],
     ['plant_grid_terminal_power', 'W'], ['plant_grid_voltage_a', 'V'], ['plant_grid_voltage_b', 'V'], ['plant_grid_voltage_c', 'V'], ['plant_grid_frequency', 'Hz'],
     ['plant_battery_soc', '%'], ['plant_pv_energy_total', 'kWh'], ['plant_load_energy_total', 'kWh'],
     ['plant_battery_charge_energy_total', 'kWh'], ['plant_battery_discharge_energy_total', 'kWh'],
@@ -101,6 +101,7 @@ export function overviewView() {
       h('dl', { class: 'facts' },
         TOTAL_ROWS.filter(([key]) => (key !== 'plant_gen_power' || totals.gen) && (!key.startsWith('plant_grid_') || totals.grid)).map(([key, unit]) => fact(t(`totals.${key}`), h('span', { 'data-total': key }, totalsValue(totals.values[key], unit))))),
       h('p', { class: 'note', id: 'plant-load-note' }, t('totals.note_load')),
+      h('p', { class: 'note', id: 'plant-dcac-note' }, t('totals.note_dcac')),
       totals.gen ? h('p', { class: 'note', id: 'plant-gen-note' }, t('totals.note_gen')) : null,
       h('ul', { class: 'members', 'aria-label': t('overview.plant_members') },
         totals.members.map((m) => h('li', { class: m.stale ? 'hint warn' : 'hint info', 'data-member': m.id },

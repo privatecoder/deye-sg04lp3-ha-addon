@@ -225,6 +225,7 @@ def build_totals(
         member_series_of=lambda i: invs[i].energy.series,
         gen_use_of=lambda i: invs[i].features.gen_port_mode != "unused",
         grid_use_of=lambda i: invs[i].features.grid_port_use in ("utility", "generator"),
+        mppt_used_of=lambda i: (invs[i].features.mppt1_used, invs[i].features.mppt2_used),
     )
 
 

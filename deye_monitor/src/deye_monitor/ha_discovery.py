@@ -565,6 +565,8 @@ def plant_components(
             comp["state_class"] = m.state_class
         if m.precision is not None:
             comp["suggested_display_precision"] = m.precision
+        if m.diagnostic:
+            comp["entity_category"] = "diagnostic"
         out[ckey] = comp
     diagnostics = (
         ("plant_members", "Plant members", True),

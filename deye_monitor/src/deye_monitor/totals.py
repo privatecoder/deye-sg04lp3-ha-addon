@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from collections import deque
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,8 @@ from deye_monitor.store import JsonStore, LoadStatus
 log = logging.getLogger(__name__)
 
 PV_POWER_KEYS: Final = ("pv1_power", "pv2_power")
+DIFFERENCE_WINDOW_S: Final = 300.0  # rolling mean of the DC/AC power difference
+DIFFERENCE_SAMPLE_S: Final = 1.0  # at most one sample per second
 STALE_FACTOR: Final = 3  # a value is stale after this many poll intervals (as expire_after)
 SERIES_FILE: Final = "plant-totals.json"
 _SERIES_KEY = re.compile(r"^plant_[a-z_]+_energy_total_(?P<series>g(?P<n>\d+))$")
@@ -57,7 +60,7 @@ class Metric:
 
     key: str
     name: str
-    kind: str  # power | energy | daily | master | reference
+    kind: str  # power | energy | daily | master | reference | difference
     keys: tuple[str, ...]
     unit: str
     device_class: str | None = None
@@ -69,6 +72,7 @@ class Metric:
     alternatives: bool = False
     # exposure predicate: "gen" (a member describes a GEN use), "grid" (a used GRID port), or always
     gate: str | None = None
+    diagnostic: bool = False  # published with entity_category diagnostic
 
 
 METRICS: Final = (
@@ -178,6 +182,18 @@ METRICS: Final = (
         "power",
         "measurement",
         0,
+    ),
+    # PV + battery power (discharging positive) - inverter AC output, 5-minute mean (calculated)
+    Metric(
+        "plant_dc_ac_power_difference",
+        "Plant DC/AC power difference",
+        "difference",
+        (*PV_POWER_KEYS, "battery_voltage", "battery_current", "inverter_power_total"),
+        "W",
+        "power",
+        "measurement",
+        0,
+        diagnostic=True,
     ),
     Metric(
         "plant_pv_energy_total",
@@ -451,6 +467,7 @@ class PlantTotals:
         member_series_of: Callable[[str], str],
         gen_use_of: Callable[[str], bool] = lambda _: False,
         grid_use_of: Callable[[str], bool] = lambda _: False,
+        mppt_used_of: Callable[[str], tuple[bool, bool]] = lambda _: (True, True),
         reference_role_of: Callable[[str], str | None] | None = None,
     ) -> None:
         self.members = {m.id: m for m in members}
@@ -460,11 +477,13 @@ class PlantTotals:
         self._member_series_of = member_series_of
         self._gen_use_of = gen_use_of
         self._grid_use_of = grid_use_of
+        self._mppt_used_of = mppt_used_of
         # fresh R336 evidence: standalone / master / slave, ``None`` when unknown, failed or stale
         self._reference_role_of = reference_role_of or role_of
         self._latest: dict[str, dict[str, tuple[Value, float]]] = {i: {} for i in self.members}
         self._online: dict[str, bool] = dict.fromkeys(self.members, False)
         self.dirty = True
+        self._samples: deque[tuple[float, float]] = deque()  # (time, DC/AC difference)
         self._own_series: dict[str, str] = {}
         self.sync_series()
 
@@ -487,13 +506,21 @@ class PlantTotals:
         if inverter_id not in self.members:
             return
         latest = self._latest[inverter_id]
+        member = self.members[inverter_id]
+        if any(
+            (item := latest.get(k)) is not None and now - item[1] > self._window(member, k)
+            for k in self._difference_keys(inverter_id)
+        ):
+            self._samples.clear()  # an input went stale before this update: the gap ends the mean
         for key, value in values.items():
             latest[key] = (value, now)
         self.dirty = True
+        self._sample(now)
 
     def drop(self, inverter_id: str) -> None:
         if inverter_id in self._latest:
             self._latest[inverter_id] = {}
+            self._samples.clear()
             self.dirty = True
 
     def drop_energy(self, inverter_id: str) -> None:
@@ -509,11 +536,14 @@ class PlantTotals:
     def clear(self) -> None:
         for i in self._latest:
             self._latest[i] = {}
+        self._samples.clear()
         self.dirty = True
 
     def set_online(self, inverter_id: str, online: bool) -> None:
         if inverter_id in self._online and self._online[inverter_id] != online:
             self._online[inverter_id] = online
+            if not online:
+                self._samples.clear()
             self.dirty = True
 
     # -- computation ----------------------------------------------------------------------------
@@ -617,7 +647,68 @@ class PlantTotals:
             return None if key is None else self._fresh(member, key, now)
         return self._fresh(member, metric.keys[0], now)
 
+    def _difference_keys(self, member_id: str) -> tuple[str, ...]:
+        """The inputs the DC/AC difference needs from one member (PV: the used channels)."""
+        used = self._mppt_used_of(member_id)
+        pv = tuple(k for k, on in zip(PV_POWER_KEYS, used, strict=True) if on)
+        return (*pv, "battery_voltage", "battery_current", "inverter_power_total")
+
+    def _pv_for_difference(self, member: TotalsMember, now: float) -> float | None:
+        """PV power of the used MPPT channels; each must be selected, finite and fresh. Only
+        a channel the installation description names as unused contributes 0."""
+        selected = self._keys_of(member.id)
+        total = 0.0
+        for key, on in zip(PV_POWER_KEYS, self._mppt_used_of(member.id), strict=True):
+            if not on:
+                continue
+            value = self._fresh(member, key, now) if key in selected else None
+            if value is None:
+                return None
+            total += value
+        return total
+
+    def _difference_now(self, now: float) -> float | None:
+        """PV + battery power (discharging positive) - inverter output, summed over the members;
+        unknown unless every member delivers every input."""
+        battery = METRIC_BY_KEY["plant_battery_power"]
+        out = METRIC_BY_KEY["plant_inverter_power"]
+        total = 0.0
+        for member in self.members.values():
+            if not {"battery_voltage", "battery_current", "inverter_power_total"} <= set(
+                self._keys_of(member.id)
+            ):
+                return None  # a cached value of a deselected input is not a reading
+            pv = self._pv_for_difference(member, now)
+            bat = self._member_value(battery, member, now)
+            output = self._member_value(out, member, now)
+            if pv is None or bat is None or output is None:
+                return None
+            total += pv + bat - output
+        return total
+
+    def _sample(self, now: float) -> None:
+        """A complete cohort adds a sample (at most one per second); an incomplete one resets the
+        window, so the mean never bridges a member drop-out."""
+        value = self._difference_now(now)
+        if value is None:
+            self._samples.clear()
+        elif not self._samples or now - self._samples[-1][0] >= DIFFERENCE_SAMPLE_S:
+            self._samples.append((now, value))
+        else:
+            self._samples[-1] = (self._samples[-1][0], value)  # the latest value of this second
+        while self._samples and now - self._samples[0][0] > DIFFERENCE_WINDOW_S:
+            self._samples.popleft()
+
+    def _difference(self, now: float) -> float | None:
+        if self._difference_now(now) is None:
+            self._samples.clear()
+            return None
+        window = [v for t, v in self._samples if now - t <= DIFFERENCE_WINDOW_S]
+        return round(sum(window) / len(window), 1) if window else None
+
     def value(self, metric: Metric, now: float) -> float | None:
+        if metric.kind == "difference":
+            return self._difference(now)
         if metric.kind == "master":
             return self._master_value(metric, now)
         if metric.kind == "reference":
@@ -641,7 +732,7 @@ class PlantTotals:
                 continue
             for metric in METRICS:
                 if (
-                    metric.kind not in ("master", "reference")
+                    metric.kind not in ("master", "reference", "difference")
                     and self._member_value(metric, member, now) is None
                 ):
                     bad.append(member.id)

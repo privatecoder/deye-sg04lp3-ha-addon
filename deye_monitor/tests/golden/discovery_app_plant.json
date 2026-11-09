@@ -179,6 +179,20 @@
    "unit_of_measurement": "V",
    "value_template": "{{ value_json.get('plant_bms_voltage') if value_json is mapping else none }}"
   },
+  "plant_dc_ac_power_difference": {
+   "default_entity_id": "sensor.deye_ab12cd34_app_plant_dc_ac_power_difference",
+   "device_class": "power",
+   "entity_category": "diagnostic",
+   "expire_after": 90,
+   "name": "Plant DC/AC power difference",
+   "platform": "sensor",
+   "state_class": "measurement",
+   "state_topic": "deye/ab12cd34/app/plant",
+   "suggested_display_precision": 0,
+   "unique_id": "deye_ab12cd34_app_plant_dc_ac_power_difference",
+   "unit_of_measurement": "W",
+   "value_template": "{{ value_json.get('plant_dc_ac_power_difference') if value_json is mapping else none }}"
+  },
   "plant_energy_series": {
    "default_entity_id": "sensor.deye_ab12cd34_app_plant_energy_series",
    "entity_category": "diagnostic",
